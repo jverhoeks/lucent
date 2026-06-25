@@ -56,6 +56,18 @@ describe("renderMarkdown", () => {
     const html = renderMarkdown("```\nalpha\nbeta\ngamma\n```");
     expect(html).toContain("ln-gutter");
   });
+  it("offers copy and save buttons on code blocks", () => {
+    const html = renderMarkdown("```js\nconst x = 1;\n```");
+    expect(html).toContain("code-copy");
+    expect(html).toContain("code-save");
+  });
+  it("sanitizes a malicious fence info string (no HTML injection)", () => {
+    const html = renderMarkdown('```js"><img src=x onerror=alert(1)>\nx\n```');
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("onerror");
+    // the language token is reduced to a safe class, not raw markup
+    expect(html).toContain('class="language-jsimg"');
+  });
   it("wraps mermaid fences for the post-render pass", () => {
     const html = renderMarkdown("```mermaid\ngraph TD; A-->B;\n```");
     expect(html).toContain('<pre class="mermaid">');

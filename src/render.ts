@@ -22,6 +22,10 @@ function parseInfo(info: string): { lang: string; filename: string } {
     lang = l;
     if (!filename && f) filename = f;
   }
+  // Sanitize the language token: it lands in a class attribute and is passed to
+  // highlight.js. Restrict to a safe set (covers c++, c#, f#, objective-c, etc.)
+  // so a crafted fence info string can't break out and inject HTML.
+  lang = lang.replace(/[^\w+#.-]/g, "");
   return { lang, filename };
 }
 
@@ -72,10 +76,17 @@ function createRenderer(): MarkdownIt {
 
     const label = filename || lang;
     const labelHtml = `<span class="code-label">${md.utils.escapeHtml(label)}</span>`;
-    const header = `<div class="code-header">${labelHtml}<button class="code-copy" type="button" title="Copy source" aria-label="Copy source">📋</button></div>`;
+    const actions =
+      `<span class="code-actions">` +
+      `<button class="code-copy" type="button" title="Copy source" aria-label="Copy source">📋</button>` +
+      `<button class="code-save" type="button" title="Save source to file" aria-label="Save source">💾</button>` +
+      `</span>`;
+    const header = `<div class="code-header">${labelHtml}${actions}</div>`;
     const gutter = `<span class="ln-gutter" aria-hidden="true">${lineGutter(code)}</span>`;
     const langClass = lang ? ` class="language-${lang}"` : "";
-    return `<div class="code-block">${header}<pre class="hljs">${gutter}<code${langClass}>${highlightInner(
+    return `<div class="code-block" data-lang="${md.utils.escapeHtml(
+      lang
+    )}" data-filename="${md.utils.escapeHtml(filename)}">${header}<pre class="hljs">${gutter}<code${langClass}>${highlightInner(
       code,
       lang
     )}</code></pre></div>\n`;

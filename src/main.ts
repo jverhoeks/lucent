@@ -3,7 +3,7 @@ import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { TabManager } from "./tabs";
@@ -57,6 +57,22 @@ function showBanner(msg: string) {
   banner.textContent = msg;
   banner.hidden = false;
   setTimeout(() => (banner.hidden = true), 4000);
+}
+
+const LANG_EXT: Record<string, string> = {
+  javascript: "js", js: "js", typescript: "ts", ts: "ts", python: "py", py: "py",
+  rust: "rs", rs: "rs", bash: "sh", sh: "sh", shell: "sh", json: "json", html: "html",
+  css: "css", go: "go", java: "java", c: "c", cpp: "cpp", "c++": "cpp", csharp: "cs",
+  yaml: "yaml", yml: "yml", sql: "sql", markdown: "md", md: "md",
+};
+
+/** Default save name for a code block: its filename if supplied, else by language. */
+function suggestedCodeName(block: Element): string {
+  const filename = block.getAttribute("data-filename");
+  if (filename) return filename;
+  const lang = (block.getAttribute("data-lang") || "").toLowerCase();
+  const ext = LANG_EXT[lang] || lang || "txt";
+  return `snippet.${ext}`;
 }
 
 async function readPath(path: string): Promise<string | null> {
@@ -159,6 +175,20 @@ content.addEventListener("click", async (e) => {
       const prev = copyBtn.textContent;
       copyBtn.textContent = "✓";
       setTimeout(() => (copyBtn.textContent = prev), 1200);
+    }
+    return;
+  }
+
+  // Save-source button on a code block.
+  const saveBtn = target.closest(".code-save");
+  if (saveBtn) {
+    const block = saveBtn.closest(".code-block");
+    const codeEl = block?.querySelector("code");
+    if (block && codeEl) {
+      const path = await save({ defaultPath: suggestedCodeName(block) });
+      if (path) {
+        await invoke("save_text_file", { path, contents: codeEl.textContent ?? "" });
+      }
     }
     return;
   }

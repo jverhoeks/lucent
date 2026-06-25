@@ -60,3 +60,24 @@ export interface Renderer {
   /** Render `source` into `container` (rendered mode). */
   render(source: string, container: HTMLElement, ctx: RenderCtx): void | Promise<void>;
 }
+
+export type DataScalarType = "string" | "number" | "boolean" | "null";
+
+/** A parsed structured value: a scalar leaf, or an object/array of child nodes. */
+export type DataValue =
+  | { kind: "scalar"; type: DataScalarType; text: string }
+  | { kind: "object"; entries: DataNode[] }
+  | { kind: "array"; items: DataNode[] };
+
+/** One keyed child within an object (key = property) or array (key = index). */
+export interface DataNode {
+  key: string;
+  path: string; // unique, e.g. `root`, `root.a`, `root.a[2].b`
+  value: DataValue;
+}
+
+export interface DataParseResult {
+  ok: boolean;
+  value?: DataValue;
+  error?: { message: string; line?: number };
+}

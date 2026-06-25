@@ -21,7 +21,8 @@ New deps: `js-yaml`, `smol-toml`, `ini` (all permissive).
 
 - **Read-only viewer.** No editing.
 - **New deps allowed in P2, permissive only:** `js-yaml` (MIT), `smol-toml`
-  (MIT), `ini` (ISC), `@types/js-yaml` (dev). No others.
+  (BSD-3-Clause — permissive, same family as the already-used highlight.js),
+  `ini` (ISC), `@types/js-yaml` (dev). No others.
 - **Builds on P1 (now in `main`).** Reuse, do not duplicate: `SearchController` /
   `SearchProvider` / `Match` (`src/search/`), the renderer registry
   (`src/renderers/registry.ts`, `getRenderer`), `detectFormat`/`dataLangOf`
@@ -87,7 +88,9 @@ npm install -D @types/js-yaml
 - [ ] **Step 2: Confirm licenses are permissive**
 
 Run: `npm view js-yaml license; npm view smol-toml license; npm view ini license`
-Expected: `MIT`, `MIT`, `ISC`. (If any differs, STOP and report.)
+Expected: js-yaml `MIT`, smol-toml `BSD-3-Clause`, ini `ISC` — all permissive and
+accepted (BSD-3-Clause matches highlight.js, already shipped). Only STOP if a
+copyleft/non-permissive license (e.g. GPL/AGPL) appears.
 
 - [ ] **Step 3: Add the value-model types** — append to `src/types.ts`
 

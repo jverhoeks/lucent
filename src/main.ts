@@ -13,7 +13,9 @@ import { exportHtml, exportPdf } from "./export";
 import { FilePayload, AppError, StyleSettings, Format } from "./types";
 import { SearchController } from "./search/controller";
 import { DomSearchProvider } from "./search/dom-provider";
+import { TreeSearchProvider } from "./search/tree-provider";
 import { SearchBar } from "./search/bar";
+import { getCurrentTree } from "./renderers/data";
 
 const tabbar = document.getElementById("tabbar")!;
 const tabstrip = document.getElementById("tabstrip")!;
@@ -29,7 +31,14 @@ const searchBar = new SearchBar(search);
 /** Re-bind the search provider to the freshly-rendered content. */
 function rebindSearch() {
   if (!searchBar.isOpen()) return;
-  search.setProvider(new DomSearchProvider(content));
+  const fmt = manager.getActiveFormat();
+  const mode = manager.getActiveMode();
+  if (mode === "rendered" && fmt === "data") {
+    const tree = getCurrentTree();
+    search.setProvider(tree ? new TreeSearchProvider(tree) : new DomSearchProvider(content));
+  } else {
+    search.setProvider(new DomSearchProvider(content));
+  }
 }
 
 const manager = new TabManager(tabbar, content, settings, {
@@ -163,7 +172,7 @@ btn("btn-next").addEventListener("click", async () => {
 btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRawText()));
 btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRawText()));
 btn("btn-copy-md").addEventListener("click", () => copyAsMarkdown(manager.getActiveRawText()));
-btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveRenderedHtml()));
+btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveDisplayedHtml()));
 
 // ---- Style controls ----
 const selFont = document.getElementById("sel-font") as HTMLSelectElement;

@@ -62,6 +62,10 @@ export class TabManager {
     const t = this.active();
     return t ? renderMarkdown(t.content) : "";
   }
+  /** The HTML currently displayed for the active doc (renderer-agnostic). */
+  getActiveDisplayedHtml(): string {
+    return this.content.innerHTML;
+  }
   getActiveMode(): "rendered" | "raw" | undefined {
     return this.active()?.mode;
   }

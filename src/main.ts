@@ -10,7 +10,10 @@ import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
 import { exportHtml, exportPdf } from "./export";
-import { FilePayload, AppError, StyleSettings } from "./types";
+import { FilePayload, AppError, StyleSettings, Format } from "./types";
+import { SearchController } from "./search/controller";
+import { DomSearchProvider } from "./search/dom-provider";
+import { SearchBar } from "./search/bar";
 
 const tabbar = document.getElementById("tabbar")!;
 const tabstrip = document.getElementById("tabstrip")!;
@@ -20,8 +23,17 @@ let settings: StyleSettings = loadSettings();
 
 const btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
 
+const search = new SearchController();
+const searchBar = new SearchBar(search);
+
+/** Re-bind the search provider to the freshly-rendered content. */
+function rebindSearch() {
+  if (!searchBar.isOpen()) return;
+  search.setProvider(new DomSearchProvider(content));
+}
+
 const manager = new TabManager(tabbar, content, settings, {
-  onChange: refreshToolbar,
+  onChange: () => { refreshToolbar(); rebindSearch(); },
   onTabClosed: (path) => void invoke("unwatch_file", { path }),
   onCloseAll: () => void invoke("unwatch_all"),
 });
@@ -30,6 +42,7 @@ applyCodeTheme(settings.theme);
 function refreshToolbar() {
   const has = manager.count() > 0;
   for (const id of [
+    "btn-search",
     "btn-toggle",
     "btn-next",
     "btn-export-html",
@@ -111,6 +124,21 @@ btn("btn-open").addEventListener("click", async () => {
   else if (typeof sel === "string") await openPath(sel);
 });
 
+btn("btn-search").addEventListener("click", () => {
+  if (manager.count() === 0) return;
+  searchBar.toggle();
+  rebindSearch();
+});
+
+window.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    if (manager.count() === 0) return;
+    searchBar.open();
+    rebindSearch();
+  }
+});
+
 btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
 btn("btn-close-all").addEventListener("click", () => manager.closeAll());
 
@@ -162,6 +190,14 @@ inpSize.addEventListener("input", () => updateStyle({ fontSizePx: Number(inpSize
 selTheme.addEventListener("change", () =>
   updateStyle({ theme: selTheme.value as StyleSettings["theme"] })
 );
+
+// ---- "View as…" format override ----
+const selViewAs = document.getElementById("sel-viewas") as HTMLSelectElement;
+selViewAs.addEventListener("change", () => {
+  const v = selViewAs.value as Format | "";
+  if (v) manager.setActiveForcedFormat(v); // triggers onChange → rebindSearch
+  selViewAs.value = ""; // reset to the placeholder label
+});
 
 // ---- Link handling ----
 // In-page anchors scroll; external URLs open in the system browser; relative
@@ -262,7 +298,10 @@ content.addEventListener("click", async (e) => {
 });
 
 // ---- Disk watch events ----
-listen<FilePayload>("file-changed", (e) => manager.updateContent(e.payload.path, e.payload.content));
+listen<FilePayload>("file-changed", (e) => {
+  manager.updateContent(e.payload.path, e.payload.content);
+  rebindSearch();
+});
 listen<{ path: string }>("file-removed", (e) => showBanner(`File removed: ${e.payload.path}`));
 
 // ---- Drag-and-drop ----

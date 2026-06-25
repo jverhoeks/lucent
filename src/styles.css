@@ -471,9 +471,10 @@ body {
 }
 
 /* ---- Raw view (always monospace) ---- */
+/* Raw source (incl. logs) is left-aligned and full-width — not constrained to
+   the centered prose column, which is only for rendered markdown. */
 .raw {
-  max-width: var(--max-width);
-  margin: 0 auto;
+  margin: 0;
   font-family: var(--mono);
   font-size: var(--font-size);
   line-height: 1.55;

@@ -69,6 +69,9 @@ export class TabManager {
     clone.querySelectorAll("mark.search-hit, mark.search-current").forEach((m) => {
       m.replaceWith(document.createTextNode(m.textContent ?? ""));
     });
+    // Also drop class-based highlight state (e.g. the tree's current-row marker)
+    // so copy-rich never carries transient search styling.
+    clone.querySelectorAll(".search-current").forEach((e) => e.classList.remove("search-current"));
     return clone.innerHTML;
   }
   getActiveMode(): "rendered" | "raw" | undefined {

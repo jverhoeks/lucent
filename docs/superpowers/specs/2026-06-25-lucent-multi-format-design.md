@@ -241,12 +241,30 @@ Extend the filesystem layer to stream and tail:
 - **Tail/follow:** extend `watcher.rs` so growth emits a `log-appended` event with
   the new line range; the frontend appends and (if pinned to bottom) auto-scrolls.
 
+### Default log formats
+
+Lucent recognizes a small set of common formats out of the box; a deeper,
+configurable format system is a later pass. **Default formats:**
+
+- **Apache** — access logs (Common/Combined) and error logs.
+- **syslog** — RFC 3164 / RFC 5424 lines.
+- **Docker** — both the plain `docker logs` stream and the JSON-file log driver
+  (one JSON object per line: `{"log":"…","stream":"stdout","time":"…"}`), where
+  the `log` payload is unwrapped and the rest shown as metadata.
+
+A pluggable `LogFormat` detector picks a format per file (with fallback to the
+generic line view + level heuristic below). Detection + per-format field
+extraction (timestamp, level, source) feed the level highlighting and search;
+the embedded-JSON decoder still applies within a line's message. Detailed
+per-format parsing rules are deferred to the P3 plan / a follow-up.
+
 ### Rendered view
 
 `src/renderers/log.ts` renders a **windowed** line view:
 
-- Line numbers, monospace, per-line **level highlighting** via a heuristic
-  (`ERROR`/`WARN`/`INFO`/`DEBUG`/`TRACE` tokens) coloring the row.
+- Line numbers, monospace, per-line **level highlighting** — driven by the
+  detected `LogFormat` (Apache/syslog/Docker) where available, falling back to a
+  generic token heuristic (`ERROR`/`WARN`/`INFO`/`DEBUG`/`TRACE`) coloring the row.
 - A **follow/tail** toggle (on → auto-scroll as new lines arrive; manual scroll
   up un-pins).
 - **Embedded JSON:** a line containing a JSON object/array (including escaped

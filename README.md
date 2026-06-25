@@ -8,6 +8,8 @@ way. It's a desktop app (built with [Tauri](https://tauri.app/), so it ships as
 a small native binary, not a browser tab) that's fast to launch and pleasant to
 read in.
 
+![Lucent rendering the kitchen-sink example — highlighted code, KaTeX math, a callout, and a Mermaid diagram](docs/screenshot.png)
+
 > **Status:** v0.1 — Markdown viewer. Lucent is being built toward a general
 > *multi-format* viewer (see [Roadmap](#roadmap)). The name and architecture are
 > deliberately format-agnostic so logs, JSON/YAML/TOML, and HTML can join without
@@ -39,6 +41,8 @@ read in.
   audited Rust layer.
 
 See the [`examples/`](examples/) folder for a tour of everything Lucent renders.
+Sample outputs from the kitchen-sink example:
+[HTML export](docs/99-kitchen-sink.html) · [PDF export](docs/99-kitchen-sink.pdf).
 
 ## Roadmap
 

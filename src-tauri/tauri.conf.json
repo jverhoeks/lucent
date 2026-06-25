@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "markdown-gui",
+  "productName": "Lucent",
   "version": "0.1.0",
-  "identifier": "com.markdowngui.app",
+  "identifier": "com.lucent.viewer",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "markdown-gui",
+        "title": "Lucent",
         "width": 800,
         "height": 600
       }

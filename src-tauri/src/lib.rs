@@ -6,7 +6,7 @@ mod watcher;
 use std::path::Path;
 use tauri::Manager;
 
-/// Markdown file paths passed on the command line (e.g. `markdown-gui *.md`),
+/// Markdown file paths passed on the command line (e.g. `lucent *.md`),
 /// resolved to absolute paths at startup and exposed to the frontend.
 #[derive(Default)]
 pub struct StartupFiles(pub Vec<String>);

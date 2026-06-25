@@ -169,11 +169,9 @@ btn("btn-next").addEventListener("click", async () => {
     const idx = siblings.indexOf(cur);
     if (idx < 0 || siblings.length < 2) return;
     const next = siblings[(idx + 1) % siblings.length]; // wrap around
-    const content = await readPath(next);
-    if (content === null) return;
-    await invoke("unwatch_file", { path: cur });
-    manager.replaceActive(next, content);
-    await invoke("watch_file", { path: next });
+    // Open the next file in its own tab — or, if it's already open, switch to
+    // that tab (openOrActivate, via openPath). The current tab stays open.
+    await openPath(next);
   } catch (e) {
     showBanner(`Couldn't list directory — ${(e as AppError)?.message ?? e}`);
   }

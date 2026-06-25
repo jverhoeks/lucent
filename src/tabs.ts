@@ -1,15 +1,14 @@
-import { renderMarkdown, runPostRender } from "./render";
-import { StyleSettings, Theme } from "./types";
-
-/** Markdown-family extensions render to HTML; everything else opens as raw text. */
-export function isMarkdownPath(path: string): boolean {
-  return /\.(md|markdown|mdown|mkd)$/i.test(path);
-}
+import { renderMarkdown } from "./render";
+import { detectFormat } from "./format";
+import { getRenderer } from "./renderers/registry";
+import { StyleSettings, Theme, Format } from "./types";
 
 export interface Tab {
   path: string;
   title: string;
   content: string;
+  format: Format;          // detected format
+  forcedFormat?: Format;   // "View as…" override
   mode: "rendered" | "raw";
   scrollTop: number;
 }
@@ -24,6 +23,11 @@ export interface TabHooks {
 export function basename(path: string): string {
   const parts = path.split(/[/\\]/);
   return parts[parts.length - 1] || path;
+}
+
+/** The format actually used to render this tab (override beats detection). */
+function effectiveFormat(t: Tab): Format {
+  return t.forcedFormat ?? t.format;
 }
 
 export class TabManager {
@@ -60,6 +64,19 @@ export class TabManager {
   getActiveMode(): "rendered" | "raw" | undefined {
     return this.active()?.mode;
   }
+  getActiveFormat(): Format | undefined {
+    const t = this.active();
+    return t ? effectiveFormat(t) : undefined;
+  }
+
+  setActiveForcedFormat(format: Format): void {
+    const t = this.active();
+    if (!t) return;
+    t.forcedFormat = format;
+    t.mode = format === "markdown" ? "rendered" : t.mode;
+    this.repaint(false);
+    this.hooks.onChange();
+  }
 
   /** Open a file in a new tab, or activate (and refresh) an already-open one. */
   openOrActivate(path: string, content: string): void {
@@ -69,11 +86,13 @@ export class TabManager {
       this.activate(existing);
       return;
     }
+    const format = detectFormat(path);
     this.tabs.push({
       path,
       title: basename(path),
       content,
-      mode: isMarkdownPath(path) ? "rendered" : "raw",
+      format,
+      mode: format === "markdown" ? "rendered" : "raw",
       scrollTop: 0,
     });
     this.activate(this.tabs.length - 1);
@@ -86,7 +105,9 @@ export class TabManager {
     t.path = path;
     t.title = basename(path);
     t.content = content;
-    t.mode = "rendered";
+    t.format = detectFormat(path);
+    t.forcedFormat = undefined;
+    t.mode = t.format === "markdown" ? "rendered" : "raw";
     t.scrollTop = 0;
     this.repaint(true);
     this.renderTabbar();
@@ -159,15 +180,9 @@ export class TabManager {
 
   private repaint(restoreScroll: boolean): void {
     const t = this.active();
-    if (!t) {
-      this.content.replaceChildren();
-      return;
-    }
+    if (!t) { this.content.replaceChildren(); return; }
     if (t.mode === "rendered") {
-      this.content.innerHTML = `<article class="doc">${renderMarkdown(
-        t.content
-      )}</article>`;
-      void runPostRender(this.content, this.theme);
+      getRenderer(effectiveFormat(t)).render(t.content, this.content, { theme: this.theme });
     } else {
       const pre = document.createElement("pre");
       pre.className = "raw";

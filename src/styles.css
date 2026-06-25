@@ -339,7 +339,7 @@ body {
 }
 .doc .ctab {
   border-collapse: collapse;
-  width: auto;
+  width: 100%; /* so a highlighted line spans the full block width */
 }
 .doc .ctab td {
   padding: 0;

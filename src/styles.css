@@ -790,6 +790,96 @@ mark.search-current { background: #f59e0b; }
 #content[data-theme="dark"] mark.search-hit { background: #7c5b16; color: #fff; }
 #content[data-theme="dark"] mark.search-current { background: #b8860b; }
 
+/* ---- Log renderer ---- */
+.log {
+  font-family: var(--mono);
+  font-size: var(--font-size);
+  line-height: 1.55;
+  text-align: left;
+  width: 100%;
+}
+
+.log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 1px 4px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.06);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-gutter {
+  flex: 0 0 3.5ch;
+  text-align: right;
+  color: #bbb;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-msg {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Level colors — light theme */
+.lvl-error .log-msg { color: #d32f2f; font-weight: 600; }
+.lvl-warn  .log-msg { color: #e67700; }
+.lvl-info  .log-msg { color: inherit; }
+.lvl-debug .log-msg { color: #888; }
+.lvl-none  .log-msg { color: inherit; }
+
+/* JSON toggle button */
+.log-json-toggle {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 11px;
+  font-family: var(--mono);
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: #777;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.log-json-toggle:hover {
+  background: rgba(127, 127, 127, 0.12);
+  color: #444;
+}
+.log-json-toggle.open {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Expanded JSON tree panel */
+.log-json {
+  padding: 4px 4px 4px 3.5ch;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.1);
+}
+
+/* Dark theme overrides */
+#content[data-theme="dark"] .log-gutter {
+  color: #555;
+}
+#content[data-theme="dark"] .lvl-error .log-msg { color: #ff6b6b; }
+#content[data-theme="dark"] .lvl-warn  .log-msg { color: #ffa94d; }
+#content[data-theme="dark"] .lvl-debug .log-msg { color: #999; }
+#content[data-theme="dark"] .log-json-toggle {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #aaa;
+}
+#content[data-theme="dark"] .log-json-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ddd;
+}
+#content[data-theme="dark"] .log-line {
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+
 /* ---- Browser print / PDF fallback ---- */
 @media print {
   #toolbar,
@@ -826,5 +916,9 @@ mark.search-current { background: #f59e0b; }
     background: none !important;
     border-bottom: none !important;
     padding-left: 0 !important;
+  }
+  /* Keep log level colors; hide JSON toggle buttons. */
+  .log-json-toggle {
+    display: none !important;
   }
 }

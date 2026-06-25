@@ -87,7 +87,7 @@ export class TabManager {
     if (!t) return;
     t.forcedFormat = format;
     t.forcedLang = lang;
-    t.mode = (format === "text" || format === "log") ? "raw" : "rendered";
+    t.mode = format === "text" ? "raw" : "rendered";
     this.repaint(false);
     this.hooks.onChange();
   }
@@ -106,7 +106,7 @@ export class TabManager {
       title: basename(path),
       content,
       format,
-      mode: (format === "text" || format === "log") ? "raw" : "rendered",
+      mode: format === "text" ? "raw" : "rendered",
       scrollTop: 0,
     });
     this.activate(this.tabs.length - 1);
@@ -122,7 +122,7 @@ export class TabManager {
     t.format = detectFormat(path);
     t.forcedFormat = undefined;
     t.forcedLang = undefined;
-    t.mode = (t.format === "text" || t.format === "log") ? "raw" : "rendered";
+    t.mode = t.format === "text" ? "raw" : "rendered";
     t.scrollTop = 0;
     this.repaint(true);
     this.renderTabbar();

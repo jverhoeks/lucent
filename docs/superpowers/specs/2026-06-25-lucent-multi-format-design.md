@@ -227,6 +227,25 @@ for structured data.
 
 ## Feature C: Logs (#3)
 
+### Input sources
+
+A log view can be fed from two sources, both consumed by the same windowed
+renderer + `LogSearchProvider`:
+
+1. **A file on disk** — the primary source; Rust tails/follows it (below).
+2. **Piped stdin** — `tail -f app.log | lucent`, `kubectl logs -f … | lucent`,
+   `journalctl -f | lucent`, etc. When Lucent is launched from a shell with a
+   **non-TTY stdin** (detected via `std::io::IsTerminal` in the Rust entrypoint),
+   a **background thread** reads stdin line-by-line and streams lines to the
+   frontend as a synthetic "piped input" log tab with follow enabled. The read is
+   off the UI thread, so the webview event loop is unaffected. Lines accumulate in
+   an in-memory **ring buffer** (bounded; oldest dropped past a cap) rather than a
+   file index, but expose the same window/search interface.
+
+   *Caveat:* stdin piping only applies when launched from a terminal. A macOS
+   `.app` launched by double-click / file association has no stdin pipe and uses
+   the file-tail path. This is complementary, not a replacement.
+
 ### Backend (Rust)
 
 Extend the filesystem layer to stream and tail:

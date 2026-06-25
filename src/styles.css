@@ -296,6 +296,21 @@ body {
 #content[data-theme="dark"] .doc .code-label {
   color: #aaa;
 }
+#content[data-theme="dark"] .doc .code-block {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+#content[data-theme="dark"] .doc .code-header {
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+#content[data-theme="dark"] .doc .code-block.line-numbers td.ln {
+  color: #6e7681;
+  background: #161b22;
+  border-right-color: rgba(255, 255, 255, 0.12);
+}
+#content[data-theme="dark"] .doc .code-block.line-numbers td.ln:hover {
+  color: #c9d1d9;
+}
 .doc .code-actions {
   display: flex;
   gap: 2px;

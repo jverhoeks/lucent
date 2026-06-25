@@ -135,6 +135,11 @@ export class TabManager {
     this.hooks.onChange();
   }
 
+  /** Re-render the active tab (e.g. after a theme change so Mermaid re-themes). */
+  rerenderActive(): void {
+    this.repaint(false);
+  }
+
   toggleMode(): void {
     const t = this.active();
     if (!t) return;

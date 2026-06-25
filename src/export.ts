@@ -4,7 +4,8 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import appCss from "./styles.css?inline";
 import hljsCss from "highlight.js/styles/github.css?inline";
 import katex from "katex";
-import { renderMarkdown, runPostRender } from "./render";
+import { renderMarkdown, runPostRender, applyCodeTheme } from "./render";
+import type { Theme } from "./types";
 
 // KaTeX glyph fonts aren't system fonts, so the exported HTML links the
 // CDN-hosted stylesheet (which serves its own fonts) rather than inlining CSS
@@ -102,13 +103,15 @@ export async function exportPdf(rawText: string): Promise<void> {
   const dest = await save({ filters: [{ name: "PDF", extensions: ["pdf"] }] });
   if (!dest) return;
 
+  // Capture on the white A4 canvas with light code (clean on paper), then restore.
+  const currentTheme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
+  applyCodeTheme("light");
   document.body.classList.add("exporting");
   try {
     await nextFrame();
     await nextFrame();
     await invoke("export_pdf_native", { dest });
   } catch (e) {
-    document.body.classList.remove("exporting");
     if (String(e).includes("unsupported_platform")) {
       await exportPdfViaBrowser(rawText);
       return;
@@ -116,5 +119,6 @@ export async function exportPdf(rawText: string): Promise<void> {
     throw e;
   } finally {
     document.body.classList.remove("exporting");
+    applyCodeTheme(currentTheme);
   }
 }

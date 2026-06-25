@@ -8,7 +8,22 @@ import anchor from "markdown-it-anchor";
 import container from "markdown-it-container";
 import katex from "@vscode/markdown-it-katex";
 import mermaid from "mermaid";
+import hljsLight from "highlight.js/styles/github.css?inline";
+import hljsDark from "highlight.js/styles/github-dark.css?inline";
 import type { Theme } from "./types";
+
+let hljsStyleEl: HTMLStyleElement | null = null;
+
+/** Swap the highlight.js color theme to match the app theme (dark code in dark mode). */
+export function applyCodeTheme(theme: Theme): void {
+  if (typeof document === "undefined") return;
+  if (!hljsStyleEl) {
+    hljsStyleEl = document.createElement("style");
+    hljsStyleEl.id = "hljs-theme";
+    document.head.appendChild(hljsStyleEl);
+  }
+  hljsStyleEl.textContent = theme === "dark" ? hljsDark : hljsLight;
+}
 
 /** Parse a fence info string into a language and an optional filename label.
  *  Supported: `lang`, `lang title="name"`, `lang title=name`, `lang:name`. */

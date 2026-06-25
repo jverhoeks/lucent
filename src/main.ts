@@ -1,5 +1,4 @@
 import "./styles.css";
-import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -7,6 +6,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { TabManager } from "./tabs";
+import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
 import { exportHtml, exportPdf } from "./export";
@@ -25,6 +25,7 @@ const manager = new TabManager(tabbar, content, settings, {
   onTabClosed: (path) => void invoke("unwatch_file", { path }),
   onCloseAll: () => void invoke("unwatch_all"),
 });
+applyCodeTheme(settings.theme);
 
 function refreshToolbar() {
   const has = manager.count() > 0;
@@ -149,6 +150,10 @@ function updateStyle(patch: Partial<StyleSettings>) {
   manager.applyStyle(settings);
   saveSettings(settings);
   refreshToolbar();
+  if ("theme" in patch) {
+    applyCodeTheme(settings.theme);
+    manager.rerenderActive(); // re-theme Mermaid diagrams
+  }
 }
 selFont.addEventListener("change", () =>
   updateStyle({ fontFamily: selFont.value as StyleSettings["fontFamily"] })

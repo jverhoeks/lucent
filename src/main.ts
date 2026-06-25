@@ -132,8 +132,8 @@ btn("btn-search").addEventListener("click", () => {
 
 window.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
-    e.preventDefault();
     if (manager.count() === 0) return;
+    e.preventDefault();
     searchBar.open();
     rebindSearch();
   }

@@ -633,6 +633,11 @@ body:has(#content[data-theme="dark"]) #search-input {
 body:has(#content[data-theme="dark"]) #search-count {
   color: #aaa;
 }
+/* Non-toggled nav buttons (▲ ▼ ✕) need light text in dark mode; toggled
+   buttons keep their explicit white-on-accent, so exclude them here. */
+body:has(#content[data-theme="dark"]) #searchbar button:not(.toggled) {
+  color: #e6e6e6;
+}
 
 /* ---- Search highlights ---- */
 mark.search-hit { background: #fde68a; color: inherit; border-radius: 2px; }

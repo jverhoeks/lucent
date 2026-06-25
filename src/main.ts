@@ -16,6 +16,7 @@ import { DomSearchProvider } from "./search/dom-provider";
 import { TreeSearchProvider } from "./search/tree-provider";
 import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
+import { initStdin } from "./stdin";
 
 const tabbar = document.getElementById("tabbar")!;
 const tabstrip = document.getElementById("tabstrip")!;
@@ -46,6 +47,7 @@ const manager = new TabManager(tabbar, content, settings, {
   onTabClosed: (path) => void invoke("unwatch_file", { path }),
   onCloseAll: () => void invoke("unwatch_all"),
 });
+initStdin(manager);
 applyCodeTheme(settings.theme);
 
 function refreshToolbar() {

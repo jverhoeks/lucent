@@ -1,0 +1,9 @@
+Jun 25 14:30:12 app-server kernel: [hardware] eth0: Link up
+Jun 25 14:30:45 app-server systemd: Started User Manager for UID 1000.
+Jun 25 14:31:22 app-server sshd[1234]: Accepted publickey for admin from 192.168.1.50 port 54321 ssh2
+Jun 25 14:32:10 app-server warning: High temperature detected on CPU core 3: 89°C
+Jun 25 14:32:55 app-server error: Failed to establish connection to database host 192.168.1.200:5432
+Jun 25 14:33:30 app-server cron[5678]: error running job: /usr/local/bin/backup.sh exited with status 1
+Jun 25 14:34:05 app-server kernel: WARNING: Out of memory: Kill process mysqld (2048) score 412
+Jun 25 14:35:20 app-server systemd: Unit nginx.service entered failed state.
+Jun 25 14:36:10 app-server err: Disk space critical on /var (98% used)

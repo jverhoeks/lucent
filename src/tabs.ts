@@ -73,7 +73,7 @@ export class TabManager {
     const t = this.active();
     if (!t) return;
     t.forcedFormat = format;
-    t.mode = format === "markdown" ? "rendered" : t.mode;
+    t.mode = format === "markdown" ? "rendered" : "raw";
     this.repaint(false);
     this.hooks.onChange();
   }

@@ -17,7 +17,15 @@ export const dataRenderer: Renderer = {
     currentTree = null;
     container.replaceChildren();
 
-    const lang = (path && dataLangOf(path)) || "json";
+    const lang = path ? dataLangOf(path) : null;
+    if (!lang) {
+      // No recognised data extension (e.g. forced via "View as…" onto an
+      // unknown path) — show raw rather than guessing a parser and emitting a
+      // misleading "Parse error".
+      container.appendChild(notice("Could not detect a data format — showing raw text."));
+      container.appendChild(rawPre(source));
+      return;
+    }
     if (source.length > SIZE_CAP_BYTES) {
       container.appendChild(notice("File too large for tree view — showing raw text."));
       container.appendChild(rawPre(source));

@@ -1,6 +1,7 @@
 mod commands;
 mod error;
 mod pdf;
+mod stdin;
 mod watcher;
 
 use std::path::Path;
@@ -41,6 +42,7 @@ pub fn run() {
         .manage(watcher::WatchState::default())
         .setup(|app| {
             app.manage(StartupFiles(collect_startup_files()));
+            stdin::spawn_reader(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

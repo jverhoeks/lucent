@@ -12,6 +12,7 @@ export interface Tab {
   forcedLang?: DataLang;   // "View as data:lang" override
   mode: "rendered" | "raw";
   scrollTop: number;
+  follow?: boolean;
 }
 
 export interface TabHooks {
@@ -184,6 +185,15 @@ export class TabManager {
     this.hooks.onChange();
   }
 
+  isFollowing(): boolean { return !!this.active()?.follow; }
+  toggleFollow(): void {
+    const t = this.active();
+    if (!t) return;
+    t.follow = !t.follow;
+    if (t.follow) this.content.scrollTop = this.content.scrollHeight;
+    this.hooks.onChange();
+  }
+
   applyStyle(s: StyleSettings): void {
     this.theme = s.theme;
     const el = this.content;
@@ -215,6 +225,7 @@ export class TabManager {
       this.content.replaceChildren(pre);
     }
     if (restoreScroll) this.content.scrollTop = t.scrollTop;
+    if (t.follow && effectiveFormat(t) === "log") this.content.scrollTop = this.content.scrollHeight;
   }
 
   private renderTabbar(): void {

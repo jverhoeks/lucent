@@ -52,9 +52,61 @@ pub fn is_viewable(path: &Path) -> bool {
     )
 }
 
+/// The filename portion of a path string (handles `/` and `\`).
+fn file_basename(p: &str) -> &str {
+    p.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(p)
+}
+
+/// Compare two names the way macOS Finder's "by name" sort does (approximately):
+/// case-insensitive with natural, numeric-aware ordering — so `file2` sorts
+/// before `file10`, and `README` sorts among the lowercase names rather than
+/// before them (which a raw byte sort would get wrong).
+fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let a = a.to_lowercase();
+    let b = b.to_lowercase();
+    let mut ai = a.chars().peekable();
+    let mut bi = b.chars().peekable();
+    loop {
+        match (ai.peek().copied(), bi.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) => {
+                if x.is_ascii_digit() && y.is_ascii_digit() {
+                    let mut an = String::new();
+                    while let Some(&c) = ai.peek() {
+                        if c.is_ascii_digit() { an.push(c); ai.next(); } else { break; }
+                    }
+                    let mut bn = String::new();
+                    while let Some(&c) = bi.peek() {
+                        if c.is_ascii_digit() { bn.push(c); bi.next(); } else { break; }
+                    }
+                    // Compare numerically: ignore leading zeros, then by length, then digits.
+                    let at = an.trim_start_matches('0');
+                    let bt = bn.trim_start_matches('0');
+                    let ord = at.len().cmp(&bt.len()).then_with(|| at.cmp(bt));
+                    if ord != Ordering::Equal {
+                        return ord;
+                    }
+                    // Numeric tie (e.g. "01" vs "1"): fall through to keep comparing.
+                } else {
+                    let ord = x.cmp(&y);
+                    if ord != Ordering::Equal {
+                        return ord;
+                    }
+                    ai.next();
+                    bi.next();
+                }
+            }
+        }
+    }
+}
+
 /// Sorted absolute paths of viewable files in the same directory as `path`
 /// (including `path` itself). Used by the "next file in directory" navigation,
-/// which cycles through every file type Lucent can open.
+/// which cycles through every file type Lucent can open. Order matches Finder's
+/// case-insensitive natural sort (see `natural_cmp`).
 #[tauri::command]
 pub fn list_sibling_viewable(path: String) -> Result<Vec<String>, AppError> {
     let p = Path::new(&path);
@@ -67,7 +119,7 @@ pub fn list_sibling_viewable(path: String) -> Result<Vec<String>, AppError> {
         .filter(|p| p.is_file() && is_viewable(p))
         .map(|p| p.to_string_lossy().to_string())
         .collect();
-    files.sort();
+    files.sort_by(|a, b| natural_cmp(file_basename(a), file_basename(b)));
     Ok(files)
 }
 
@@ -215,5 +267,20 @@ mod tests {
         assert!(list[2].ends_with("c.json"));
         assert!(list[3].ends_with("note.txt"));
         assert!(!list.iter().any(|f| f.ends_with(".png")));
+    }
+
+    #[test]
+    fn natural_cmp_is_case_insensitive_and_numeric() {
+        let mut v = vec![
+            "file10.md", "File2.md", "apple.txt", "Banana.txt", "README.md", "10.log", "2.log",
+        ];
+        v.sort_by(|a, b| natural_cmp(a, b));
+        // Numeric-aware (2 before 10), case-insensitive (Banana among a/f, README among r).
+        assert_eq!(
+            v,
+            vec![
+                "2.log", "10.log", "apple.txt", "Banana.txt", "File2.md", "file10.md", "README.md",
+            ]
+        );
     }
 }

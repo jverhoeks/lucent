@@ -3,8 +3,14 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import appCss from "./styles.css?inline";
 import hljsCss from "highlight.js/styles/github.css?inline";
-import katexCss from "katex/dist/katex.min.css?inline";
+import katex from "katex";
 import { renderMarkdown, runPostRender } from "./render";
+
+// KaTeX glyph fonts aren't system fonts, so the exported HTML links the
+// CDN-hosted stylesheet (which serves its own fonts) rather than inlining CSS
+// whose relative font URLs would 404. Version tracks the installed package.
+const KATEX_VERSION = (katex as { version?: string }).version ?? "0.17.0";
+const KATEX_CDN = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css`;
 
 /**
  * Render Markdown to fully-resolved HTML for export: run the same pipeline plus
@@ -35,8 +41,8 @@ export function buildStandaloneHtml(bodyHtml: string, autoPrint = false): string
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Markdown export</title>
-<style>${katexCss}
-${hljsCss}
+<link rel="stylesheet" href="${KATEX_CDN}" crossorigin="anonymous">
+<style>${hljsCss}
 ${appCss}</style>
 ${printScript}
 </head>

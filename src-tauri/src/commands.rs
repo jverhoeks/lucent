@@ -37,6 +37,19 @@ pub fn is_markdown(path: &Path) -> bool {
     )
 }
 
+/// True if a path is something this viewer is allowed to open (markdown or
+/// plain text). Used to gate relative-link navigation so a crafted link can't
+/// coax the app into reading arbitrary files (e.g. keys, /etc/passwd).
+pub fn is_viewable(path: &Path) -> bool {
+    if is_markdown(path) {
+        return true;
+    }
+    matches!(
+        path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()),
+        Some(ref e) if e == "txt" || e == "log" || e == "text"
+    )
+}
+
 /// Sorted absolute paths of Markdown files in the same directory as `path`
 /// (including `path` itself). Used by the "next file in directory" navigation.
 #[tauri::command]
@@ -68,13 +81,27 @@ pub fn write_temp_file(filename: String, contents: String) -> Result<String, App
 /// (`base`) to an absolute path. Used for clicking relative `.md` links.
 #[tauri::command]
 pub fn resolve_sibling(base: String, rel: String) -> Result<String, AppError> {
+    // Reject absolute targets outright; relative links must stay relative.
+    if Path::new(&rel).is_absolute() {
+        return Err(AppError::new(
+            ErrorKind::Io,
+            "Absolute link targets are not allowed",
+        ));
+    }
     let base_dir = Path::new(&base)
         .parent()
         .ok_or_else(|| AppError::new(ErrorKind::Io, "No parent directory"))?;
-    let joined = base_dir.join(rel);
-    std::fs::canonicalize(&joined)
-        .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| AppError::new(ErrorKind::NotFound, e.to_string()))
+    let target = std::fs::canonicalize(base_dir.join(rel))
+        .map_err(|e| AppError::new(ErrorKind::NotFound, e.to_string()))?;
+    // Only allow opening markdown/text via links — a crafted link must not be
+    // able to read arbitrary files (keys, system files, etc.).
+    if !is_viewable(&target) {
+        return Err(AppError::new(
+            ErrorKind::Io,
+            "Only markdown/text links can be opened",
+        ));
+    }
+    Ok(target.to_string_lossy().to_string())
 }
 
 #[cfg(test)]
@@ -133,9 +160,18 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.md"), "a").unwrap();
         std::fs::write(dir.join("b.md"), "b").unwrap();
+        std::fs::write(dir.join("secret.key"), "shh").unwrap();
         let base = dir.join("a.md").to_string_lossy().to_string();
-        let resolved = resolve_sibling(base, "b.md".into()).unwrap();
+
+        // Markdown sibling resolves.
+        let resolved = resolve_sibling(base.clone(), "b.md".into()).unwrap();
         assert!(resolved.ends_with("b.md"));
+
+        // Non-viewable extensions are refused (no arbitrary file reads).
+        assert!(resolve_sibling(base.clone(), "secret.key".into()).is_err());
+
+        // Absolute targets are refused.
+        assert!(resolve_sibling(base, "/etc/passwd".into()).is_err());
     }
 
     #[test]

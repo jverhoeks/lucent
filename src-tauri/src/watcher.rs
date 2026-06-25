@@ -1,12 +1,21 @@
 use crate::commands::{read_file, FilePayload};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
 /// Pure, testable: read the file fresh; None if it can't be read (e.g. removed).
 pub fn reload_payload(path: &str) -> Option<FilePayload> {
     read_file(path.to_string()).ok()
+}
+
+/// Pure, testable: does this filesystem event concern the file we care about?
+///
+/// We watch the *parent directory* (not the file) so that atomic saves
+/// (write-temp-then-rename, which many editors use) are still detected — those
+/// arrive as create/rename events on the target path within the directory.
+pub fn event_targets(event_paths: &[PathBuf], target: &Path) -> bool {
+    event_paths.iter().any(|p| p == target)
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -22,11 +31,23 @@ pub struct WatchState {
 
 #[tauri::command]
 pub fn watch_file(path: String, state: State<WatchState>, app: AppHandle) -> Result<(), String> {
-    let watch_path = PathBuf::from(&path);
+    let target = PathBuf::from(&path);
+    // Watch the containing directory so atomic saves (rename onto the path) are
+    // caught; fall back to watching the file itself if it has no parent.
+    let watch_root = target
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| target.clone());
+
     let app2 = app.clone();
     let path2 = path.clone();
+    let target2 = target.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
+            if !event_targets(&event.paths, &target2) {
+                return;
+            }
             match event.kind {
                 EventKind::Modify(_) | EventKind::Create(_) => {
                     if let Some(payload) = reload_payload(&path2) {
@@ -42,7 +63,7 @@ pub fn watch_file(path: String, state: State<WatchState>, app: AppHandle) -> Res
     })
     .map_err(|e| e.to_string())?;
     watcher
-        .watch(&watch_path, RecursiveMode::NonRecursive)
+        .watch(&watch_root, RecursiveMode::NonRecursive)
         .map_err(|e| e.to_string())?;
     // Replace any prior watcher (dropping it stops the old watch).
     *state.watcher.lock().unwrap() = Some(watcher);
@@ -68,5 +89,22 @@ mod tests {
     #[test]
     fn reload_none_when_missing() {
         assert!(reload_payload("/no/such/watch.md").is_none());
+    }
+
+    #[test]
+    fn event_targets_matches_only_the_watched_file() {
+        let target = PathBuf::from("/tmp/dir/note.md");
+        assert!(event_targets(&[PathBuf::from("/tmp/dir/note.md")], &target));
+        // Sibling files in the same watched directory are ignored.
+        assert!(!event_targets(&[PathBuf::from("/tmp/dir/other.md")], &target));
+        // An atomic-save temp file is ignored; the final rename onto the target matches.
+        assert!(!event_targets(&[PathBuf::from("/tmp/dir/.note.md.tmp")], &target));
+        assert!(event_targets(
+            &[
+                PathBuf::from("/tmp/dir/.note.md.tmp"),
+                PathBuf::from("/tmp/dir/note.md")
+            ],
+            &target
+        ));
     }
 }

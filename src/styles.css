@@ -1,0 +1,202 @@
+:root {
+  --font-size: 17px;
+  --max-width: 74ch;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--sans);
+}
+
+/* ---- Toolbar ---- */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  background: #f6f6f6;
+  flex-wrap: wrap;
+  user-select: none;
+}
+
+#toolbar button,
+#toolbar select {
+  font: inherit;
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+#toolbar button:hover {
+  background: #eee;
+}
+
+/* ---- Content shell ---- */
+#content {
+  flex: 1;
+  overflow: auto;
+  padding: 32px 24px;
+}
+
+/* The content area carries theme + font presets via data attributes. */
+#content[data-theme="light"] {
+  background: #ffffff;
+  color: #1a1a1a;
+}
+#content[data-theme="sepia"] {
+  background: #f4ecd8;
+  color: #433422;
+}
+#content[data-theme="dark"] {
+  background: #1e1e1e;
+  color: #e6e6e6;
+}
+
+#content[data-font="sans"] .doc,
+#content[data-font="sans"] .raw {
+  font-family: var(--sans);
+}
+#content[data-font="serif"] .doc {
+  font-family: var(--serif);
+}
+#content[data-font="mono"] .doc,
+#content[data-font="mono"] .raw {
+  font-family: var(--mono);
+}
+
+/* ---- Rendered document ---- */
+.doc {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  font-size: var(--font-size);
+  line-height: 1.6;
+}
+
+.doc h1,
+.doc h2,
+.doc h3 {
+  line-height: 1.25;
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+}
+.doc h1 {
+  font-size: 1.9em;
+}
+.doc h2 {
+  font-size: 1.5em;
+}
+.doc p,
+.doc ul,
+.doc ol,
+.doc blockquote,
+.doc table,
+.doc pre {
+  margin: 0 0 1em;
+}
+
+.doc a {
+  color: #2563eb;
+}
+#content[data-theme="dark"] .doc a {
+  color: #6ea8fe;
+}
+
+.doc blockquote {
+  margin-left: 0;
+  padding: 0.2em 1em;
+  border-left: 4px solid rgba(0, 0, 0, 0.2);
+  color: inherit;
+  opacity: 0.85;
+}
+
+.doc code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: rgba(127, 127, 127, 0.15);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+}
+
+.doc pre.hljs {
+  padding: 14px 16px;
+  border-radius: 8px;
+  overflow: auto;
+}
+.doc pre.hljs code {
+  background: none;
+  padding: 0;
+}
+
+.doc table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.doc th,
+.doc td {
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.doc ul.contains-task-list {
+  list-style: none;
+  padding-left: 1em;
+}
+
+/* ---- Raw view ---- */
+.raw {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  font-family: var(--mono);
+  font-size: var(--font-size);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Banner ---- */
+#banner {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #b91c1c;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  max-width: 80%;
+}
+
+/* ---- Print / PDF export ---- */
+@media print {
+  #toolbar,
+  #banner {
+    display: none !important;
+  }
+  #content {
+    overflow: visible;
+    padding: 0;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .doc {
+    max-width: none;
+  }
+}

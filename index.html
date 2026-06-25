@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Markdown Viewer</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <header id="toolbar">
+      <button id="btn-open">Open</button>
+      <button id="btn-toggle">Raw / Rendered</button>
+      <select id="sel-font" title="Font">
+        <option value="sans">Sans</option>
+        <option value="serif">Serif</option>
+        <option value="mono">Mono</option>
+      </select>
+      <input id="inp-size" type="range" min="14" max="22" title="Font size" />
+      <select id="sel-theme" title="Theme">
+        <option value="light">Light</option>
+        <option value="sepia">Sepia</option>
+        <option value="dark">Dark</option>
+      </select>
+      <button id="btn-export-html">Export HTML</button>
+      <button id="btn-export-pdf">Export PDF</button>
+      <button id="btn-copy-md">Copy MD</button>
+      <button id="btn-copy-rich">Copy Rich</button>
+    </header>
+    <main id="content" data-theme="light" data-font="sans"></main>
+    <div id="banner" hidden></div>
+  </body>
+</html>

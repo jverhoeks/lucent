@@ -1,5 +1,6 @@
+import hljs from "highlight.js";
 import { renderMarkdown } from "./render";
-import { detectFormat } from "./format";
+import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { StyleSettings, Theme, Format } from "./types";
 
@@ -182,11 +183,17 @@ export class TabManager {
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
     if (t.mode === "rendered") {
-      getRenderer(effectiveFormat(t)).render(t.content, this.content, { theme: this.theme });
+      getRenderer(effectiveFormat(t)).render(t.content, this.content, { theme: this.theme }, t.path);
     } else {
       const pre = document.createElement("pre");
       pre.className = "raw";
-      pre.textContent = t.content;
+      const lang = effectiveFormat(t) === "data" ? dataLangOf(t.path) : null;
+      if (lang && hljs.getLanguage(lang)) {
+        pre.classList.add("hljs");
+        pre.innerHTML = hljs.highlight(t.content, { language: lang }).value; // hljs output is escaped/safe
+      } else {
+        pre.textContent = t.content;
+      }
       this.content.replaceChildren(pre);
     }
     if (restoreScroll) this.content.scrollTop = t.scrollTop;

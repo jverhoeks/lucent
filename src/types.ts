@@ -58,7 +58,7 @@ export interface RenderCtx {
 export interface Renderer {
   format: Format;
   /** Render `source` into `container` (rendered mode). */
-  render(source: string, container: HTMLElement, ctx: RenderCtx): void | Promise<void>;
+  render(source: string, container: HTMLElement, ctx: RenderCtx, path?: string): void | Promise<void>;
 }
 
 export type DataScalarType = "string" | "number" | "boolean" | "null";

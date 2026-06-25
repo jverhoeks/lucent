@@ -10,26 +10,32 @@ import katex from "@vscode/markdown-it-katex";
 import mermaid from "mermaid";
 import type { Theme } from "./types";
 
+/** Parse a fence info string into a language and an optional filename label.
+ *  Supported: `lang`, `lang title="name"`, `lang title=name`, `lang:name`. */
+function parseInfo(info: string): { lang: string; filename: string } {
+  const trimmed = info.trim();
+  const titleMatch = trimmed.match(/title="([^"]+)"/) || trimmed.match(/title=(\S+)/);
+  let filename = titleMatch ? titleMatch[1] : "";
+  let lang = trimmed.split(/\s+/)[0] || "";
+  if (lang.includes(":")) {
+    const [l, f] = lang.split(":");
+    lang = l;
+    if (!filename && f) filename = f;
+  }
+  return { lang, filename };
+}
+
+/** Right-aligned line-number text for the gutter (always emitted; shown via CSS). */
+function lineGutter(code: string): string {
+  const lines = code.replace(/\n$/, "").split("\n");
+  return lines.map((_, i) => String(i + 1)).join("\n");
+}
+
 function createRenderer(): MarkdownIt {
   const md: MarkdownIt = new MarkdownIt({
     html: false, // no raw HTML passthrough (sanitization by exclusion)
     linkify: true,
     typographer: true,
-    highlight(code: string, lang: string): string {
-      // Mermaid fences are handed to the post-render pass as plain text.
-      if (lang === "mermaid") {
-        return `<pre class="mermaid">${md.utils.escapeHtml(code)}</pre>`;
-      }
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          const out = hljs.highlight(code, { language: lang }).value;
-          return `<pre class="hljs"><code class="language-${lang}">${out}</code></pre>`;
-        } catch {
-          /* fall through to escaped plain text */
-        }
-      }
-      return `<pre class="hljs"><code>${md.utils.escapeHtml(code)}</code></pre>`;
-    },
   });
 
   md.use(taskLists, { enabled: true, label: true })
@@ -41,6 +47,39 @@ function createRenderer(): MarkdownIt {
     .use(container, "note")
     .use(container, "warning")
     .use(container, "tip");
+
+  const highlightInner = (code: string, lang: string): string => {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return hljs.highlight(code, { language: lang }).value;
+      } catch {
+        /* fall through */
+      }
+    }
+    return md.utils.escapeHtml(code);
+  };
+
+  // Custom fence: mermaid → post-render block; everything else → a code block
+  // with a header (filename/language + copy button) and a line-number gutter.
+  md.renderer.rules.fence = (tokens, idx) => {
+    const token = tokens[idx];
+    const code = token.content;
+    const { lang, filename } = parseInfo(token.info);
+
+    if (lang === "mermaid") {
+      return `<pre class="mermaid">${md.utils.escapeHtml(code)}</pre>`;
+    }
+
+    const label = filename || lang;
+    const labelHtml = `<span class="code-label">${md.utils.escapeHtml(label)}</span>`;
+    const header = `<div class="code-header">${labelHtml}<button class="code-copy" type="button" title="Copy source" aria-label="Copy source">📋</button></div>`;
+    const gutter = `<span class="ln-gutter" aria-hidden="true">${lineGutter(code)}</span>`;
+    const langClass = lang ? ` class="language-${lang}"` : "";
+    return `<div class="code-block">${header}<pre class="hljs">${gutter}<code${langClass}>${highlightInner(
+      code,
+      lang
+    )}</code></pre></div>\n`;
+  };
 
   return md;
 }

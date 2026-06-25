@@ -150,6 +150,7 @@ export class TabManager {
     el.dataset.font = s.fontFamily;
     el.style.setProperty("--font-size", `${s.fontSizePx}px`);
     el.style.setProperty("--max-width", `${s.maxWidthCh}ch`);
+    el.classList.toggle("line-numbers", s.lineNumbers);
   }
 
   private repaint(restoreScroll: boolean): void {
@@ -196,6 +197,5 @@ export class TabManager {
       tab.append(label, close);
       this.tabbar.appendChild(tab);
     });
-    this.tabbar.hidden = this.tabs.length === 0;
   }
 }

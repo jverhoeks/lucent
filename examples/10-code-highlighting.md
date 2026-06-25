@@ -3,6 +3,21 @@
 Fenced code blocks are highlighted by language (highlight.js). Back to the
 [index](README.md).
 
+Code blocks show a header with the **language** (or a **filename** if you supply
+one) and a **copy** button. Add a filename with `title="…"` or `lang:filename`:
+
+```rust title="src/main.rs"
+fn main() {
+    println!("named via title=");
+}
+```
+
+```python:scripts/build.py
+print("named via lang:filename")
+```
+
+Toggle the **# Lines** button in the toolbar to show line numbers.
+
 ## Rust
 
 ```rust

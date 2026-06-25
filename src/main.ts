@@ -13,6 +13,7 @@ import { exportHtml, exportPdf } from "./export";
 import { FilePayload, AppError, StyleSettings } from "./types";
 
 const tabbar = document.getElementById("tabbar")!;
+const tabstrip = document.getElementById("tabstrip")!;
 const content = document.getElementById("content")!;
 const banner = document.getElementById("banner")!;
 let settings: StyleSettings = loadSettings();
@@ -30,7 +31,6 @@ function refreshToolbar() {
   for (const id of [
     "btn-toggle",
     "btn-next",
-    "btn-close-all",
     "btn-export-html",
     "btn-export-pdf",
     "btn-copy-md",
@@ -38,13 +38,19 @@ function refreshToolbar() {
   ]) {
     btn(id).disabled = !has;
   }
+  tabstrip.hidden = !has;
+
   // Reflect the active tab's view mode in the toggle button.
-  const mode = manager.getActiveMode();
+  const isRaw = manager.getActiveMode() === "raw";
   const toggle = btn("btn-toggle");
-  const isRaw = mode === "raw";
-  toggle.textContent = isRaw ? "Raw" : "Rendered";
+  toggle.textContent = isRaw ? "</> Raw" : "👁 Rendered";
   toggle.classList.toggle("toggled", isRaw);
   toggle.setAttribute("aria-pressed", String(isRaw));
+
+  // Line-numbers toggle state.
+  const lines = btn("btn-lines");
+  lines.classList.toggle("toggled", settings.lineNumbers);
+  lines.setAttribute("aria-pressed", String(settings.lineNumbers));
 }
 
 function showBanner(msg: string) {
@@ -90,6 +96,7 @@ btn("btn-open").addEventListener("click", async () => {
 
 btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
 btn("btn-close-all").addEventListener("click", () => manager.closeAll());
+btn("btn-lines").addEventListener("click", () => updateStyle({ lineNumbers: !settings.lineNumbers }));
 
 btn("btn-next").addEventListener("click", async () => {
   const cur = manager.getActivePath();
@@ -126,6 +133,7 @@ function updateStyle(patch: Partial<StyleSettings>) {
   settings = { ...settings, ...patch };
   manager.applyStyle(settings);
   saveSettings(settings);
+  refreshToolbar();
 }
 selFont.addEventListener("change", () =>
   updateStyle({ fontFamily: selFont.value as StyleSettings["fontFamily"] })
@@ -140,7 +148,22 @@ selTheme.addEventListener("change", () =>
 // .md links open in a new tab. Without this, clicking a link would navigate the
 // whole webview away from the app.
 content.addEventListener("click", async (e) => {
-  const anchor = (e.target as HTMLElement).closest("a");
+  const target = e.target as HTMLElement;
+
+  // Copy-source button on a code block.
+  const copyBtn = target.closest(".code-copy");
+  if (copyBtn) {
+    const codeEl = copyBtn.closest(".code-block")?.querySelector("code");
+    if (codeEl) {
+      await navigator.clipboard.writeText(codeEl.textContent ?? "");
+      const prev = copyBtn.textContent;
+      copyBtn.textContent = "✓";
+      setTimeout(() => (copyBtn.textContent = prev), 1200);
+    }
+    return;
+  }
+
+  const anchor = target.closest("a");
   if (!anchor) return;
   const href = anchor.getAttribute("href");
   if (!href) return;

@@ -108,15 +108,37 @@ body {
   accent-color: var(--accent);
 }
 
-/* ---- Tab bar ---- */
+/* ---- Tab strip ---- */
+#tabstrip {
+  display: flex;
+  align-items: stretch;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--bar-border);
+}
 #tabbar {
   display: flex;
   align-items: stretch;
   gap: 2px;
   padding: 6px 10px 0;
-  background: var(--bar-bg);
-  border-bottom: 1px solid var(--bar-border);
+  flex: 1 1 auto;
   overflow-x: auto;
+}
+#btn-close-all {
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #777;
+  font-size: 14px;
+  line-height: 1;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+#btn-close-all:hover {
+  background: rgba(185, 28, 28, 0.1);
+  color: #b91c1c;
 }
 
 #tabbar .tab {
@@ -248,14 +270,77 @@ body {
   border-radius: 4px;
 }
 
-.doc pre.hljs {
-  padding: 14px 16px;
+.doc .code-block {
+  margin: 0 0 1em;
+  border: 1px solid rgba(127, 127, 127, 0.3);
   border-radius: 8px;
-  overflow: auto;
+  overflow: hidden;
+}
+.doc .code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  font-size: 12px;
+  background: rgba(127, 127, 127, 0.1);
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+}
+.doc .code-label {
+  font-family: var(--mono);
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#content[data-theme="dark"] .doc .code-label {
+  color: #aaa;
+}
+.doc .code-copy {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 5px;
+}
+.doc .code-copy:hover {
+  background: rgba(127, 127, 127, 0.25);
+}
+
+.doc pre.hljs {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.doc pre.hljs .ln-gutter {
+  display: none; /* shown only when #content.line-numbers */
+  flex: 0 0 auto;
+  padding: 12px 10px;
+  text-align: right;
+  color: rgba(127, 127, 127, 0.8);
+  background: rgba(127, 127, 127, 0.06);
+  border-right: 1px solid rgba(127, 127, 127, 0.2);
+  user-select: none;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+}
+#content.line-numbers .doc pre.hljs .ln-gutter {
+  display: block;
 }
 .doc pre.hljs code {
+  display: block;
+  flex: 1 1 auto;
+  padding: 12px 16px;
+  overflow-x: auto;
   background: none;
-  padding: 0;
 }
 
 .doc table {

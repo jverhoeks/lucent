@@ -41,6 +41,21 @@ describe("renderMarkdown", () => {
     const html = renderMarkdown("::: note\nheads up\n:::");
     expect(html).toContain('class="note"');
   });
+  it("adds a code header with filename and a copy button", () => {
+    const html = renderMarkdown('```js title="app.js"\nconst x = 1;\n```');
+    expect(html).toContain("code-block");
+    expect(html).toContain("code-copy");
+    expect(html).toContain("app.js");
+  });
+  it("supports the lang:filename info form", () => {
+    const html = renderMarkdown("```python:main.py\nprint(1)\n```");
+    expect(html).toContain("main.py");
+    expect(html).toContain("language-python");
+  });
+  it("emits a line-number gutter", () => {
+    const html = renderMarkdown("```\nalpha\nbeta\ngamma\n```");
+    expect(html).toContain("ln-gutter");
+  });
   it("wraps mermaid fences for the post-render pass", () => {
     const html = renderMarkdown("```mermaid\ngraph TD; A-->B;\n```");
     expect(html).toContain('<pre class="mermaid">');

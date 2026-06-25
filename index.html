@@ -10,13 +10,13 @@
   <body>
     <header id="toolbar">
       <div class="group">
-        <button id="btn-open" class="primary">Open…</button>
-        <button id="btn-next" title="Next file in folder">Next ›</button>
-        <button id="btn-close-all" title="Close all tabs">Close all</button>
+        <button id="btn-open" class="primary" title="Open file(s)">📂 Open</button>
+        <button id="btn-next" title="Next file in folder">⏭ Next</button>
       </div>
 
       <div class="group">
-        <button id="btn-toggle" title="Toggle rendered / raw">Raw</button>
+        <button id="btn-toggle" title="Toggle rendered / raw">👁 Rendered</button>
+        <button id="btn-lines" title="Toggle code line numbers"># Lines</button>
       </div>
 
       <div class="group">
@@ -36,14 +36,18 @@
       <div class="spacer"></div>
 
       <div class="group">
-        <button id="btn-copy-md" title="Copy as Markdown">Copy MD</button>
-        <button id="btn-copy-rich" title="Copy as rich text">Copy Rich</button>
-        <button id="btn-export-html" title="Export standalone HTML">HTML</button>
-        <button id="btn-export-pdf" title="Export PDF (opens in browser)">PDF</button>
+        <button id="btn-copy-md" title="Copy as Markdown">📋 MD</button>
+        <button id="btn-copy-rich" title="Copy as rich text">📋 Rich</button>
+        <button id="btn-export-html" title="Export standalone HTML">📄 HTML</button>
+        <button id="btn-export-pdf" title="Export PDF">🖨 PDF</button>
       </div>
     </header>
 
-    <nav id="tabbar" hidden></nav>
+    <div id="tabstrip" hidden>
+      <nav id="tabbar"></nav>
+      <button id="btn-close-all" title="Close all tabs" aria-label="Close all tabs">✕</button>
+    </div>
+
     <main id="content" data-theme="light" data-font="sans"></main>
     <div id="banner" hidden></div>
   </body>

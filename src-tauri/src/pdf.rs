@@ -17,6 +17,11 @@ pub async fn export_pdf_native(window: tauri::WebviewWindow, dest: String) -> Re
 
     let (tx, rx) = mpsc::channel::<Result<Vec<u8>, String>>();
 
+    // Reset zoom so the capture isn't scaled by the user's current zoom level;
+    // combined with the fixed-width `.exporting` layout this yields a consistent
+    // A4-width PDF regardless of window size.
+    let _ = window.set_zoom(1.0);
+
     window
         .with_webview(move |pw| {
             // SAFETY: `pw.inner()` is the `WKWebView` backing this window's webview,

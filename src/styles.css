@@ -489,15 +489,23 @@ body.exporting #tabstrip,
 body.exporting #banner {
   display: none !important;
 }
+/* Lay the document out on a fixed A4-width canvas (210mm @ 96dpi ≈ 794px) so the
+   captured PDF is consistent regardless of window size or zoom. */
 body.exporting {
+  width: 794px;
   height: auto;
 }
 body.exporting #content {
+  width: 794px;
   overflow: visible;
   height: auto;
-  padding: 24px 32px;
+  padding: 48px 56px;
   background: #ffffff !important;
   color: #111111 !important;
+}
+body.exporting .doc {
+  max-width: none; /* fill the page width within the margins */
+  margin: 0;
 }
 /* Native PDF capture: drop the code chrome/border but keep code + (toggled)
    line numbers. */

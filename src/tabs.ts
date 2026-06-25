@@ -202,7 +202,7 @@ export class TabManager {
     } else {
       const pre = document.createElement("pre");
       pre.className = "raw";
-      const lang = effectiveFormat(t) === "data" ? dataLangOf(t.path) : null;
+      const lang = effectiveFormat(t) === "data" ? (t.forcedLang ?? dataLangOf(t.path)) : null;
       if (lang && hljs.getLanguage(lang)) {
         pre.classList.add("hljs");
         pre.innerHTML = hljs.highlight(t.content, { language: lang }).value; // hljs output is escaped/safe

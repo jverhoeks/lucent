@@ -156,7 +156,7 @@ btn("btn-next").addEventListener("click", async () => {
   const cur = manager.getActivePath();
   if (!cur) return;
   try {
-    const siblings = await invoke<string[]>("list_sibling_markdown", { path: cur });
+    const siblings = await invoke<string[]>("list_sibling_viewable", { path: cur });
     const idx = siblings.indexOf(cur);
     if (idx < 0 || siblings.length < 2) return;
     const next = siblings[(idx + 1) % siblings.length]; // wrap around

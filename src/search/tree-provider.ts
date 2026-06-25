@@ -18,10 +18,9 @@ export class TreeSearchProvider implements SearchProvider {
   }
 
   find(q: SearchQuery): Match[] {
-    this.clear();
+    this.clear(); // clears prior markers and resets this.hits
     if (!q.text) return [];
     const test = this.matcher(q);
-    this.hits = [];
     for (const n of this.tree.nodes()) {
       const keyHit = test(n.key);
       const valHit = n.value.kind === "scalar" && test(n.value.text);

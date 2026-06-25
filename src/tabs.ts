@@ -3,6 +3,9 @@ import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { StyleSettings, Theme, Format, DataLang } from "./types";
 
+export const STDIN_PATH = "<stdin>";
+const STDIN_MAX_LINES = 10_000;
+
 export interface Tab {
   path: string;
   title: string;
@@ -192,6 +195,36 @@ export class TabManager {
     t.follow = !t.follow;
     if (t.follow) this.content.scrollTop = this.content.scrollHeight;
     this.hooks.onChange();
+  }
+
+  /** Create + activate the synthetic stdin log tab, or activate it if it exists. */
+  openStdin(): void {
+    const existing = this.tabs.findIndex((t) => t.path === STDIN_PATH);
+    if (existing >= 0) { this.activate(existing); return; }
+    this.tabs.push({
+      path: STDIN_PATH,
+      title: "stdin",
+      content: "",
+      format: "log",
+      forcedFormat: "log",
+      mode: "rendered",
+      follow: true,
+      scrollTop: 0,
+    });
+    this.activate(this.tabs.length - 1);
+  }
+
+  /** Append streamed lines to the stdin tab (creating it on first call),
+   *  ring-capped to the most recent STDIN_MAX_LINES. */
+  appendStdin(lines: string[]): void {
+    let i = this.tabs.findIndex((t) => t.path === STDIN_PATH);
+    if (i < 0) { this.openStdin(); i = this.tabs.findIndex((t) => t.path === STDIN_PATH); }
+    const t = this.tabs[i];
+    const existing = t.content === "" ? [] : t.content.split("\n");
+    let merged = existing.concat(lines);
+    if (merged.length > STDIN_MAX_LINES) merged = merged.slice(merged.length - STDIN_MAX_LINES);
+    t.content = merged.join("\n");
+    if (i === this.activeIndex) this.repaint(false);
   }
 
   applyStyle(s: StyleSettings): void {

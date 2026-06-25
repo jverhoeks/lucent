@@ -45,6 +45,10 @@ export function parseData(text: string, lang: DataLang): DataParseResult {
       case "ini":
         parsed = parseIni(text);
         break;
+      default:
+        // Defensive: a future DataLang variant added without a case here surfaces
+        // as a clear error (caught below) instead of a silent null "success".
+        throw new Error(`unsupported data language: ${lang}`);
     }
     return { ok: true, value: toValue(parsed, "root") };
   } catch (e) {

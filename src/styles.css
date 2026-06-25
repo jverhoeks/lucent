@@ -536,12 +536,121 @@ body.exporting .doc .code-header {
   padding-left: 0 !important;
 }
 
+/* ---- Search bar ---- */
+#searchbar {
+  position: fixed;
+  top: 56px; /* clears the toolbar */
+  right: 16px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--bar-bg);
+  border: 1px solid var(--bar-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+#searchbar[hidden] {
+  display: none;
+}
+
+#search-input {
+  font: inherit;
+  font-size: 13px;
+  height: 28px;
+  width: 200px;
+  padding: 0 8px;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  background: var(--btn-bg);
+  color: #1a1a1a;
+  outline: none;
+}
+
+#search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+#search-input.error {
+  outline: 1px solid red;
+  border-color: red;
+}
+
+#searchbar button {
+  font: inherit;
+  font-size: 13px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  background: var(--btn-bg);
+  color: #1a1a1a;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+#searchbar button:hover:not(:disabled) {
+  background: var(--btn-hover);
+}
+
+#searchbar button:active:not(:disabled) {
+  background: #e6e7ea;
+}
+
+/* Reuse toggled-button look for case/regex toggle buttons in the search bar. */
+#searchbar button.toggle.toggled {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+#searchbar button.toggle.toggled:hover:not(:disabled) {
+  background: #1d4fd7;
+}
+
+#search-count {
+  font-size: 12px;
+  color: #666;
+  padding: 0 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dark theme overrides for search bar */
+body:has(#content[data-theme="dark"]) #searchbar {
+  --bar-bg: #2a2a2a;
+  --bar-border: rgba(255, 255, 255, 0.1);
+  --btn-bg: #3a3a3a;
+  --btn-border: rgba(255, 255, 255, 0.15);
+  --btn-hover: #4a4a4a;
+}
+body:has(#content[data-theme="dark"]) #search-input {
+  color: #e6e6e6;
+}
+body:has(#content[data-theme="dark"]) #search-count {
+  color: #aaa;
+}
+
+/* ---- Search highlights ---- */
+mark.search-hit { background: #fde68a; color: inherit; border-radius: 2px; }
+mark.search-current { background: #f59e0b; }
+#content[data-theme="dark"] mark.search-hit { background: #7c5b16; color: #fff; }
+#content[data-theme="dark"] mark.search-current { background: #b8860b; }
+
 /* ---- Browser print / PDF fallback ---- */
 @media print {
   #toolbar,
   #tabstrip,
-  #banner {
+  #banner,
+  #searchbar {
     display: none !important;
+  }
+  mark.search-hit,
+  mark.search-current {
+    background: transparent;
   }
   #content {
     overflow: visible;

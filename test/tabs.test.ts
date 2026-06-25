@@ -34,7 +34,7 @@ describe("TabManager", () => {
     expect(mgr.count()).toBe(2);
     expect(mgr.getActivePath()).toBe("/d/b.md");
     expect(tabbar.querySelectorAll(".tab").length).toBe(2);
-    expect(mgr.getActiveRenderedHtml()).toMatch(/<h1[\s\S]*B/);
+    expect(mgr.getActiveDisplayedHtml()).toMatch(/<h1[\s\S]*B/);
   });
 
   it("re-activates an already-open file instead of duplicating", () => {
@@ -86,6 +86,6 @@ describe("TabManager", () => {
     mgr.replaceActive("/d/c.md", "# C");
     expect(mgr.count()).toBe(1);
     expect(mgr.getActivePath()).toBe("/d/c.md");
-    expect(mgr.getActiveRenderedHtml()).toMatch(/<h1[\s\S]*C/);
+    expect(mgr.getActiveDisplayedHtml()).toMatch(/<h1[\s\S]*C/);
   });
 });

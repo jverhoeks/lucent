@@ -1,5 +1,4 @@
 import hljs from "highlight.js";
-import { renderMarkdown } from "./render";
 import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { StyleSettings, Theme, Format } from "./types";
@@ -58,13 +57,18 @@ export class TabManager {
   getActiveRawText(): string {
     return this.active()?.content ?? "";
   }
-  getActiveRenderedHtml(): string {
-    const t = this.active();
-    return t ? renderMarkdown(t.content) : "";
-  }
-  /** The HTML currently displayed for the active doc (renderer-agnostic). */
+  /**
+   * The HTML currently displayed for the active doc (renderer-agnostic), with
+   * transient search-highlight <mark> wrappers stripped so copy-as-rich-text
+   * never leaks highlight markup (or copies stale state) into the clipboard.
+   */
   getActiveDisplayedHtml(): string {
-    return this.content.innerHTML;
+    if (!this.active()) return "";
+    const clone = this.content.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll("mark.search-hit, mark.search-current").forEach((m) => {
+      m.replaceWith(document.createTextNode(m.textContent ?? ""));
+    });
+    return clone.innerHTML;
   }
   getActiveMode(): "rendered" | "raw" | undefined {
     return this.active()?.mode;

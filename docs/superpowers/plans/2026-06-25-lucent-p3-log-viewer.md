@@ -128,27 +128,31 @@ export function detectLevel(line: string): LogLevel {
 
 ```ts
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "fs";
 import { extractJson } from "../src/logs/embedded-json";
 
 describe("extractJson", () => {
-  it("extracts a raw embedded JSON object", () => {
-    const r = extractJson('request done {"method":"GET","status":200}');
+  it("ignores a preceding [tag] and extracts the raw JSON object", () => {
+    const r = extractJson('2026 INFO [AppService] login {"userId":"u1","ok":true}');
     expect(r).not.toBeNull();
-    expect((r!.value as any).status).toBe(200);
+    expect((r!.value as any).userId).toBe("u1");
   });
-  it("extracts escaped JSON from a quoted string", () => {
-    const line = 'audit payload="{\\"event\\":\\"login\\",\\"ok\\":true}"';
-    const r = extractJson(line);
-    expect(r).not.toBeNull();
-    expect((r!.value as any).event).toBe("login");
+  it("extracts a JSON array, skipping an earlier non-JSON [bracket]", () => {
+    expect(extractJson("[Svc] tags [1,2,3]")!.value).toEqual([1, 2, 3]);
   });
-  it("extracts a JSON array", () => {
-    const r = extractJson('tags [1,2,3] done');
-    expect((r!.value as any).length).toBe(3);
-  });
-  it("returns null when there is no JSON", () => {
-    expect(extractJson("plain log line, no json")).toBeNull();
+  it("returns null when there is no parseable JSON", () => {
+    expect(extractJson("plain line, no json")).toBeNull();
     expect(extractJson("ratio {incomplete")).toBeNull();
+    expect(extractJson("WARN [x] nothing")).toBeNull();
+  });
+  it("decodes raw + escaped JSON (incl. Windows paths) from examples/structured.log", () => {
+    const lines = readFileSync("examples/structured.log", "utf8").split("\n").filter(Boolean);
+    const decoded = lines.map((l) => extractJson(l));
+    expect(decoded.every((d) => d !== null)).toBe(true); // every line carries JSON
+    const win = decoded.find((d) => d && typeof (d!.value as any).path === "string");
+    expect((win!.value as any).path).toBe("C:\\ProgramData\\App\\config.json");
+    const order = decoded.find((d) => d && (d!.value as any).order_id);
+    expect((order!.value as any).total).toBe(149.99);
   });
 });
 ```
@@ -157,29 +161,55 @@ describe("extractJson", () => {
 
 - [ ] **Step 3: Implement** — `src/logs/embedded-json.ts`
 
-```ts
-/** Try to find and parse a JSON object/array embedded in a log line — either
- *  raw (`{...}`) or escaped inside a quoted string (`"{\"k\":1}"`). Returns the
- *  matched source text and parsed value, or null if none parses. */
-export function extractJson(line: string): { text: string; value: unknown } | null {
-  const start = line.search(/[{[]/);
-  if (start < 0) return null;
-  const end = Math.max(line.lastIndexOf("}"), line.lastIndexOf("]"));
-  if (end <= start) return null;
-  const cand = line.slice(start, end + 1);
+A naive "first `{` to last `}`" slice is WRONG: real logs prefix a `[service]`
+tag whose `[` would be picked as the start. Scan for a *balanced* region instead,
+and handle escaped JSON via the quoted-string path. (This design was validated
+against `examples/structured.log` before writing the task.)
 
-  // Try the raw substring first, then progressively-unescaped forms (logs often
-  // embed JSON as an escaped string: \" → ", \\ → \). A couple of passes handle
-  // single and double escaping without looping unboundedly.
-  let current = cand;
-  for (let pass = 0; pass < 3; pass++) {
-    try {
-      return { text: current, value: JSON.parse(current) };
-    } catch {
-      const next = current.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-      if (next === current) break;
-      current = next;
+```ts
+/** Find a balanced {...} or [...] beginning at index i, respecting JSON string
+ *  literals + escapes. Returns the substring, or null if unbalanced. */
+function findBalanced(s: string, i: number): string | null {
+  const open = s[i];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0, inStr = false, esc = false;
+  for (let j = i; j < s.length; j++) {
+    const c = s[j];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === open) depth++;
+    else if (c === close) { depth--; if (depth === 0) return s.slice(i, j + 1); }
+  }
+  return null;
+}
+
+/** Find and parse JSON embedded in a log line — raw (`{...}`/`[...]`, ignoring
+ *  unrelated brackets like `[service]`) or escaped inside a quoted string
+ *  (`"{\"k\":1}"`, including doubled backslashes from Windows paths). Returns the
+ *  matched source text and parsed value, or null. */
+export function extractJson(line: string): { text: string; value: unknown } | null {
+  // Raw: the first balanced {/[ slice that parses (skips non-JSON [tag]s).
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "{" || line[i] === "[") {
+      const cand = findBalanced(line, i);
+      if (cand) {
+        try { return { text: cand, value: JSON.parse(cand) }; } catch { /* keep scanning */ }
+      }
     }
+  }
+  // Escaped: a quoted "..." segment whose unescaped content parses as JSON.
+  const re = /"((?:[^"\\]|\\.)*)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    if (!/[{[]/.test(m[1])) continue;
+    const unesc = m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+    try {
+      const value = JSON.parse(unesc);
+      if (value && typeof value === "object") return { text: m[0], value };
+    } catch { /* not this segment */ }
   }
   return null;
 }

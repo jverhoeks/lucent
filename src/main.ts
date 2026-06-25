@@ -53,6 +53,7 @@ function refreshToolbar() {
   for (const id of [
     "btn-search",
     "btn-toggle",
+    "btn-tail",
     "btn-next",
     "btn-export-html",
     "btn-export-pdf",
@@ -69,6 +70,13 @@ function refreshToolbar() {
   toggle.textContent = isRaw ? "</> Raw" : "👁 Rendered";
   toggle.classList.toggle("toggled", isRaw);
   toggle.setAttribute("aria-pressed", String(isRaw));
+
+  // Show tail button only for logs; reflect follow state.
+  const tail = btn("btn-tail");
+  const isLog = manager.getActiveFormat() === "log";
+  tail.hidden = !isLog;
+  tail.classList.toggle("toggled", manager.isFollowing());
+  tail.setAttribute("aria-pressed", String(manager.isFollowing()));
 }
 
 function showBanner(msg: string) {
@@ -150,6 +158,7 @@ window.addEventListener("keydown", (e) => {
 });
 
 btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
+btn("btn-tail").addEventListener("click", () => manager.toggleFollow());
 btn("btn-close-all").addEventListener("click", () => manager.closeAll());
 
 btn("btn-next").addEventListener("click", async () => {

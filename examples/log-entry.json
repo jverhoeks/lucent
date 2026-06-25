@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-06-25T18:01:00Z",
+  "level": "INFO",
+  "service": "PaymentGateway",
+  "message": "Transaction initiated",
+  "context": {
+    "transaction_id": "txn_8832a",
+    "amount": 50.0,
+    "currency": "EUR"
+  }
+}

@@ -1,0 +1,5 @@
+2026-06-25T18:05:22Z WARN [FileSystem] Config path changed: "{\"path\": \"C:\\\\ProgramData\\\\App\\\\config.json\", \"reload\": true}"
+2026-06-25T17:57:00Z INFO [AppService] User login successful {"userId": "usr_9481", "region": "EU", "login_type": "SSO"}
+2026-06-25T17:58:12Z ERROR [DB_Pool] Connection timeout occurred {"pool_size": 20, "active_connections": 20, "wait_time_ms": 5000}
+2026-06-25T17:59:15Z INFO [CheckoutService] Order placed: {"order_id": "ORD-3490", "total": 149.99, "items": [{"sku": "PROD-10", "qty": 2}], "status": "success"}
+2026-06-25T17:59:15Z INFO [CheckoutService] Order placed (escaped): "{\"order_id\": \"ORD-3490\", \"total\": 149.99, \"items\": [{\"sku\": \"PROD-10\", \"qty\": 2}], \"status\": \"success\"}"

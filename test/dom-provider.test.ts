@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { DomSearchProvider } from "../src/search/dom-provider";
 
 describe("DomSearchProvider", () => {
@@ -8,6 +8,7 @@ describe("DomSearchProvider", () => {
     root.innerHTML = `<p>Foo bar foo</p><pre>FOO\nbaz</pre>`;
     document.body.appendChild(root);
   });
+  afterEach(() => root.remove());
 
   it("finds case-insensitive matches in document order", () => {
     const p = new DomSearchProvider(root);

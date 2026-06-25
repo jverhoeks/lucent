@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod pdf;
 mod watcher;
 
 use std::path::Path;
@@ -50,6 +51,7 @@ pub fn run() {
             watcher::watch_file,
             watcher::unwatch_file,
             watcher::unwatch_all,
+            pdf::export_pdf_native,
             get_startup_files
         ])
         .run(tauri::generate_context!())

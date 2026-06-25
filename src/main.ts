@@ -36,6 +36,13 @@ function refreshToolbar() {
   ]) {
     btn(id).disabled = !has;
   }
+  // Reflect the active tab's view mode in the toggle button.
+  const mode = manager.getActiveMode();
+  const toggle = btn("btn-toggle");
+  const isRaw = mode === "raw";
+  toggle.textContent = isRaw ? "Raw" : "Rendered";
+  toggle.classList.toggle("toggled", isRaw);
+  toggle.setAttribute("aria-pressed", String(isRaw));
 }
 
 function showBanner(msg: string) {

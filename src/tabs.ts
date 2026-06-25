@@ -51,6 +51,9 @@ export class TabManager {
     const t = this.active();
     return t ? renderMarkdown(t.content) : "";
   }
+  getActiveMode(): "rendered" | "raw" | undefined {
+    return this.active()?.mode;
+  }
 
   /** Open a file in a new tab, or activate (and refresh) an already-open one. */
   openOrActivate(path: string, content: string): void {
@@ -131,6 +134,7 @@ export class TabManager {
     if (!t) return;
     t.mode = t.mode === "rendered" ? "raw" : "rendered";
     this.repaint(false);
+    this.hooks.onChange();
   }
 
   applyStyle(s: StyleSettings): void {

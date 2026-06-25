@@ -93,6 +93,16 @@ body {
   background: #1d4fd7;
 }
 
+/* Toggle button shows a pressed state when raw view is active. */
+#toolbar button.toggled {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+#toolbar button.toggled:hover:not(:disabled) {
+  background: #1d4fd7;
+}
+
 #toolbar input[type="range"] {
   width: 96px;
   accent-color: var(--accent);
@@ -289,7 +299,27 @@ body {
   max-width: 80%;
 }
 
-/* ---- Print / PDF export ---- */
+/* ---- Native PDF capture (macOS WKWebView.createPDF) ----
+   createPDF renders screen media, so we restructure the live DOM: hide chrome
+   and let the body grow to the full document height for a clean, full-length
+   capture on a white page. */
+body.exporting #toolbar,
+body.exporting #tabbar,
+body.exporting #banner {
+  display: none !important;
+}
+body.exporting {
+  height: auto;
+}
+body.exporting #content {
+  overflow: visible;
+  height: auto;
+  padding: 24px 32px;
+  background: #ffffff !important;
+  color: #111111 !important;
+}
+
+/* ---- Browser print / PDF fallback ---- */
 @media print {
   #toolbar,
   #tabbar,

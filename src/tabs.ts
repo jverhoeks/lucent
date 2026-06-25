@@ -1,7 +1,7 @@
-import { renderMarkdown } from "./render";
-import { detectFormat } from "./format";
+import hljs from "highlight.js";
+import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
-import { StyleSettings, Theme, Format } from "./types";
+import { StyleSettings, Theme, Format, DataLang } from "./types";
 
 export interface Tab {
   path: string;
@@ -9,6 +9,7 @@ export interface Tab {
   content: string;
   format: Format;          // detected format
   forcedFormat?: Format;   // "View as…" override
+  forcedLang?: DataLang;   // "View as data:lang" override
   mode: "rendered" | "raw";
   scrollTop: number;
 }
@@ -57,9 +58,21 @@ export class TabManager {
   getActiveRawText(): string {
     return this.active()?.content ?? "";
   }
-  getActiveRenderedHtml(): string {
-    const t = this.active();
-    return t ? renderMarkdown(t.content) : "";
+  /**
+   * The HTML currently displayed for the active doc (renderer-agnostic), with
+   * transient search-highlight <mark> wrappers stripped so copy-as-rich-text
+   * never leaks highlight markup (or copies stale state) into the clipboard.
+   */
+  getActiveDisplayedHtml(): string {
+    if (!this.active()) return "";
+    const clone = this.content.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll("mark.search-hit, mark.search-current").forEach((m) => {
+      m.replaceWith(document.createTextNode(m.textContent ?? ""));
+    });
+    // Also drop class-based highlight state (e.g. the tree's current-row marker)
+    // so copy-rich never carries transient search styling.
+    clone.querySelectorAll(".search-current").forEach((e) => e.classList.remove("search-current"));
+    return clone.innerHTML;
   }
   getActiveMode(): "rendered" | "raw" | undefined {
     return this.active()?.mode;
@@ -69,11 +82,12 @@ export class TabManager {
     return t ? effectiveFormat(t) : undefined;
   }
 
-  setActiveForcedFormat(format: Format): void {
+  setActiveForcedFormat(format: Format, lang?: DataLang): void {
     const t = this.active();
     if (!t) return;
     t.forcedFormat = format;
-    t.mode = format === "markdown" ? "rendered" : "raw";
+    t.forcedLang = lang;
+    t.mode = (format === "text" || format === "log") ? "raw" : "rendered";
     this.repaint(false);
     this.hooks.onChange();
   }
@@ -92,7 +106,7 @@ export class TabManager {
       title: basename(path),
       content,
       format,
-      mode: format === "markdown" ? "rendered" : "raw",
+      mode: (format === "text" || format === "log") ? "raw" : "rendered",
       scrollTop: 0,
     });
     this.activate(this.tabs.length - 1);
@@ -107,7 +121,8 @@ export class TabManager {
     t.content = content;
     t.format = detectFormat(path);
     t.forcedFormat = undefined;
-    t.mode = t.format === "markdown" ? "rendered" : "raw";
+    t.forcedLang = undefined;
+    t.mode = (t.format === "text" || t.format === "log") ? "raw" : "rendered";
     t.scrollTop = 0;
     this.repaint(true);
     this.renderTabbar();
@@ -182,11 +197,21 @@ export class TabManager {
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
     if (t.mode === "rendered") {
-      getRenderer(effectiveFormat(t)).render(t.content, this.content, { theme: this.theme });
+      getRenderer(effectiveFormat(t)).render(
+        t.content, this.content,
+        { theme: this.theme, dataLang: t.forcedLang },
+        t.path,
+      );
     } else {
       const pre = document.createElement("pre");
       pre.className = "raw";
-      pre.textContent = t.content;
+      const lang = effectiveFormat(t) === "data" ? (t.forcedLang ?? dataLangOf(t.path)) : null;
+      if (lang && hljs.getLanguage(lang)) {
+        pre.classList.add("hljs");
+        pre.innerHTML = hljs.highlight(t.content, { language: lang }).value; // hljs output is escaped/safe
+      } else {
+        pre.textContent = t.content;
+      }
       this.content.replaceChildren(pre);
     }
     if (restoreScroll) this.content.scrollTop = t.scrollTop;

@@ -1,0 +1,13 @@
+# Intentionally malformed YAML — used to exercise Lucent's parse-error → raw
+# fallback (it should show a "Parse error: …" notice and the highlighted source,
+# never crash). Problems below: tabs mixed with spaces, inconsistent indentation.
+server:
+  host: localhost
+  ports:
+    - 8080
+     - 8081
+	- 9090
+settings:
+	debug: true
+  level: 2
+  name:	"tab before value"

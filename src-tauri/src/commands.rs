@@ -37,9 +37,10 @@ pub fn is_markdown(path: &Path) -> bool {
     )
 }
 
-/// True if a path is something this viewer is allowed to open (markdown or
-/// plain text). Used to gate relative-link navigation so a crafted link can't
-/// coax the app into reading arbitrary files (e.g. keys, /etc/passwd).
+/// True if a path is something this viewer is allowed to open (markdown,
+/// plain text, or structured data). Used to gate relative-link navigation so a
+/// crafted link can't coax the app into reading arbitrary files (e.g. keys,
+/// /etc/passwd).
 pub fn is_viewable(path: &Path) -> bool {
     if is_markdown(path) {
         return true;
@@ -47,13 +48,15 @@ pub fn is_viewable(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()),
         Some(ref e) if e == "txt" || e == "log" || e == "text"
+            || e == "json" || e == "yaml" || e == "yml" || e == "toml" || e == "ini"
     )
 }
 
-/// Sorted absolute paths of Markdown files in the same directory as `path`
-/// (including `path` itself). Used by the "next file in directory" navigation.
+/// Sorted absolute paths of viewable files in the same directory as `path`
+/// (including `path` itself). Used by the "next file in directory" navigation,
+/// which cycles through every file type Lucent can open.
 #[tauri::command]
-pub fn list_sibling_markdown(path: String) -> Result<Vec<String>, AppError> {
+pub fn list_sibling_viewable(path: String) -> Result<Vec<String>, AppError> {
     let p = Path::new(&path);
     let dir = p
         .parent()
@@ -61,7 +64,7 @@ pub fn list_sibling_markdown(path: String) -> Result<Vec<String>, AppError> {
     let mut files: Vec<String> = std::fs::read_dir(dir)
         .map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|p| p.is_file() && is_markdown(p))
+        .filter(|p| p.is_file() && is_viewable(p))
         .map(|p| p.to_string_lossy().to_string())
         .collect();
     files.sort();
@@ -93,12 +96,12 @@ pub fn resolve_sibling(base: String, rel: String) -> Result<String, AppError> {
         .ok_or_else(|| AppError::new(ErrorKind::Io, "No parent directory"))?;
     let target = std::fs::canonicalize(base_dir.join(rel))
         .map_err(|e| AppError::new(ErrorKind::NotFound, e.to_string()))?;
-    // Only allow opening markdown/text via links — a crafted link must not be
+    // Only allow opening viewable files via links — a crafted link must not be
     // able to read arbitrary files (keys, system files, etc.).
     if !is_viewable(&target) {
         return Err(AppError::new(
             ErrorKind::Io,
-            "Only markdown/text links can be opened",
+            "Only viewable files (markdown, text, data, logs) can be opened",
         ));
     }
     Ok(target.to_string_lossy().to_string())
@@ -154,6 +157,26 @@ mod tests {
     }
 
     #[test]
+    fn is_viewable_recognizes_data_extensions() {
+        // data formats
+        assert!(is_viewable(Path::new("/x/a.json")));
+        assert!(is_viewable(Path::new("/x/a.JSON")));
+        assert!(is_viewable(Path::new("/x/a.yaml")));
+        assert!(is_viewable(Path::new("/x/a.yml")));
+        assert!(is_viewable(Path::new("/x/a.toml")));
+        assert!(is_viewable(Path::new("/x/a.ini")));
+        // markdown still viewable
+        assert!(is_viewable(Path::new("/x/a.md")));
+        // text/log still viewable
+        assert!(is_viewable(Path::new("/x/a.txt")));
+        assert!(is_viewable(Path::new("/x/a.log")));
+        // binary/image not viewable
+        assert!(!is_viewable(Path::new("/x/a.png")));
+        assert!(!is_viewable(Path::new("/x/a.key")));
+        assert!(!is_viewable(Path::new("/x/a")));
+    }
+
+    #[test]
     fn resolves_relative_sibling_path() {
         let dir = std::env::temp_dir().join("mdv_test_resolve");
         let _ = std::fs::remove_dir_all(&dir);
@@ -175,16 +198,22 @@ mod tests {
     }
 
     #[test]
-    fn lists_sorted_sibling_markdown_only() {
+    fn lists_sorted_sibling_viewable_all_types() {
         let dir = std::env::temp_dir().join("mdv_test_siblings");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("b.md"), "b").unwrap();
         std::fs::write(dir.join("a.md"), "a").unwrap();
+        std::fs::write(dir.join("c.json"), "{}").unwrap();
         std::fs::write(dir.join("note.txt"), "x").unwrap();
-        let list = list_sibling_markdown(dir.join("a.md").to_string_lossy().to_string()).unwrap();
-        assert_eq!(list.len(), 2);
+        std::fs::write(dir.join("ignore.png"), "x").unwrap(); // not viewable
+        let list = list_sibling_viewable(dir.join("a.md").to_string_lossy().to_string()).unwrap();
+        // All viewable types are listed (md, json, txt), sorted; the .png is excluded.
+        assert_eq!(list.len(), 4);
         assert!(list[0].ends_with("a.md"));
         assert!(list[1].ends_with("b.md"));
+        assert!(list[2].ends_with("c.json"));
+        assert!(list[3].ends_with("note.txt"));
+        assert!(!list.iter().any(|f| f.ends_with(".png")));
     }
 }

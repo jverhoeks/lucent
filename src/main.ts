@@ -10,10 +10,12 @@ import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
 import { exportHtml, exportPdf } from "./export";
-import { FilePayload, AppError, StyleSettings, Format } from "./types";
+import { FilePayload, AppError, StyleSettings, Format, DataLang } from "./types";
 import { SearchController } from "./search/controller";
 import { DomSearchProvider } from "./search/dom-provider";
+import { TreeSearchProvider } from "./search/tree-provider";
 import { SearchBar } from "./search/bar";
+import { getCurrentTree } from "./renderers/data";
 
 const tabbar = document.getElementById("tabbar")!;
 const tabstrip = document.getElementById("tabstrip")!;
@@ -29,7 +31,14 @@ const searchBar = new SearchBar(search);
 /** Re-bind the search provider to the freshly-rendered content. */
 function rebindSearch() {
   if (!searchBar.isOpen()) return;
-  search.setProvider(new DomSearchProvider(content));
+  const fmt = manager.getActiveFormat();
+  const mode = manager.getActiveMode();
+  if (mode === "rendered" && fmt === "data") {
+    const tree = getCurrentTree();
+    search.setProvider(tree ? new TreeSearchProvider(tree) : new DomSearchProvider(content));
+  } else {
+    search.setProvider(new DomSearchProvider(content));
+  }
 }
 
 const manager = new TabManager(tabbar, content, settings, {
@@ -118,6 +127,7 @@ btn("btn-open").addEventListener("click", async () => {
     filters: [
       { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
       { name: "Text", extensions: ["txt", "log", "text"] },
+      { name: "Data", extensions: ["json", "yaml", "yml", "toml", "ini"] },
     ],
   });
   if (Array.isArray(sel)) await openMany(sel);
@@ -146,7 +156,7 @@ btn("btn-next").addEventListener("click", async () => {
   const cur = manager.getActivePath();
   if (!cur) return;
   try {
-    const siblings = await invoke<string[]>("list_sibling_markdown", { path: cur });
+    const siblings = await invoke<string[]>("list_sibling_viewable", { path: cur });
     const idx = siblings.indexOf(cur);
     if (idx < 0 || siblings.length < 2) return;
     const next = siblings[(idx + 1) % siblings.length]; // wrap around
@@ -163,7 +173,7 @@ btn("btn-next").addEventListener("click", async () => {
 btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRawText()));
 btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRawText()));
 btn("btn-copy-md").addEventListener("click", () => copyAsMarkdown(manager.getActiveRawText()));
-btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveRenderedHtml()));
+btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveDisplayedHtml()));
 
 // ---- Style controls ----
 const selFont = document.getElementById("sel-font") as HTMLSelectElement;
@@ -194,8 +204,16 @@ selTheme.addEventListener("change", () =>
 // ---- "View as…" format override ----
 const selViewAs = document.getElementById("sel-viewas") as HTMLSelectElement;
 selViewAs.addEventListener("change", () => {
-  const v = selViewAs.value as Format | "";
-  if (v) manager.setActiveForcedFormat(v); // triggers onChange → rebindSearch
+  const v = selViewAs.value;
+  if (v) {
+    if (v.startsWith("data:")) {
+      const lang = v.slice("data:".length) as DataLang;
+      manager.setActiveForcedFormat("data", lang);
+    } else {
+      manager.setActiveForcedFormat(v as Format);
+    }
+    // onChange triggers rebindSearch via manager hooks
+  }
   selViewAs.value = ""; // reset to the placeholder label
 });
 

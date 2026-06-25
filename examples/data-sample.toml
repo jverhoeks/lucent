@@ -1,0 +1,38 @@
+application = "WebServer"
+version = "2.1.0"
+environment = "production"
+
+[features]
+authentication = true
+caching = true
+logging = true
+
+[[servers]]
+name = "primary"
+address = "192.168.1.100"
+port = 8080
+active = true
+maxConnections = 1000
+
+[[servers]]
+name = "secondary"
+address = "192.168.1.101"
+port = 8080
+active = false
+maxConnections = 500
+
+[database]
+type = "PostgreSQL"
+host = "db.internal"
+port = 5432
+name = "appdb"
+poolSize = 20
+timeout = 30000
+
+[metrics]
+uptime = 2592000
+requests = 4250000
+errors = 1250
+avgResponseTime = 45.3
+
+tags = ["production", "monitored", "distributed"]

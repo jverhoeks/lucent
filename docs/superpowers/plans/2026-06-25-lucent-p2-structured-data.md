@@ -21,7 +21,8 @@ New deps: `js-yaml`, `smol-toml`, `ini` (all permissive).
 
 - **Read-only viewer.** No editing.
 - **New deps allowed in P2, permissive only:** `js-yaml` (MIT), `smol-toml`
-  (MIT), `ini` (ISC), `@types/js-yaml` (dev). No others.
+  (BSD-3-Clause — permissive, same family as the already-used highlight.js),
+  `ini` (ISC), `@types/js-yaml` (dev). No others.
 - **Builds on P1 (now in `main`).** Reuse, do not duplicate: `SearchController` /
   `SearchProvider` / `Match` (`src/search/`), the renderer registry
   (`src/renderers/registry.ts`, `getRenderer`), `detectFormat`/`dataLangOf`
@@ -87,7 +88,9 @@ npm install -D @types/js-yaml
 - [ ] **Step 2: Confirm licenses are permissive**
 
 Run: `npm view js-yaml license; npm view smol-toml license; npm view ini license`
-Expected: `MIT`, `MIT`, `ISC`. (If any differs, STOP and report.)
+Expected: js-yaml `MIT`, smol-toml `BSD-3-Clause`, ini `ISC` — all permissive and
+accepted (BSD-3-Clause matches highlight.js, already shipped). Only STOP if a
+copyleft/non-permissive license (e.g. GPL/AGPL) appears.
 
 - [ ] **Step 3: Add the value-model types** — append to `src/types.ts`
 
@@ -935,6 +938,67 @@ Run: `npm test && (cd src-tauri && cargo test)` — all green. `npm run build` c
 
 ```bash
 git add -A && git commit -m "test: P2 data sample files (yaml/toml/ini) and smoke checklist"
+```
+
+---
+
+## Task 8: Reach data/log files — CLI args, Open dialog, "View as…", default-to-tree
+
+**Why:** P2 built the data renderer but not the paths to reach it — `lucent x.json`
+(CLI) and the Open dialog only surface markdown/text, and data files open in raw
+mode. This task makes the feature reachable. (The CLI filter also gates P3 `.log`.)
+
+**Files:**
+- Modify: `src-tauri/src/commands.rs` (`is_viewable` + its test), `src-tauri/src/lib.rs` (`collect_startup_files`)
+- Modify: `src/types.ts` (`RenderCtx.dataLang`), `src/tabs.ts` (`Tab.forcedLang`; `setActiveForcedFormat` gains optional lang; default-mode logic), `src/renderers/data.ts` (use `ctx.dataLang`)
+- Modify: `index.html` (`#sel-viewas` options), `src/main.ts` (Open dialog filters; View-as handler)
+
+- [ ] **Step 1 (Rust, TDD): widen `is_viewable`.** Extend `is_viewable` in
+  `commands.rs` to also accept data extensions `json`, `yaml`, `yml`, `toml`,
+  `ini` (in addition to the markdown family + `txt`/`log`/`text` it already
+  accepts). Update/extend its unit test to assert `.json` and `.yaml` are
+  viewable and `.png` is not. Run `cd src-tauri && cargo test`.
+
+- [ ] **Step 2 (Rust): open any viewable file from the CLI.** In `lib.rs`
+  `collect_startup_files`, change the filter `commands::is_markdown(p)` →
+  `commands::is_viewable(p)` and update the doc comment. `cargo build`.
+
+- [ ] **Step 3 (default data → tree).** In `tabs.ts`, the initial-mode choice
+  (in `openOrActivate`, `replaceActive`, and the View-as setter) must open data
+  files in **rendered** (tree) mode. Use:
+  `mode = (format === "text" || format === "log") ? "raw" : "rendered"`
+  (markdown + data → rendered; text/log → raw — log's rendered view lands in P3).
+
+- [ ] **Step 4 (forced data lang for View-as).**
+  - `types.ts`: add `dataLang?: DataLang` to `RenderCtx`.
+  - `tabs.ts`: add `forcedLang?: DataLang` to `Tab`; `repaint` builds
+    `{ theme: this.theme, dataLang: t.forcedLang }` as the ctx; extend
+    `setActiveForcedFormat(format: Format, lang?: DataLang)` to also set
+    `t.forcedLang = lang` and apply the Step-3 mode rule; clear `forcedLang` in
+    `openOrActivate`/`replaceActive` resets.
+  - `data.ts`: `const lang = ctx.dataLang ?? (path ? dataLangOf(path) : null);`
+    (markdown/text renderers ignore `ctx.dataLang`).
+
+- [ ] **Step 5 (Open dialog).** In `main.ts` `btn-open`, add a filter group
+  `{ name: "Data", extensions: ["json", "yaml", "yml", "toml", "ini"] }`
+  (keep Markdown + Text; `.log` already sits under Text).
+
+- [ ] **Step 6 (View-as options).** In `index.html` `#sel-viewas`, add after the
+  Plain-text option: `JSON`/`YAML`/`TOML`/`INI` with values `data:json`,
+  `data:yaml`, `data:toml`, `data:ini`. In `main.ts`'s View-as `change` handler:
+  if the value starts with `data:`, call `manager.setActiveForcedFormat("data", <lang>)`;
+  else `manager.setActiveForcedFormat(value as Format)`; then reset the select to
+  the placeholder. (onChange still drives `rebindSearch`.)
+
+- [ ] **Step 7: verify.** `npm run build` clean, `npm test` green, `cargo test`
+  green. Manual: `lucent examples/data-sample.json` opens the **tree**; the Open
+  dialog lists data files; "View as… JSON" on a `.txt` containing JSON renders a
+  tree; `examples/bad.yaml` shows the parse-error notice + raw.
+
+- [ ] **Step 8: commit**
+
+```bash
+git add -A && git commit -m "feat: open data/log via CLI + dialog; View-as data formats; data defaults to tree"
 ```
 
 ---

@@ -345,14 +345,7 @@ body {
   padding: 0;
   vertical-align: top;
   border: none;
-}
-/* Pad via the first/last rows so the gutter background reaches the header edge
-   (no white strip above line 1). */
-.doc .ctab tr:first-child td {
-  padding-top: 10px;
-}
-.doc .ctab tr:last-child td {
-  padding-bottom: 10px;
+  line-height: 1.55;
 }
 /* Code line: one row each → perfect alignment with its number. */
 .doc td.cc {

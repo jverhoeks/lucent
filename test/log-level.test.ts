@@ -7,6 +7,13 @@ describe("detectLevel", () => {
     expect(detectLevel("FATAL out of memory")).toBe("error");
     expect(detectLevel("CRITICAL disk full")).toBe("error");
   });
+  it("flags abbreviated syslog severities as error", () => {
+    expect(detectLevel("kernel: err: disk failure")).toBe("error");
+    expect(detectLevel("sshd crit: auth subsystem down")).toBe("error");
+    expect(detectLevel("EMERG system unusable")).toBe("error");
+    // abbreviations must be whole words — not matched inside other words
+    expect(detectLevel("the terror subsided")).toBe("none");
+  });
   it("flags warnings", () => {
     expect(detectLevel("WARN high mem")).toBe("warn");
     expect(detectLevel("[x] WARNING slow")).toBe("warn");

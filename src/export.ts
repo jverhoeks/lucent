@@ -3,6 +3,26 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import appCss from "./styles.css?inline";
 import hljsCss from "highlight.js/styles/github.css?inline";
+import katexCss from "katex/dist/katex.min.css?inline";
+import { renderMarkdown, runPostRender } from "./render";
+
+/**
+ * Render Markdown to fully-resolved HTML for export: run the same pipeline plus
+ * the Mermaid post-render pass off-screen, so diagrams become inline SVG and
+ * math is laid out. Returns the document's inner HTML.
+ */
+async function renderDocumentHtml(rawText: string): Promise<string> {
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:fixed;left:-10000px;top:0;width:800px;";
+  holder.innerHTML = `<article class="doc">${renderMarkdown(rawText)}</article>`;
+  document.body.appendChild(holder);
+  try {
+    await runPostRender(holder, "light");
+    return holder.querySelector(".doc")!.innerHTML;
+  } finally {
+    holder.remove();
+  }
+}
 
 /** Wrap rendered HTML into a self-contained document with inlined CSS. */
 export function buildStandaloneHtml(bodyHtml: string, autoPrint = false): string {
@@ -15,7 +35,8 @@ export function buildStandaloneHtml(bodyHtml: string, autoPrint = false): string
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Markdown export</title>
-<style>${hljsCss}
+<style>${katexCss}
+${hljsCss}
 ${appCss}</style>
 ${printScript}
 </head>
@@ -27,15 +48,13 @@ ${printScript}
 </html>`;
 }
 
-export async function exportHtml(html: string): Promise<void> {
+export async function exportHtml(rawText: string): Promise<void> {
   const path = await save({
     filters: [{ name: "HTML", extensions: ["html"] }],
   });
   if (!path) return;
-  await invoke("save_text_file", {
-    path,
-    contents: buildStandaloneHtml(html),
-  });
+  const body = await renderDocumentHtml(rawText);
+  await invoke("save_text_file", { path, contents: buildStandaloneHtml(body) });
 }
 
 function isMac(): boolean {
@@ -51,10 +70,11 @@ function nextFrame(): Promise<void> {
  * no native PDF API on Windows/Linux webviews yet, so we stage the document as a
  * temp HTML file and open it in the default browser with print auto-triggered.
  */
-async function exportPdfViaBrowser(html: string): Promise<void> {
+async function exportPdfViaBrowser(rawText: string): Promise<void> {
+  const body = await renderDocumentHtml(rawText);
   const path = await invoke<string>("write_temp_file", {
     filename: "markdown-export.html",
-    contents: buildStandaloneHtml(html, true),
+    contents: buildStandaloneHtml(body, true),
   });
   await openPath(path);
 }
@@ -66,9 +86,9 @@ async function exportPdfViaBrowser(html: string): Promise<void> {
  * `@media print` block does NOT apply and this class is what produces a clean
  * capture. Other platforms fall back to the browser approach.
  */
-export async function exportPdf(html: string): Promise<void> {
+export async function exportPdf(rawText: string): Promise<void> {
   if (!isMac()) {
-    await exportPdfViaBrowser(html);
+    await exportPdfViaBrowser(rawText);
     return;
   }
   const dest = await save({ filters: [{ name: "PDF", extensions: ["pdf"] }] });
@@ -76,14 +96,13 @@ export async function exportPdf(html: string): Promise<void> {
 
   document.body.classList.add("exporting");
   try {
-    // Let layout commit before the native capture.
     await nextFrame();
     await nextFrame();
     await invoke("export_pdf_native", { dest });
   } catch (e) {
     document.body.classList.remove("exporting");
     if (String(e).includes("unsupported_platform")) {
-      await exportPdfViaBrowser(html);
+      await exportPdfViaBrowser(rawText);
       return;
     }
     throw e;

@@ -1,5 +1,10 @@
-import { renderMarkdown } from "./render";
-import { StyleSettings } from "./types";
+import { renderMarkdown, runPostRender } from "./render";
+import { StyleSettings, Theme } from "./types";
+
+/** Markdown-family extensions render to HTML; everything else opens as raw text. */
+export function isMarkdownPath(path: string): boolean {
+  return /\.(md|markdown|mdown|mkd)$/i.test(path);
+}
 
 export interface Tab {
   path: string;
@@ -24,6 +29,7 @@ export function basename(path: string): string {
 export class TabManager {
   private tabs: Tab[] = [];
   private activeIndex = -1;
+  private theme: Theme = "light";
 
   constructor(
     private tabbar: HTMLElement,
@@ -67,7 +73,7 @@ export class TabManager {
       path,
       title: basename(path),
       content,
-      mode: "rendered",
+      mode: isMarkdownPath(path) ? "rendered" : "raw",
       scrollTop: 0,
     });
     this.activate(this.tabs.length - 1);
@@ -138,6 +144,7 @@ export class TabManager {
   }
 
   applyStyle(s: StyleSettings): void {
+    this.theme = s.theme;
     const el = this.content;
     el.dataset.theme = s.theme;
     el.dataset.font = s.fontFamily;
@@ -155,6 +162,7 @@ export class TabManager {
       this.content.innerHTML = `<article class="doc">${renderMarkdown(
         t.content
       )}</article>`;
+      void runPostRender(this.content, this.theme);
     } else {
       const pre = document.createElement("pre");
       pre.className = "raw";

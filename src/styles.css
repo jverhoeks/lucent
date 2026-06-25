@@ -274,6 +274,62 @@ body {
   padding-left: 1em;
 }
 
+/* ---- Rich rendering (Phase 2) ---- */
+.doc .header-anchor {
+  text-decoration: none;
+  color: inherit;
+}
+.doc ul.contains-task-list {
+  list-style: none;
+  padding-left: 1em;
+}
+.doc .task-list-item {
+  list-style: none;
+}
+.doc .task-list-item input[type="checkbox"] {
+  margin: 0 0.5em 0 -1.2em;
+}
+.doc .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
+.doc pre.mermaid {
+  background: none;
+  padding: 0;
+  text-align: center;
+}
+.doc pre.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.doc .footnotes {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid rgba(127, 127, 127, 0.3);
+  font-size: 0.9em;
+}
+.doc .note,
+.doc .warning,
+.doc .tip {
+  border-left: 4px solid;
+  border-radius: 6px;
+  padding: 0.6em 1em;
+  margin: 0 0 1em;
+}
+.doc .note {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+.doc .warning {
+  border-color: #d97706;
+  background: rgba(217, 119, 6, 0.1);
+}
+.doc .tip {
+  border-color: #16a34a;
+  background: rgba(22, 163, 74, 0.1);
+}
+
 /* ---- Raw view (always monospace) ---- */
 .raw {
   max-width: var(--max-width);

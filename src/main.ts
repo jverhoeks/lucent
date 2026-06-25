@@ -1,5 +1,6 @@
 import "./styles.css";
 import "highlight.js/styles/github.css";
+import "katex/dist/katex.min.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -77,7 +78,10 @@ async function openMany(paths: string[]) {
 btn("btn-open").addEventListener("click", async () => {
   const sel = await open({
     multiple: true,
-    filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd", "txt"] }],
+    filters: [
+      { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
+      { name: "Text", extensions: ["txt", "log", "text"] },
+    ],
   });
   if (Array.isArray(sel)) await openMany(sel);
   else if (typeof sel === "string") await openPath(sel);
@@ -104,8 +108,8 @@ btn("btn-next").addEventListener("click", async () => {
   }
 });
 
-btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRenderedHtml()));
-btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRenderedHtml()));
+btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRawText()));
+btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRawText()));
 btn("btn-copy-md").addEventListener("click", () => copyAsMarkdown(manager.getActiveRawText()));
 btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveRenderedHtml()));
 

@@ -16,6 +16,8 @@ export class TreeView {
     this.flat = [];
     this.collectFlat(rootValue, "root", "root", 0);
     // Seed expansion to the default depth.
+    // defaultDepth: containers with pathDepth(path) < defaultDepth are auto-expanded.
+    // e.g. defaultDepth: 1 expands only root level; defaultDepth: 2 expands root + first level of children.
     const depth = opts.defaultDepth ?? 1;
     for (const n of this.flat) {
       if (isContainer(n.value) && pathDepth(n.path) < depth) this.expanded.add(n.path);

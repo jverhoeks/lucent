@@ -34,6 +34,7 @@ describe("renderTree / TreeView", () => {
     const tree = renderTree(sample, root, { defaultDepth: 1 });
     const paths = tree.nodes().map((n) => n.path);
     expect(paths).toContain("root.nested.deep"); // present in model even if collapsed
+    expect(tree.nodes().every(n => n.path !== "root")).toBe(true); // root is excluded per spec
   });
 
   it("collapsed children are not in the DOM until expanded", () => {
@@ -53,5 +54,12 @@ describe("renderTree / TreeView", () => {
     renderTree(sample, root, { defaultDepth: 99 });
     const v = root.querySelector('[data-path="root.name"] .tree-value');
     expect(v?.classList.contains("type-string")).toBe(true);
+  });
+
+  it("expandAll() expands all containers, making deep nodes visible in the DOM", () => {
+    const tree = renderTree(sample, root, { defaultDepth: 1 });
+    expect(root.querySelector('[data-path="root.nested.deep"]')).toBeNull(); // collapsed by defaultDepth: 1
+    tree.expandAll();
+    expect(root.querySelector('[data-path="root.nested.deep"]')).toBeTruthy(); // now expanded
   });
 });

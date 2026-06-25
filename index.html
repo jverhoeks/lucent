@@ -16,9 +16,15 @@
 
       <div class="group">
         <button id="btn-toggle" title="Toggle rendered / raw">👁 Rendered</button>
+        <button id="btn-search" title="Find (Cmd/Ctrl+F)" aria-label="Find">🔍 Find</button>
       </div>
 
       <div class="group">
+        <select id="sel-viewas" title="View as">
+          <option value="">View as…</option>
+          <option value="markdown">Markdown</option>
+          <option value="text">Plain text</option>
+        </select>
         <select id="sel-font" title="Font family">
           <option value="sans">Sans</option>
           <option value="serif">Serif</option>
@@ -47,6 +53,15 @@
       <button id="btn-close-all" title="Close all tabs" aria-label="Close all tabs">✕</button>
     </div>
 
+    <div id="searchbar" hidden role="search">
+      <input id="search-input" type="text" placeholder="Find" aria-label="Find" />
+      <button id="search-case" class="toggle" title="Match case" aria-pressed="false">Aa</button>
+      <button id="search-regex" class="toggle" title="Regular expression" aria-pressed="false">.*</button>
+      <span id="search-count" class="count">0/0</span>
+      <button id="search-prev" title="Previous (Shift+Enter)" aria-label="Previous">▲</button>
+      <button id="search-next" title="Next (Enter)" aria-label="Next">▼</button>
+      <button id="search-close" title="Close (Esc)" aria-label="Close">✕</button>
+    </div>
     <main id="content" data-theme="light" data-font="sans"></main>
     <div id="banner" hidden></div>
   </body>

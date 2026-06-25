@@ -26,3 +26,37 @@ export const DEFAULT_SETTINGS: StyleSettings = {
   theme: "light",
   maxWidthCh: 74,
 };
+
+export type Format = "markdown" | "data" | "log" | "text";
+export type Mode = "rendered" | "raw";
+export type DataLang = "json" | "yaml" | "toml" | "ini";
+
+export interface SearchQuery {
+  text: string;
+  caseSensitive: boolean;
+  regex: boolean;
+}
+
+/** A single search hit; `id` is its 0-based position in document order. */
+export interface Match {
+  id: number;
+}
+
+export interface SearchProvider {
+  /** Recompute all matches for `query`, in document order. Empty text -> []. */
+  find(query: SearchQuery): Match[];
+  /** Reveal + emphasize match `id`; de-emphasize all others. */
+  reveal(id: number): void;
+  /** Remove all highlight decorations. */
+  clear(): void;
+}
+
+export interface RenderCtx {
+  theme: Theme;
+}
+
+export interface Renderer {
+  format: Format;
+  /** Render `source` into `container` (rendered mode). */
+  render(source: string, container: HTMLElement, ctx: RenderCtx): void | Promise<void>;
+}

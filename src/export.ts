@@ -24,6 +24,8 @@ async function renderDocumentHtml(rawText: string): Promise<string> {
   document.body.appendChild(holder);
   try {
     await runPostRender(holder, "light");
+    // The copy/save/line-toggle buttons are non-functional in a static file.
+    holder.querySelectorAll(".code-actions").forEach((el) => el.remove());
     return holder.querySelector(".doc")!.innerHTML;
   } finally {
     holder.remove();

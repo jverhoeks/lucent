@@ -29,10 +29,40 @@ function parseInfo(info: string): { lang: string; filename: string } {
   return { lang, filename };
 }
 
-/** Right-aligned line-number text for the gutter (always emitted; shown via CSS). */
-function lineGutter(code: string): string {
-  const lines = code.replace(/\n$/, "").split("\n");
-  return lines.map((_, i) => String(i + 1)).join("\n");
+/**
+ * Split highlight.js output into one self-contained HTML string per source
+ * line, re-balancing `<span>`s that straddle a newline (e.g. block comments) so
+ * each line can live in its own table cell. This is what lets line numbers and
+ * code lines align exactly and be highlighted per-line.
+ */
+export function splitHighlightedLines(html: string): string[] {
+  const lines: string[] = [];
+  const open: string[] = [];
+  let cur = "";
+  const re = /(<span[^>]*>)|(<\/span>)|([^<]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    if (m[1]) {
+      open.push(m[1]);
+      cur += m[1];
+    } else if (m[2]) {
+      open.pop();
+      cur += "</span>";
+    } else {
+      const parts = m[3].split("\n");
+      for (let i = 0; i < parts.length; i++) {
+        if (i > 0) {
+          cur += "</span>".repeat(open.length);
+          lines.push(cur);
+          cur = open.join("");
+        }
+        cur += parts[i];
+      }
+    }
+  }
+  lines.push(cur);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 function createRenderer(): MarkdownIt {
@@ -64,7 +94,8 @@ function createRenderer(): MarkdownIt {
   };
 
   // Custom fence: mermaid → post-render block; everything else → a code block
-  // with a header (filename/language + copy button) and a line-number gutter.
+  // with a header (filename/language, line-number toggle, copy, save) and a
+  // per-line table so numbers align and are individually clickable.
   md.renderer.rules.fence = (tokens, idx) => {
     const token = tokens[idx];
     const code = token.content;
@@ -78,18 +109,26 @@ function createRenderer(): MarkdownIt {
     const labelHtml = `<span class="code-label">${md.utils.escapeHtml(label)}</span>`;
     const actions =
       `<span class="code-actions">` +
+      `<button class="code-lines" type="button" title="Toggle line numbers" aria-label="Toggle line numbers" aria-pressed="false">123</button>` +
       `<button class="code-copy" type="button" title="Copy source" aria-label="Copy source">📋</button>` +
       `<button class="code-save" type="button" title="Save source to file" aria-label="Save source">💾</button>` +
       `</span>`;
     const header = `<div class="code-header">${labelHtml}${actions}</div>`;
-    const gutter = `<span class="ln-gutter" aria-hidden="true">${lineGutter(code)}</span>`;
-    const langClass = lang ? ` class="language-${lang}"` : "";
+
+    const rows = splitHighlightedLines(highlightInner(code, lang))
+      .map(
+        (line, i) =>
+          `<tr><td class="ln" data-line="${i + 1}">${i + 1}</td><td class="cc">${
+            line || " "
+          }</td></tr>`
+      )
+      .join("");
+    const langClass = lang ? ` language-${lang}` : "";
     return `<div class="code-block" data-lang="${md.utils.escapeHtml(
       lang
-    )}" data-filename="${md.utils.escapeHtml(filename)}">${header}<pre class="hljs">${gutter}<code${langClass}>${highlightInner(
-      code,
-      lang
-    )}</code></pre></div>\n`;
+    )}" data-filename="${md.utils.escapeHtml(filename)}" data-src="${md.utils.escapeHtml(
+      code
+    )}">${header}<pre class="hljs${langClass}"><table class="ctab"><tbody>${rows}</tbody></table></pre></div>\n`;
   };
 
   return md;

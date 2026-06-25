@@ -301,6 +301,7 @@ body {
   gap: 2px;
   flex: 0 0 auto;
 }
+.doc .code-lines,
 .doc .code-copy,
 .doc .code-save {
   border: none;
@@ -311,42 +312,82 @@ body {
   padding: 3px 7px;
   border-radius: 5px;
 }
+.doc .code-lines {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #777;
+  letter-spacing: 1px;
+}
+.doc .code-lines.toggled {
+  background: var(--accent);
+  color: #fff;
+}
 .doc .code-copy:hover,
-.doc .code-save:hover {
+.doc .code-save:hover,
+.doc .code-lines:hover:not(.toggled) {
   background: rgba(127, 127, 127, 0.25);
 }
 
 .doc pre.hljs {
-  display: flex;
   margin: 0;
   padding: 0;
   border-radius: 0;
-  overflow: hidden;
+  overflow-x: auto;
   font-family: var(--mono);
   font-size: 0.85em;
   line-height: 1.5;
 }
-.doc pre.hljs .ln-gutter {
-  display: none; /* shown only when #content.line-numbers */
-  flex: 0 0 auto;
-  padding: 12px 10px;
-  text-align: right;
-  color: rgba(127, 127, 127, 0.8);
-  background: rgba(127, 127, 127, 0.06);
-  border-right: 1px solid rgba(127, 127, 127, 0.2);
-  user-select: none;
+.doc .ctab {
+  border-collapse: collapse;
+  width: auto;
+}
+.doc .ctab td {
+  padding: 0;
+  vertical-align: top;
+  border: none;
+}
+/* Pad via the first/last rows so the gutter background reaches the header edge
+   (no white strip above line 1). */
+.doc .ctab tr:first-child td {
+  padding-top: 10px;
+}
+.doc .ctab tr:last-child td {
+  padding-bottom: 10px;
+}
+/* Code line: one row each → perfect alignment with its number. */
+.doc td.cc {
   white-space: pre;
+  padding: 0 16px;
+}
+/* Line-number column: hidden unless this block has line numbers on. Sticky so
+   it stays put while the code scrolls horizontally. */
+.doc td.ln {
+  display: none;
+}
+.doc .code-block.line-numbers td.ln {
+  display: table-cell;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 0 10px;
+  text-align: right;
+  color: #9aa0a6;
+  background: #f3f3f3;
+  border-right: 1px solid rgba(127, 127, 127, 0.25);
+  user-select: none;
+  cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
-#content.line-numbers .doc pre.hljs .ln-gutter {
-  display: block;
+.doc .code-block.line-numbers td.ln:hover {
+  color: #444;
 }
-.doc pre.hljs code {
-  display: block;
-  flex: 1 1 auto;
-  padding: 12px 16px;
-  overflow-x: auto;
-  background: none;
+/* Highlighted (clicked) line. */
+.doc tr.hl td.cc {
+  background: rgba(250, 204, 21, 0.22);
+}
+.doc .code-block.line-numbers tr.hl td.ln {
+  background: rgba(250, 204, 21, 0.4);
+  color: #444;
 }
 
 .doc table {
@@ -451,7 +492,7 @@ body {
    and let the body grow to the full document height for a clean, full-length
    capture on a white page. */
 body.exporting #toolbar,
-body.exporting #tabbar,
+body.exporting #tabstrip,
 body.exporting #banner {
   display: none !important;
 }
@@ -465,11 +506,24 @@ body.exporting #content {
   background: #ffffff !important;
   color: #111111 !important;
 }
+/* Native PDF capture: drop the code chrome/border but keep code + (toggled)
+   line numbers. */
+body.exporting .doc .code-actions {
+  display: none !important;
+}
+body.exporting .doc .code-block {
+  border: none !important;
+}
+body.exporting .doc .code-header {
+  background: none !important;
+  border-bottom: none !important;
+  padding-left: 0 !important;
+}
 
 /* ---- Browser print / PDF fallback ---- */
 @media print {
   #toolbar,
-  #tabbar,
+  #tabstrip,
   #banner {
     display: none !important;
   }
@@ -481,5 +535,17 @@ body.exporting #content {
   }
   .doc {
     max-width: none;
+  }
+  /* Drop the code chrome/border in print; line numbers still print if enabled. */
+  .doc .code-actions {
+    display: none !important;
+  }
+  .doc .code-block {
+    border: none !important;
+  }
+  .doc .code-header {
+    background: none !important;
+    border-bottom: none !important;
+    padding-left: 0 !important;
   }
 }

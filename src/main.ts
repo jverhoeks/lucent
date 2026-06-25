@@ -46,11 +46,6 @@ function refreshToolbar() {
   toggle.textContent = isRaw ? "</> Raw" : "👁 Rendered";
   toggle.classList.toggle("toggled", isRaw);
   toggle.setAttribute("aria-pressed", String(isRaw));
-
-  // Line-numbers toggle state.
-  const lines = btn("btn-lines");
-  lines.classList.toggle("toggled", settings.lineNumbers);
-  lines.setAttribute("aria-pressed", String(settings.lineNumbers));
 }
 
 function showBanner(msg: string) {
@@ -73,6 +68,11 @@ function suggestedCodeName(block: Element): string {
   const lang = (block.getAttribute("data-lang") || "").toLowerCase();
   const ext = LANG_EXT[lang] || lang || "txt";
   return `snippet.${ext}`;
+}
+
+/** A code block's exact raw source (stored at render time, blank lines intact). */
+function codeSourceOf(block: Element): string {
+  return block.getAttribute("data-src") ?? "";
 }
 
 async function readPath(path: string): Promise<string | null> {
@@ -112,7 +112,6 @@ btn("btn-open").addEventListener("click", async () => {
 
 btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
 btn("btn-close-all").addEventListener("click", () => manager.closeAll());
-btn("btn-lines").addEventListener("click", () => updateStyle({ lineNumbers: !settings.lineNumbers }));
 
 btn("btn-next").addEventListener("click", async () => {
   const cur = manager.getActivePath();
@@ -166,12 +165,28 @@ selTheme.addEventListener("change", () =>
 content.addEventListener("click", async (e) => {
   const target = e.target as HTMLElement;
 
+  // Per-block line-number toggle.
+  const linesBtn = target.closest(".code-lines");
+  if (linesBtn) {
+    const on = linesBtn.closest(".code-block")?.classList.toggle("line-numbers");
+    linesBtn.classList.toggle("toggled", !!on);
+    linesBtn.setAttribute("aria-pressed", String(!!on));
+    return;
+  }
+
+  // Click a line number to highlight that source line.
+  const lnCell = target.closest("td.ln");
+  if (lnCell) {
+    lnCell.parentElement?.classList.toggle("hl");
+    return;
+  }
+
   // Copy-source button on a code block.
   const copyBtn = target.closest(".code-copy");
   if (copyBtn) {
-    const codeEl = copyBtn.closest(".code-block")?.querySelector("code");
-    if (codeEl) {
-      await navigator.clipboard.writeText(codeEl.textContent ?? "");
+    const block = copyBtn.closest(".code-block");
+    if (block) {
+      await navigator.clipboard.writeText(codeSourceOf(block));
       const prev = copyBtn.textContent;
       copyBtn.textContent = "✓";
       setTimeout(() => (copyBtn.textContent = prev), 1200);
@@ -183,11 +198,10 @@ content.addEventListener("click", async (e) => {
   const saveBtn = target.closest(".code-save");
   if (saveBtn) {
     const block = saveBtn.closest(".code-block");
-    const codeEl = block?.querySelector("code");
-    if (block && codeEl) {
+    if (block) {
       const path = await save({ defaultPath: suggestedCodeName(block) });
       if (path) {
-        await invoke("save_text_file", { path, contents: codeEl.textContent ?? "" });
+        await invoke("save_text_file", { path, contents: codeSourceOf(block) });
       }
     }
     return;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderMarkdown } from "../src/render";
+import { renderMarkdown, splitHighlightedLines } from "../src/render";
 
 describe("renderMarkdown", () => {
   it("renders headings", () => {
@@ -52,12 +52,21 @@ describe("renderMarkdown", () => {
     expect(html).toContain("main.py");
     expect(html).toContain("language-python");
   });
-  it("emits a line-number gutter", () => {
+  it("renders one numbered row per source line", () => {
     const html = renderMarkdown("```\nalpha\nbeta\ngamma\n```");
-    expect(html).toContain("ln-gutter");
+    expect(html).toContain('data-line="1"');
+    expect(html).toContain('data-line="2"');
+    expect(html).toContain('data-line="3"');
+    expect(html).not.toContain('data-line="4"'); // trailing newline not a line
+    expect((html.match(/class="ln"/g) || []).length).toBe(3);
   });
-  it("offers copy and save buttons on code blocks", () => {
+  it("stores exact source (blank lines intact) in data-src", () => {
+    const html = renderMarkdown("```\na\n\nb\n```");
+    expect(html).toContain('data-src="a\n\nb');
+  });
+  it("offers line-number, copy, and save buttons on code blocks", () => {
     const html = renderMarkdown("```js\nconst x = 1;\n```");
+    expect(html).toContain("code-lines");
     expect(html).toContain("code-copy");
     expect(html).toContain("code-save");
   });
@@ -66,11 +75,25 @@ describe("renderMarkdown", () => {
     expect(html).not.toContain("<img");
     expect(html).not.toContain("onerror");
     // the language token is reduced to a safe class, not raw markup
-    expect(html).toContain('class="language-jsimg"');
+    expect(html).toContain("language-jsimg");
   });
   it("wraps mermaid fences for the post-render pass", () => {
     const html = renderMarkdown("```mermaid\ngraph TD; A-->B;\n```");
     expect(html).toContain('<pre class="mermaid">');
     expect(html).toContain("graph TD");
+  });
+});
+
+describe("splitHighlightedLines", () => {
+  it("splits plain lines", () => {
+    expect(splitHighlightedLines("a\nb\nc")).toEqual(["a", "b", "c"]);
+  });
+  it("re-balances spans that straddle a newline", () => {
+    // A span opened on line 1 and closed on line 2 must be closed/reopened.
+    const input = '<span class="c">line1\nline2</span>';
+    const out = splitHighlightedLines(input);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toBe('<span class="c">line1</span>');
+    expect(out[1]).toBe('<span class="c">line2</span>');
   });
 });

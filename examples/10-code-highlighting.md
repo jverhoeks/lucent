@@ -16,7 +16,9 @@ fn main() {
 print("named via lang:filename")
 ```
 
-Toggle the **# Lines** button in the toolbar to show line numbers.
+Each code block has its own header: **123** toggles line numbers, **📋** copies
+the source, **💾** saves it to a file. With line numbers on, click a number to
+highlight that line.
 
 ## Rust
 

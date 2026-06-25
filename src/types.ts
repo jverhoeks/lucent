@@ -18,7 +18,6 @@ export interface StyleSettings {
   fontSizePx: number; // 14..22
   theme: Theme;
   maxWidthCh: number; // content width
-  lineNumbers: boolean; // show line-number gutter in code blocks
 }
 
 export const DEFAULT_SETTINGS: StyleSettings = {
@@ -26,5 +25,4 @@ export const DEFAULT_SETTINGS: StyleSettings = {
   fontSizePx: 17,
   theme: "light",
   maxWidthCh: 74,
-  lineNumbers: false,
 };

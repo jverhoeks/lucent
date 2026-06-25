@@ -64,6 +64,19 @@ pub fn write_temp_file(filename: String, contents: String) -> Result<String, App
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Resolve a relative link (`rel`) against the directory of the open file
+/// (`base`) to an absolute path. Used for clicking relative `.md` links.
+#[tauri::command]
+pub fn resolve_sibling(base: String, rel: String) -> Result<String, AppError> {
+    let base_dir = Path::new(&base)
+        .parent()
+        .ok_or_else(|| AppError::new(ErrorKind::Io, "No parent directory"))?;
+    let joined = base_dir.join(rel);
+    std::fs::canonicalize(&joined)
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| AppError::new(ErrorKind::NotFound, e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +124,18 @@ mod tests {
         assert!(is_markdown(Path::new("/x/a.MARKDOWN")));
         assert!(!is_markdown(Path::new("/x/a.txt")));
         assert!(!is_markdown(Path::new("/x/a")));
+    }
+
+    #[test]
+    fn resolves_relative_sibling_path() {
+        let dir = std::env::temp_dir().join("mdv_test_resolve");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.md"), "a").unwrap();
+        std::fs::write(dir.join("b.md"), "b").unwrap();
+        let base = dir.join("a.md").to_string_lossy().to_string();
+        let resolved = resolve_sibling(base, "b.md".into()).unwrap();
+        assert!(resolved.ends_with("b.md"));
     }
 
     #[test]

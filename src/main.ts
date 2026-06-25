@@ -4,6 +4,7 @@ import "katex/dist/katex.min.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { TabManager } from "./tabs";
 import { loadSettings, saveSettings } from "./settings";
@@ -133,6 +134,47 @@ inpSize.addEventListener("input", () => updateStyle({ fontSizePx: Number(inpSize
 selTheme.addEventListener("change", () =>
   updateStyle({ theme: selTheme.value as StyleSettings["theme"] })
 );
+
+// ---- Link handling ----
+// In-page anchors scroll; external URLs open in the system browser; relative
+// .md links open in a new tab. Without this, clicking a link would navigate the
+// whole webview away from the app.
+content.addEventListener("click", async (e) => {
+  const anchor = (e.target as HTMLElement).closest("a");
+  if (!anchor) return;
+  const href = anchor.getAttribute("href");
+  if (!href) return;
+
+  if (href.startsWith("#")) {
+    e.preventDefault();
+    const id = decodeURIComponent(href.slice(1));
+    content.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    return;
+  }
+
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(href) || href.startsWith("mailto:")) {
+    e.preventDefault();
+    await openUrl(href);
+    return;
+  }
+
+  // Relative link — resolve against the open file and open in a tab.
+  e.preventDefault();
+  const base = manager.getActivePath();
+  if (!base) return;
+  try {
+    const target = await invoke<string>("resolve_sibling", {
+      base,
+      rel: href.split("#")[0],
+    });
+    await openPath(target);
+  } catch {
+    showBanner(`Couldn't open ${href}`);
+  }
+});
 
 // ---- Disk watch events ----
 listen<FilePayload>("file-changed", (e) => manager.updateContent(e.payload.path, e.payload.content));

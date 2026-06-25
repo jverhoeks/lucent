@@ -31,14 +31,18 @@ export function extractJson(line: string): { text: string; value: unknown } | nu
       }
     }
   }
-  // Escaped: a quoted "..." segment whose unescaped content parses as JSON.
+  // Escaped: a quoted "..." segment IS a JSON string literal, so JSON.parse of
+  // the whole segment unescapes it correctly (handles \", \\, Windows paths,
+  // \uXXXX — all of JSON's escapes), and parsing that inner string yields the
+  // embedded value. This is more robust than hand-rolled \"/\\ replacement.
   const re = /"((?:[^"\\]|\\.)*)"/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(line)) !== null) {
     if (!/[{[]/.test(m[1])) continue;
-    const unesc = m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\");
     try {
-      const value = JSON.parse(unesc);
+      const inner = JSON.parse(m[0]); // m[0] is the quoted segment incl. its quotes
+      if (typeof inner !== "string") continue;
+      const value = JSON.parse(inner);
       if (value && typeof value === "object") return { text: m[0], value };
     } catch { /* not this segment */ }
   }

@@ -4,6 +4,12 @@
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --serif: Georgia, "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --accent: #2563eb;
+  --bar-bg: #fbfbfd;
+  --bar-border: rgba(0, 0, 0, 0.1);
+  --btn-bg: #ffffff;
+  --btn-border: rgba(0, 0, 0, 0.16);
+  --btn-hover: #f0f1f3;
 }
 
 * {
@@ -20,32 +26,133 @@ body {
   display: flex;
   flex-direction: column;
   font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ---- Toolbar ---- */
 #toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
-  background: #f6f6f6;
+  border-bottom: 1px solid var(--bar-border);
+  background: var(--bar-bg);
   flex-wrap: wrap;
   user-select: none;
+}
+
+#toolbar .group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#toolbar .spacer {
+  flex: 1;
 }
 
 #toolbar button,
 #toolbar select {
   font: inherit;
-  padding: 4px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
-  background: #fff;
+  font-size: 13px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  background: var(--btn-bg);
+  color: #1a1a1a;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-#toolbar button:hover {
-  background: #eee;
+#toolbar select {
+  padding: 0 8px;
+}
+
+#toolbar button:hover:not(:disabled),
+#toolbar select:hover {
+  background: var(--btn-hover);
+}
+
+#toolbar button:active:not(:disabled) {
+  background: #e6e7ea;
+}
+
+#toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#toolbar button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+#toolbar button.primary:hover:not(:disabled) {
+  background: #1d4fd7;
+}
+
+#toolbar input[type="range"] {
+  width: 96px;
+  accent-color: var(--accent);
+}
+
+/* ---- Tab bar ---- */
+#tabbar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 10px 0;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--bar-border);
+  overflow-x: auto;
+}
+
+#tabbar .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 6px 8px 6px 12px;
+  font-size: 13px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#tabbar .tab:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+#tabbar .tab.active {
+  background: #fff;
+  color: #111;
+  border-color: var(--bar-border);
+}
+
+#tabbar .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tabbar .tab-close {
+  border: none;
+  background: transparent;
+  color: #999;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#tabbar .tab-close:hover {
+  background: rgba(0, 0, 0, 0.12);
+  color: #333;
 }
 
 /* ---- Content shell ---- */
@@ -55,7 +162,6 @@ body {
   padding: 32px 24px;
 }
 
-/* The content area carries theme + font presets via data attributes. */
 #content[data-theme="light"] {
   background: #ffffff;
   color: #1a1a1a;
@@ -69,15 +175,14 @@ body {
   color: #e6e6e6;
 }
 
-#content[data-font="sans"] .doc,
-#content[data-font="sans"] .raw {
+/* Font preset applies to the rendered document only — raw view stays monospace. */
+#content[data-font="sans"] .doc {
   font-family: var(--sans);
 }
 #content[data-font="serif"] .doc {
   font-family: var(--serif);
 }
-#content[data-font="mono"] .doc,
-#content[data-font="mono"] .raw {
+#content[data-font="mono"] .doc {
   font-family: var(--mono);
 }
 
@@ -112,7 +217,7 @@ body {
 }
 
 .doc a {
-  color: #2563eb;
+  color: var(--accent);
 }
 #content[data-theme="dark"] .doc a {
   color: #6ea8fe;
@@ -121,9 +226,8 @@ body {
 .doc blockquote {
   margin-left: 0;
   padding: 0.2em 1em;
-  border-left: 4px solid rgba(0, 0, 0, 0.2);
-  color: inherit;
-  opacity: 0.85;
+  border-left: 4px solid rgba(127, 127, 127, 0.4);
+  opacity: 0.9;
 }
 
 .doc code {
@@ -160,12 +264,13 @@ body {
   padding-left: 1em;
 }
 
-/* ---- Raw view ---- */
+/* ---- Raw view (always monospace) ---- */
 .raw {
   max-width: var(--max-width);
   margin: 0 auto;
   font-family: var(--mono);
   font-size: var(--font-size);
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -187,6 +292,7 @@ body {
 /* ---- Print / PDF export ---- */
 @media print {
   #toolbar,
+  #tabbar,
   #banner {
     display: none !important;
   }

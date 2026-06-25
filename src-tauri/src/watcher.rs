@@ -1,5 +1,6 @@
 use crate::commands::{read_file, FilePayload};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
@@ -23,10 +24,11 @@ struct RemovedPayload {
     path: String,
 }
 
-/// Holds the active watcher. Dropping it (by replacing) stops the previous watch.
+/// Holds one active watcher per open document, keyed by file path. Removing an
+/// entry drops its watcher and stops that watch.
 #[derive(Default)]
 pub struct WatchState {
-    pub watcher: Mutex<Option<RecommendedWatcher>>,
+    pub watchers: Mutex<HashMap<String, RecommendedWatcher>>,
 }
 
 #[tauri::command]
@@ -65,9 +67,19 @@ pub fn watch_file(path: String, state: State<WatchState>, app: AppHandle) -> Res
     watcher
         .watch(&watch_root, RecursiveMode::NonRecursive)
         .map_err(|e| e.to_string())?;
-    // Replace any prior watcher (dropping it stops the old watch).
-    *state.watcher.lock().unwrap() = Some(watcher);
+    // Replace any prior watcher for this path; insert the new one.
+    state.watchers.lock().unwrap().insert(path, watcher);
     Ok(())
+}
+
+#[tauri::command]
+pub fn unwatch_file(path: String, state: State<WatchState>) {
+    state.watchers.lock().unwrap().remove(&path);
+}
+
+#[tauri::command]
+pub fn unwatch_all(state: State<WatchState>) {
+    state.watchers.lock().unwrap().clear();
 }
 
 #[cfg(test)]

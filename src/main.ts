@@ -4,17 +4,39 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { Viewer } from "./viewer";
+import { TabManager } from "./tabs";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
 import { exportHtml, exportPdf } from "./export";
 import { FilePayload, AppError, StyleSettings } from "./types";
 
+const tabbar = document.getElementById("tabbar")!;
 const content = document.getElementById("content")!;
 const banner = document.getElementById("banner")!;
-const viewer = new Viewer(content);
 let settings: StyleSettings = loadSettings();
-viewer.applyStyle(settings);
+
+const btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
+
+const manager = new TabManager(tabbar, content, settings, {
+  onChange: refreshToolbar,
+  onTabClosed: (path) => void invoke("unwatch_file", { path }),
+  onCloseAll: () => void invoke("unwatch_all"),
+});
+
+function refreshToolbar() {
+  const has = manager.count() > 0;
+  for (const id of [
+    "btn-toggle",
+    "btn-next",
+    "btn-close-all",
+    "btn-export-html",
+    "btn-export-pdf",
+    "btn-copy-md",
+    "btn-copy-rich",
+  ]) {
+    btn(id).disabled = !has;
+  }
+}
 
 function showBanner(msg: string) {
   banner.textContent = msg;
@@ -22,39 +44,63 @@ function showBanner(msg: string) {
   setTimeout(() => (banner.hidden = true), 4000);
 }
 
-async function openPath(path: string) {
+async function readPath(path: string): Promise<string | null> {
   try {
     const payload = await invoke<FilePayload>("read_file", { path });
-    viewer.setSource(payload.content);
-    await invoke("watch_file", { path });
+    return payload.content;
   } catch (e) {
     const msg = (e as AppError)?.message ?? String(e);
     showBanner(`Couldn't open ${path} — ${msg}`);
+    return null;
   }
 }
 
-// ---- Toolbar ----
-document.getElementById("btn-open")!.addEventListener("click", async () => {
+async function openPath(path: string) {
+  const content = await readPath(path);
+  if (content === null) return;
+  manager.openOrActivate(path, content);
+  await invoke("watch_file", { path });
+}
+
+async function openMany(paths: string[]) {
+  for (const p of paths) await openPath(p);
+}
+
+// ---- Toolbar actions ----
+btn("btn-open").addEventListener("click", async () => {
   const sel = await open({
-    filters: [{ name: "Markdown", extensions: ["md", "markdown", "txt"] }],
+    multiple: true,
+    filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd", "txt"] }],
   });
-  if (typeof sel === "string") await openPath(sel);
+  if (Array.isArray(sel)) await openMany(sel);
+  else if (typeof sel === "string") await openPath(sel);
 });
-document
-  .getElementById("btn-toggle")!
-  .addEventListener("click", () => viewer.toggle());
-document
-  .getElementById("btn-export-html")!
-  .addEventListener("click", () => exportHtml(viewer));
-document
-  .getElementById("btn-export-pdf")!
-  .addEventListener("click", () => exportPdf());
-document
-  .getElementById("btn-copy-md")!
-  .addEventListener("click", () => copyAsMarkdown(viewer.getRawText()));
-document
-  .getElementById("btn-copy-rich")!
-  .addEventListener("click", () => copyAsRichText(viewer.getRenderedHtml()));
+
+btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
+btn("btn-close-all").addEventListener("click", () => manager.closeAll());
+
+btn("btn-next").addEventListener("click", async () => {
+  const cur = manager.getActivePath();
+  if (!cur) return;
+  try {
+    const siblings = await invoke<string[]>("list_sibling_markdown", { path: cur });
+    const idx = siblings.indexOf(cur);
+    if (idx < 0 || siblings.length < 2) return;
+    const next = siblings[(idx + 1) % siblings.length]; // wrap around
+    const content = await readPath(next);
+    if (content === null) return;
+    await invoke("unwatch_file", { path: cur });
+    manager.replaceActive(next, content);
+    await invoke("watch_file", { path: next });
+  } catch (e) {
+    showBanner(`Couldn't list directory — ${(e as AppError)?.message ?? e}`);
+  }
+});
+
+btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRenderedHtml()));
+btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRenderedHtml()));
+btn("btn-copy-md").addEventListener("click", () => copyAsMarkdown(manager.getActiveRawText()));
+btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveRenderedHtml()));
 
 // ---- Style controls ----
 const selFont = document.getElementById("sel-font") as HTMLSelectElement;
@@ -66,28 +112,31 @@ selTheme.value = settings.theme;
 
 function updateStyle(patch: Partial<StyleSettings>) {
   settings = { ...settings, ...patch };
-  viewer.applyStyle(settings);
+  manager.applyStyle(settings);
   saveSettings(settings);
 }
 selFont.addEventListener("change", () =>
   updateStyle({ fontFamily: selFont.value as StyleSettings["fontFamily"] })
 );
-inpSize.addEventListener("input", () =>
-  updateStyle({ fontSizePx: Number(inpSize.value) })
-);
+inpSize.addEventListener("input", () => updateStyle({ fontSizePx: Number(inpSize.value) }));
 selTheme.addEventListener("change", () =>
   updateStyle({ theme: selTheme.value as StyleSettings["theme"] })
 );
 
-// ---- Auto-reload + removal ----
-listen<FilePayload>("file-changed", (e) => viewer.setSource(e.payload.content));
-listen<{ path: string }>("file-removed", (e) =>
-  showBanner(`File removed: ${e.payload.path}`)
-);
+// ---- Disk watch events ----
+listen<FilePayload>("file-changed", (e) => manager.updateContent(e.payload.path, e.payload.content));
+listen<{ path: string }>("file-removed", (e) => showBanner(`File removed: ${e.payload.path}`));
 
 // ---- Drag-and-drop ----
 getCurrentWebview().onDragDropEvent((e) => {
   if (e.payload.type === "drop" && e.payload.paths.length > 0) {
-    openPath(e.payload.paths[0]);
+    void openMany(e.payload.paths);
   }
 });
+
+// ---- Files passed on the command line (e.g. `markdown-gui *.md`) ----
+(async () => {
+  refreshToolbar();
+  const startup = await invoke<string[]>("get_startup_files");
+  if (startup.length > 0) await openMany(startup);
+})();

@@ -9,24 +9,41 @@
 
   <body>
     <header id="toolbar">
-      <button id="btn-open">Open</button>
-      <button id="btn-toggle">Raw / Rendered</button>
-      <select id="sel-font" title="Font">
-        <option value="sans">Sans</option>
-        <option value="serif">Serif</option>
-        <option value="mono">Mono</option>
-      </select>
-      <input id="inp-size" type="range" min="14" max="22" title="Font size" />
-      <select id="sel-theme" title="Theme">
-        <option value="light">Light</option>
-        <option value="sepia">Sepia</option>
-        <option value="dark">Dark</option>
-      </select>
-      <button id="btn-export-html">Export HTML</button>
-      <button id="btn-export-pdf">Export PDF</button>
-      <button id="btn-copy-md">Copy MD</button>
-      <button id="btn-copy-rich">Copy Rich</button>
+      <div class="group">
+        <button id="btn-open" class="primary">Open…</button>
+        <button id="btn-next" title="Next file in folder">Next ›</button>
+        <button id="btn-close-all" title="Close all tabs">Close all</button>
+      </div>
+
+      <div class="group">
+        <button id="btn-toggle" title="Toggle rendered / raw">Raw</button>
+      </div>
+
+      <div class="group">
+        <select id="sel-font" title="Font family">
+          <option value="sans">Sans</option>
+          <option value="serif">Serif</option>
+          <option value="mono">Mono</option>
+        </select>
+        <input id="inp-size" type="range" min="14" max="22" title="Font size" />
+        <select id="sel-theme" title="Theme">
+          <option value="light">Light</option>
+          <option value="sepia">Sepia</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="group">
+        <button id="btn-copy-md" title="Copy as Markdown">Copy MD</button>
+        <button id="btn-copy-rich" title="Copy as rich text">Copy Rich</button>
+        <button id="btn-export-html" title="Export standalone HTML">HTML</button>
+        <button id="btn-export-pdf" title="Export PDF (opens in browser)">PDF</button>
+      </div>
     </header>
+
+    <nav id="tabbar" hidden></nav>
     <main id="content" data-theme="light" data-font="sans"></main>
     <div id="banner" hidden></div>
   </body>

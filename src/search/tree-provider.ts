@@ -1,0 +1,53 @@
+import type { SearchProvider, SearchQuery, Match } from "../types";
+import type { TreeView } from "../data/tree";
+
+interface TreeHit { path: string; }
+
+export class TreeSearchProvider implements SearchProvider {
+  private hits: TreeHit[] = [];
+  constructor(private tree: TreeView) {}
+
+  private matcher(q: SearchQuery): (s: string) => boolean {
+    if (q.regex) {
+      const re = new RegExp(q.text, q.caseSensitive ? "" : "i");
+      return (s) => re.test(s);
+    }
+    if (q.caseSensitive) return (s) => s.includes(q.text);
+    const lc = q.text.toLowerCase();
+    return (s) => s.toLowerCase().includes(lc);
+  }
+
+  find(q: SearchQuery): Match[] {
+    this.clear();
+    if (!q.text) return [];
+    const test = this.matcher(q);
+    this.hits = [];
+    for (const n of this.tree.nodes()) {
+      const keyHit = test(n.key);
+      const valHit = n.value.kind === "scalar" && test(n.value.text);
+      if (keyHit || valHit) this.hits.push({ path: n.path });
+    }
+    return this.hits.map((_, i) => ({ id: i }));
+  }
+
+  reveal(id: number): void {
+    const hit = this.hits[id];
+    if (!hit) return;
+    this.clearCurrent();               // drop the previous current marker
+    this.tree.expandToPath(hit.path);  // expansion re-renders; row now exists
+    const row = this.tree.rowElement(hit.path);
+    if (row) {
+      row.classList.add("search-current");
+      row.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    }
+  }
+
+  private clearCurrent(): void {
+    for (const h of this.hits) this.tree.rowElement(h.path)?.classList.remove("search-current");
+  }
+
+  clear(): void {
+    this.clearCurrent();
+    this.hits = [];
+  }
+}

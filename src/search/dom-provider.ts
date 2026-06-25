@@ -62,9 +62,9 @@ export class DomSearchProvider implements SearchProvider {
 
   reveal(id: number): void {
     this.hits.forEach((h, i) => h.mark.classList.toggle("search-current", i === id));
-    if (this.hits[id]?.mark.scrollIntoView) {
-      this.hits[id].mark.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
+    // Optional call: jsdom doesn't implement scrollIntoView, so `?.()` no-ops in
+    // tests while the real webview scrolls. (A truthiness guard trips TS2774.)
+    this.hits[id]?.mark.scrollIntoView?.({ block: "center", behavior: "smooth" });
   }
 
   clear(): void {

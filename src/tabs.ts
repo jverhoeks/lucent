@@ -1,7 +1,7 @@
 import hljs from "highlight.js";
 import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
-import { StyleSettings, Theme, Format } from "./types";
+import { StyleSettings, Theme, Format, DataLang } from "./types";
 
 export interface Tab {
   path: string;
@@ -9,6 +9,7 @@ export interface Tab {
   content: string;
   format: Format;          // detected format
   forcedFormat?: Format;   // "View as…" override
+  forcedLang?: DataLang;   // "View as data:lang" override
   mode: "rendered" | "raw";
   scrollTop: number;
 }
@@ -78,11 +79,12 @@ export class TabManager {
     return t ? effectiveFormat(t) : undefined;
   }
 
-  setActiveForcedFormat(format: Format): void {
+  setActiveForcedFormat(format: Format, lang?: DataLang): void {
     const t = this.active();
     if (!t) return;
     t.forcedFormat = format;
-    t.mode = format === "markdown" ? "rendered" : "raw";
+    t.forcedLang = lang;
+    t.mode = (format === "text" || format === "log") ? "raw" : "rendered";
     this.repaint(false);
     this.hooks.onChange();
   }
@@ -101,7 +103,7 @@ export class TabManager {
       title: basename(path),
       content,
       format,
-      mode: format === "markdown" ? "rendered" : "raw",
+      mode: (format === "text" || format === "log") ? "raw" : "rendered",
       scrollTop: 0,
     });
     this.activate(this.tabs.length - 1);
@@ -116,7 +118,8 @@ export class TabManager {
     t.content = content;
     t.format = detectFormat(path);
     t.forcedFormat = undefined;
-    t.mode = t.format === "markdown" ? "rendered" : "raw";
+    t.forcedLang = undefined;
+    t.mode = (t.format === "text" || t.format === "log") ? "raw" : "rendered";
     t.scrollTop = 0;
     this.repaint(true);
     this.renderTabbar();
@@ -191,7 +194,11 @@ export class TabManager {
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
     if (t.mode === "rendered") {
-      getRenderer(effectiveFormat(t)).render(t.content, this.content, { theme: this.theme }, t.path);
+      getRenderer(effectiveFormat(t)).render(
+        t.content, this.content,
+        { theme: this.theme, dataLang: t.forcedLang },
+        t.path,
+      );
     } else {
       const pre = document.createElement("pre");
       pre.className = "raw";

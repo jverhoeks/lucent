@@ -53,6 +53,7 @@ export interface SearchProvider {
 
 export interface RenderCtx {
   theme: Theme;
+  dataLang?: DataLang;
 }
 
 export interface Renderer {

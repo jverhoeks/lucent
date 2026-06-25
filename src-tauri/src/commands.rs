@@ -37,9 +37,10 @@ pub fn is_markdown(path: &Path) -> bool {
     )
 }
 
-/// True if a path is something this viewer is allowed to open (markdown or
-/// plain text). Used to gate relative-link navigation so a crafted link can't
-/// coax the app into reading arbitrary files (e.g. keys, /etc/passwd).
+/// True if a path is something this viewer is allowed to open (markdown,
+/// plain text, or structured data). Used to gate relative-link navigation so a
+/// crafted link can't coax the app into reading arbitrary files (e.g. keys,
+/// /etc/passwd).
 pub fn is_viewable(path: &Path) -> bool {
     if is_markdown(path) {
         return true;
@@ -47,6 +48,7 @@ pub fn is_viewable(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()),
         Some(ref e) if e == "txt" || e == "log" || e == "text"
+            || e == "json" || e == "yaml" || e == "yml" || e == "toml" || e == "ini"
     )
 }
 
@@ -151,6 +153,26 @@ mod tests {
         assert!(is_markdown(Path::new("/x/a.MARKDOWN")));
         assert!(!is_markdown(Path::new("/x/a.txt")));
         assert!(!is_markdown(Path::new("/x/a")));
+    }
+
+    #[test]
+    fn is_viewable_recognizes_data_extensions() {
+        // data formats
+        assert!(is_viewable(Path::new("/x/a.json")));
+        assert!(is_viewable(Path::new("/x/a.JSON")));
+        assert!(is_viewable(Path::new("/x/a.yaml")));
+        assert!(is_viewable(Path::new("/x/a.yml")));
+        assert!(is_viewable(Path::new("/x/a.toml")));
+        assert!(is_viewable(Path::new("/x/a.ini")));
+        // markdown still viewable
+        assert!(is_viewable(Path::new("/x/a.md")));
+        // text/log still viewable
+        assert!(is_viewable(Path::new("/x/a.txt")));
+        assert!(is_viewable(Path::new("/x/a.log")));
+        // binary/image not viewable
+        assert!(!is_viewable(Path::new("/x/a.png")));
+        assert!(!is_viewable(Path::new("/x/a.key")));
+        assert!(!is_viewable(Path::new("/x/a")));
     }
 
     #[test]

@@ -13,11 +13,11 @@ export function getCurrentTree(): TreeView | null {
 
 export const dataRenderer: Renderer = {
   format: "data",
-  render(source: string, container: HTMLElement, _ctx: RenderCtx, path?: string) {
+  render(source: string, container: HTMLElement, ctx: RenderCtx, path?: string) {
     currentTree = null;
     container.replaceChildren();
 
-    const lang = path ? dataLangOf(path) : null;
+    const lang = ctx.dataLang ?? (path ? dataLangOf(path) : null);
     if (!lang) {
       // No recognised data extension (e.g. forced via "View as…" onto an
       // unknown path) — show raw rather than guessing a parser and emitting a

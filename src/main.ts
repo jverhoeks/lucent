@@ -10,7 +10,7 @@ import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
 import { exportHtml, exportPdf } from "./export";
-import { FilePayload, AppError, StyleSettings, Format } from "./types";
+import { FilePayload, AppError, StyleSettings, Format, DataLang } from "./types";
 import { SearchController } from "./search/controller";
 import { DomSearchProvider } from "./search/dom-provider";
 import { TreeSearchProvider } from "./search/tree-provider";
@@ -127,6 +127,7 @@ btn("btn-open").addEventListener("click", async () => {
     filters: [
       { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
       { name: "Text", extensions: ["txt", "log", "text"] },
+      { name: "Data", extensions: ["json", "yaml", "yml", "toml", "ini"] },
     ],
   });
   if (Array.isArray(sel)) await openMany(sel);
@@ -203,8 +204,16 @@ selTheme.addEventListener("change", () =>
 // ---- "View as…" format override ----
 const selViewAs = document.getElementById("sel-viewas") as HTMLSelectElement;
 selViewAs.addEventListener("change", () => {
-  const v = selViewAs.value as Format | "";
-  if (v) manager.setActiveForcedFormat(v); // triggers onChange → rebindSearch
+  const v = selViewAs.value;
+  if (v) {
+    if (v.startsWith("data:")) {
+      const lang = v.slice("data:".length) as DataLang;
+      manager.setActiveForcedFormat("data", lang);
+    } else {
+      manager.setActiveForcedFormat(v as Format);
+    }
+    // onChange triggers rebindSearch via manager hooks
+  }
   selViewAs.value = ""; // reset to the placeholder label
 });
 

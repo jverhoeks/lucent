@@ -155,15 +155,21 @@ content.addEventListener("click", async (e) => {
     return;
   }
 
-  // Any URL with an explicit scheme: only open http/https/mailto in the system
-  // browser; refuse anything else (file:, javascript:, custom app schemes, …).
-  const scheme = href.match(/^([a-z][a-z0-9+.-]*):/i)?.[1]?.toLowerCase();
-  if (scheme) {
+  // Absolute URL (parses with a scheme): only hand http/https/mailto to the OS
+  // handler; refuse anything else (file:, javascript:, custom app schemes, …).
+  let url: URL | null = null;
+  try {
+    url = new URL(href);
+  } catch {
+    url = null; // not absolute → treat as a relative link below
+  }
+  if (url) {
     e.preventDefault();
-    if (scheme === "http" || scheme === "https" || scheme === "mailto") {
+    const allowed = ["http:", "https:", "mailto:"];
+    if (allowed.includes(url.protocol)) {
       await openUrl(href);
     } else {
-      showBanner(`Blocked link with unsupported scheme: ${scheme}:`);
+      showBanner(`Blocked link with unsupported scheme: ${url.protocol}`);
     }
     return;
   }

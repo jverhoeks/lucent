@@ -15,11 +15,11 @@ function mk() {
 describe("TabManager stdin tab", () => {
   beforeEach(() => document.body.replaceChildren());
 
-  it("opens a single <stdin> log tab in follow mode and appends lines", () => {
+  it("opens a single <stdin> log tab in follow mode from a snapshot", () => {
     const { mgr } = mk();
-    mgr.openStdin();
-    mgr.appendStdin(["INFO a", "ERROR b"]);
-    mgr.appendStdin(["WARN c"]);
+    // The Rust buffer is cumulative, so each snapshot is the full content.
+    mgr.setStdin(["INFO a", "ERROR b"]);
+    mgr.setStdin(["INFO a", "ERROR b", "WARN c"]);
     expect(mgr.count()).toBe(1);
     expect(mgr.getActivePath()).toBe(STDIN_PATH);
     expect(mgr.getActiveFormat()).toBe("log");
@@ -27,20 +27,16 @@ describe("TabManager stdin tab", () => {
     expect(mgr.getActiveRawText().split("\n")).toEqual(["INFO a", "ERROR b", "WARN c"]);
   });
 
-  it("reuses the same stdin tab across appends (no duplicates)", () => {
+  it("reuses the same stdin tab across snapshots (no duplicates)", () => {
     const { mgr } = mk();
-    mgr.appendStdin(["one"]); // appendStdin opens the tab if absent
-    mgr.appendStdin(["two"]);
+    mgr.setStdin(["one"]); // creates the tab on first non-empty snapshot
+    mgr.setStdin(["one", "two"]);
     expect(mgr.count()).toBe(1);
   });
 
-  it("ring-caps the stdin buffer to the most recent lines", () => {
+  it("ignores an empty snapshot when no stdin tab exists yet", () => {
     const { mgr } = mk();
-    const many = Array.from({ length: 10_050 }, (_, i) => `line ${i}`);
-    mgr.appendStdin(many);
-    const lines = mgr.getActiveRawText().split("\n");
-    expect(lines.length).toBe(10_000);
-    expect(lines[lines.length - 1]).toBe("line 10049"); // newest kept
-    expect(lines[0]).toBe("line 50"); // oldest dropped
+    mgr.setStdin([]);
+    expect(mgr.count()).toBe(0);
   });
 });

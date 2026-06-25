@@ -1,12 +1,29 @@
+use std::collections::VecDeque;
 use std::io::{BufRead, IsTerminal};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-/// If stdin is piped (not a TTY), stream its lines to the frontend as batched
-/// `stdin-lines` events. No-op when stdin is a terminal (don't consume it) — so
-/// `lucent` with no pipe, and the macOS .app double-click, are unaffected.
-pub fn spawn_reader(app: AppHandle) {
+/// The most recent piped-stdin lines, capped. Shared between the reader thread
+/// (which appends) and the `stdin_lines` command (which the frontend pulls).
+pub type StdinBuffer = Arc<Mutex<VecDeque<String>>>;
+
+const MAX_LINES: usize = 10_000;
+
+pub fn new_buffer() -> StdinBuffer {
+    Arc::new(Mutex::new(VecDeque::new()))
+}
+
+/// If stdin is piped (not a TTY), read it on a background thread into the shared
+/// buffer (capped) and emit a lightweight `stdin-changed` signal after each
+/// batch. No-op when stdin is a terminal — so `lucent` with no pipe and the
+/// macOS .app double-click are unaffected.
+///
+/// The buffer (not the event payload) is the source of truth: the frontend
+/// pulls the full snapshot via `stdin_lines` on startup AND on each
+/// `stdin-changed`, so lines produced before the webview registers its listener
+/// are never lost (no event-before-listener race).
+pub fn spawn_reader(app: AppHandle, buffer: StdinBuffer) {
     if std::io::stdin().is_terminal() {
         return;
     }
@@ -27,13 +44,11 @@ pub fn spawn_reader(app: AppHandle) {
         }
     });
 
-    // Flush thread: coalesce bursts into one event every ~50ms (or per idle gap),
-    // so a fast producer doesn't trigger an IPC event per line.
+    // Flush thread: coalesce bursts (~50ms), append to the capped buffer, then
+    // emit one `stdin-changed` signal so the frontend re-pulls the snapshot.
     std::thread::spawn(move || {
-        // Block for the first line of each batch; exit when the reader is done.
         while let Ok(first) = rx.recv() {
             let mut batch = vec![first];
-            // Drain whatever else is immediately available, then a short settle.
             while let Ok(l) = rx.try_recv() {
                 batch.push(l);
             }
@@ -41,7 +56,24 @@ pub fn spawn_reader(app: AppHandle) {
             while let Ok(l) = rx.try_recv() {
                 batch.push(l);
             }
-            let _ = app.emit("stdin-lines", batch);
+            if let Ok(mut buf) = buffer.lock() {
+                for l in batch {
+                    buf.push_back(l);
+                }
+                while buf.len() > MAX_LINES {
+                    buf.pop_front();
+                }
+            }
+            let _ = app.emit("stdin-changed", ());
         }
     });
+}
+
+/// Return the current stdin buffer snapshot (oldest→newest, capped).
+#[tauri::command]
+pub fn stdin_lines(buffer: tauri::State<StdinBuffer>) -> Vec<String> {
+    buffer
+        .lock()
+        .map(|b| b.iter().cloned().collect())
+        .unwrap_or_default()
 }

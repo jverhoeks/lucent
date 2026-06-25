@@ -4,7 +4,6 @@ import { getRenderer } from "./renderers/registry";
 import { StyleSettings, Theme, Format, DataLang } from "./types";
 
 export const STDIN_PATH = "<stdin>";
-const STDIN_MAX_LINES = 10_000;
 
 export interface Tab {
   path: string;
@@ -214,16 +213,17 @@ export class TabManager {
     this.activate(this.tabs.length - 1);
   }
 
-  /** Append streamed lines to the stdin tab (creating it on first call),
-   *  ring-capped to the most recent STDIN_MAX_LINES. */
-  appendStdin(lines: string[]): void {
+  /** Replace the stdin tab's content with the latest snapshot from the Rust
+   *  buffer (creating the tab on the first non-empty snapshot). The buffer is
+   *  already capped backend-side, so no frontend ring-cap is needed. */
+  setStdin(lines: string[]): void {
     let i = this.tabs.findIndex((t) => t.path === STDIN_PATH);
-    if (i < 0) { this.openStdin(); i = this.tabs.findIndex((t) => t.path === STDIN_PATH); }
-    const t = this.tabs[i];
-    const existing = t.content === "" ? [] : t.content.split("\n");
-    let merged = existing.concat(lines);
-    if (merged.length > STDIN_MAX_LINES) merged = merged.slice(merged.length - STDIN_MAX_LINES);
-    t.content = merged.join("\n");
+    if (i < 0) {
+      if (lines.length === 0) return;
+      this.openStdin();
+      i = this.tabs.findIndex((t) => t.path === STDIN_PATH);
+    }
+    this.tabs[i].content = lines.join("\n");
     if (i === this.activeIndex) this.repaint(false);
   }
 

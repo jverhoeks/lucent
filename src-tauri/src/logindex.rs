@@ -134,12 +134,33 @@ impl LineIndex {
         file.seek(SeekFrom::Start(from_offset))
             .map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?;
 
-        // Record the start of the first line in this scan range.
-        // For an initial build (from_offset == 0) the first line starts at 0.
-        // For extend calls (from_offset > 0) `from_offset` is the byte right
-        // after the last '\n' we already indexed, so it is the start of the
-        // first new line.
-        self.offsets.push(from_offset);
+        // Push `from_offset` as a line-start only when it truly is one:
+        //   - offset 0 is always the start of the first line, OR
+        //   - the byte immediately before it is '\n' (previous line ended cleanly).
+        // When neither holds, the appended bytes continue an existing partial
+        // line, so we must NOT create a new offset entry here.
+        let is_line_start = if from_offset == 0 {
+            true
+        } else {
+            // Peek at the byte before from_offset; fall back to pushing (old
+            // behaviour) if the seek/read fails for any reason.
+            let mut byte = [0u8; 1];
+            let peek = file
+                .seek(SeekFrom::Start(from_offset - 1))
+                .and_then(|_| file.read_exact(&mut byte));
+            match peek {
+                Ok(()) => byte[0] == b'\n',
+                Err(_) => true, // graceful fallback: keep old behaviour
+            }
+        };
+        // Restore position to from_offset after the optional peek.
+        if from_offset > 0 {
+            file.seek(SeekFrom::Start(from_offset))
+                .map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?;
+        }
+        if is_line_start {
+            self.offsets.push(from_offset);
+        }
 
         let mut pos = from_offset;
         let mut buf = [0u8; 65536];
@@ -294,5 +315,19 @@ mod tests {
             idx.window(1, 2),
             vec!["two".to_string(), "three".to_string()]
         );
+    }
+
+    #[test]
+    fn extend_after_no_trailing_newline_does_not_split_the_last_line() {
+        let p = std::env::temp_dir().join("li_d.log");
+        std::fs::write(&p, "a\nb").unwrap(); // last line "b" has NO trailing newline
+        let mut idx = LineIndex::build(p.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(idx.line_count(), 2);
+        // The partial line "b" is completed and more lines appended:
+        std::fs::write(&p, "a\nbcont\nc\n").unwrap();
+        idx.extend().unwrap();
+        assert_eq!(idx.line_count(), 3);
+        assert_eq!(idx.window(1, 1), vec!["bcont".to_string()]); // not "b" + phantom
+        assert_eq!(idx.window(2, 1), vec!["c".to_string()]);
     }
 }

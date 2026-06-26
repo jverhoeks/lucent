@@ -2,6 +2,7 @@ import hljs from "highlight.js";
 import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { getCurrentLogView, toLines } from "./renderers/log";
+import { VirtualLogView } from "./logs/virtual-log-view";
 import { StyleSettings, Theme, Format, DataLang } from "./types";
 
 export const STDIN_PATH = "<stdin>";
@@ -16,6 +17,12 @@ export interface Tab {
   mode: "rendered" | "raw";
   scrollTop: number;
   follow?: boolean;
+  /** True when the file is too large to load into memory; rendered via VirtualLogView. */
+  windowed?: boolean;
+  /** Total line count for windowed tabs (from log_open). */
+  lineCount?: number;
+  /** Backend fetch callback for windowed tabs. */
+  fetchWindow?: (start: number, count: number) => Promise<string[]>;
 }
 
 export interface TabHooks {
@@ -39,6 +46,8 @@ export class TabManager {
   private tabs: Tab[] = [];
   private activeIndex = -1;
   private theme: Theme = "light";
+  /** The VirtualLogView for the currently active windowed tab, if any. */
+  private currentVlog: VirtualLogView | null = null;
 
   constructor(
     private tabbar: HTMLElement,
@@ -116,16 +125,61 @@ export class TabManager {
     this.activate(this.tabs.length - 1);
   }
 
+  /** Open a huge log in windowed mode (no full content read). */
+  openWindowedLog(
+    path: string,
+    lineCount: number,
+    fetchWindow: (start: number, count: number) => Promise<string[]>,
+  ): void {
+    const existing = this.tabs.findIndex((t) => t.path === path);
+    if (existing >= 0) {
+      // Refresh windowed state in case it was already open
+      this.tabs[existing].windowed = true;
+      this.tabs[existing].lineCount = lineCount;
+      this.tabs[existing].fetchWindow = fetchWindow;
+      this.activate(existing);
+      return;
+    }
+    this.tabs.push({
+      path,
+      title: basename(path),
+      content: "",
+      format: "log",
+      mode: "rendered",
+      scrollTop: 0,
+      windowed: true,
+      lineCount,
+      fetchWindow,
+    });
+    this.activate(this.tabs.length - 1);
+  }
+
+  /** Return the active VirtualLogView (windowed tab), or null. */
+  getActiveVirtualLogView(): VirtualLogView | null {
+    return this.currentVlog;
+  }
+
+  /** True when the active tab is a windowed log. */
+  isActiveWindowed(): boolean {
+    return !!this.active()?.windowed;
+  }
+
   /** Replace the active tab's document in place (used by "next file" paging). */
   replaceActive(path: string, content: string): void {
     const t = this.active();
     if (!t) return;
+    // Destroy windowed view if this tab was windowed
+    this.currentVlog?.destroy();
+    this.currentVlog = null;
     t.path = path;
     t.title = basename(path);
     t.content = content;
     t.format = detectFormat(path);
     t.forcedFormat = undefined;
     t.forcedLang = undefined;
+    t.windowed = undefined;
+    t.lineCount = undefined;
+    t.fetchWindow = undefined;
     t.mode = t.format === "text" ? "raw" : "rendered";
     t.scrollTop = 0;
     this.repaint(true);
@@ -137,6 +191,8 @@ export class TabManager {
   updateContent(path: string, content: string): void {
     const i = this.tabs.findIndex((t) => t.path === path);
     if (i < 0) return;
+    // Windowed logs never hold full content; growth comes via the log-grew event.
+    if (this.tabs[i].windowed) return;
     this.tabs[i].content = content;
     if (i !== this.activeIndex) return;
     const t = this.tabs[i];
@@ -162,6 +218,11 @@ export class TabManager {
   closeTab(index: number): void {
     if (index < 0 || index >= this.tabs.length) return;
     const [closed] = this.tabs.splice(index, 1);
+    // If the closed tab was the active windowed tab, destroy its view
+    if (index === this.activeIndex) {
+      this.currentVlog?.destroy();
+      this.currentVlog = null;
+    }
     this.hooks.onTabClosed(closed.path);
     if (this.tabs.length === 0) {
       this.activeIndex = -1;
@@ -175,6 +236,8 @@ export class TabManager {
   }
 
   closeAll(): void {
+    this.currentVlog?.destroy();
+    this.currentVlog = null;
     this.tabs = [];
     this.activeIndex = -1;
     this.content.replaceChildren();
@@ -264,6 +327,19 @@ export class TabManager {
   private repaint(restoreScroll: boolean): void {
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
+
+    // Windowed tab: build/rebuild VirtualLogView (no content read)
+    if (t.windowed && t.lineCount !== undefined && t.fetchWindow) {
+      this.currentVlog?.destroy();
+      this.content.replaceChildren();
+      this.currentVlog = new VirtualLogView(this.content, t.lineCount, t.fetchWindow);
+      return;
+    }
+
+    // Destroy any lingering windowed view when switching to a non-windowed tab
+    this.currentVlog?.destroy();
+    this.currentVlog = null;
+
     if (t.mode === "rendered") {
       getRenderer(effectiveFormat(t)).render(
         t.content, this.content,

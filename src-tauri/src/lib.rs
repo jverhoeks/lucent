@@ -1,5 +1,6 @@
 mod commands;
 mod error;
+mod logindex;
 mod pdf;
 mod stdin;
 mod watcher;
@@ -43,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(watcher::WatchState::default())
         .manage(stdin_buf)
+        .manage(logindex::LogIndexState::default())
         .setup(move |app| {
             app.manage(StartupFiles(collect_startup_files()));
             stdin::spawn_reader(app.handle().clone(), reader_buf);
@@ -59,7 +61,11 @@ pub fn run() {
             watcher::unwatch_all,
             pdf::export_pdf_native,
             stdin::stdin_lines,
-            get_startup_files
+            get_startup_files,
+            logindex::log_open,
+            logindex::log_window,
+            logindex::log_search,
+            logindex::file_size
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

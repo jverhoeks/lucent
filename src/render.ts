@@ -174,9 +174,17 @@ export async function runPostRender(container: HTMLElement, theme: Theme): Promi
     });
     mermaidConfiguredTheme = theme;
   }
+  // Hide the raw mermaid source synchronously — BEFORE the first await — so the
+  // unprocessed `pre` text never paints as a flash in the window between the
+  // innerHTML set and the SVG swap. Revealed unconditionally in `finally`: even
+  // a diagram mermaid fails to process (it annotates inline rather than throwing)
+  // becomes visible again, so a broken diagram is never permanently hidden.
+  for (const n of nodes) n.style.visibility = "hidden";
   try {
     await mermaid.run({ nodes });
   } catch {
     /* mermaid annotates failing blocks inline */
+  } finally {
+    for (const n of nodes) n.style.visibility = "";
   }
 }

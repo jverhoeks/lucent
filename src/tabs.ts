@@ -48,6 +48,9 @@ export class TabManager {
   private theme: Theme = "light";
   /** The VirtualLogView for the currently active windowed tab, if any. */
   private currentVlog: VirtualLogView | null = null;
+  /** Monotonic repaint generation; an async post-render tail only applies if it
+   *  still matches (i.e. no newer repaint has run since). */
+  private repaintSeq = 0;
 
   constructor(
     private tabbar: HTMLElement,
@@ -325,6 +328,13 @@ export class TabManager {
   }
 
   private repaint(restoreScroll: boolean): void {
+    // Bump the generation counter FIRST — before any early return — so that a
+    // switch to a windowed/empty tab also invalidates an in-flight async
+    // post-render tail from a previous repaint. Otherwise a pending Mermaid
+    // callback could re-settle scroll (or show an error) against now-stale
+    // content it no longer owns.
+    const seq = ++this.repaintSeq;
+
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
 
@@ -341,39 +351,65 @@ export class TabManager {
     this.currentVlog = null;
 
     if (t.mode === "rendered") {
+      let result: void | Promise<void>;
       try {
-        getRenderer(effectiveFormat(t)).render(
+        result = getRenderer(effectiveFormat(t)).render(
           t.content, this.content,
           { theme: this.theme, dataLang: t.forcedLang },
           t.path,
         );
       } catch (err) {
-        // A renderer throwing must not leave the content area half-built —
-        // show the raw text plus a clear error instead of a broken view.
-        const wrap = document.createElement("div");
-        wrap.className = "render-error";
-        const note = document.createElement("p");
-        note.textContent = `Couldn't render this file: ${err instanceof Error ? err.message : String(err)}`;
-        const pre = document.createElement("pre");
-        pre.className = "raw";
-        pre.textContent = t.content;
-        wrap.append(note, pre);
-        this.content.replaceChildren(wrap);
+        // A renderer throwing synchronously must not leave the content area
+        // half-built — show raw text plus a clear error instead.
+        this.showRenderError(t, err);
+        return;
       }
-    } else {
-      const pre = document.createElement("pre");
-      pre.className = "raw";
-      const lang = effectiveFormat(t) === "data" ? (t.forcedLang ?? dataLangOf(t.path)) : null;
-      if (lang && hljs.getLanguage(lang)) {
-        pre.classList.add("hljs");
-        pre.innerHTML = hljs.highlight(t.content, { language: lang }).value; // hljs output is escaped/safe
-      } else {
-        pre.textContent = t.content;
+      // Immediate settle for the synchronous paint, so plain documents feel
+      // instant and don't wait on a microtask.
+      this.settleScroll(t, restoreScroll);
+      // Async renderers (Mermaid) mutate the DOM after `render` returns. Re-settle
+      // once they resolve so a restored scrollTop isn't left clamped against the
+      // shorter pre-SVG layout; route a late rejection to the same error view.
+      // The `seq` guard drops the callback if a newer repaint has superseded us.
+      if (result instanceof Promise) {
+        result.then(
+          () => { if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll); },
+          (err) => { if (seq === this.repaintSeq) this.showRenderError(t, err); },
+        );
       }
-      this.content.replaceChildren(pre);
+      return;
     }
+
+    const pre = document.createElement("pre");
+    pre.className = "raw";
+    const lang = effectiveFormat(t) === "data" ? (t.forcedLang ?? dataLangOf(t.path)) : null;
+    if (lang && hljs.getLanguage(lang)) {
+      pre.classList.add("hljs");
+      pre.innerHTML = hljs.highlight(t.content, { language: lang }).value; // hljs output is escaped/safe
+    } else {
+      pre.textContent = t.content;
+    }
+    this.content.replaceChildren(pre);
+    this.settleScroll(t, restoreScroll);
+  }
+
+  /** Restore the tab's saved scroll, then pin a followed log to the newest line. */
+  private settleScroll(t: Tab, restoreScroll: boolean): void {
     if (restoreScroll) this.content.scrollTop = t.scrollTop;
     if (t.follow && effectiveFormat(t) === "log") this.content.scrollTop = this.content.scrollHeight;
+  }
+
+  /** Replace the content area with the raw text plus a render-failure note. */
+  private showRenderError(t: Tab, err: unknown): void {
+    const wrap = document.createElement("div");
+    wrap.className = "render-error";
+    const note = document.createElement("p");
+    note.textContent = `Couldn't render this file: ${err instanceof Error ? err.message : String(err)}`;
+    const pre = document.createElement("pre");
+    pre.className = "raw";
+    pre.textContent = t.content;
+    wrap.append(note, pre);
+    this.content.replaceChildren(wrap);
   }
 
   private renderTabbar(): void {

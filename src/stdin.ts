@@ -14,6 +14,9 @@ export function initStdin(manager: TabManager): void {
     const lines = await invoke<string[]>("stdin_lines");
     if (lines.length) manager.setStdin(lines);
   };
-  void listen("stdin-changed", () => void refresh());
-  void refresh(); // catch anything buffered before we subscribed
+  const safeRefresh = () =>
+    refresh().catch((e) => console.error("stdin refresh failed:", e));
+  void listen("stdin-changed", safeRefresh).catch((e) =>
+    console.error("stdin listen failed:", e));
+  safeRefresh(); // catch anything buffered before we subscribed
 }

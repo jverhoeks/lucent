@@ -419,10 +419,6 @@ body {
   text-decoration: none;
   color: inherit;
 }
-.doc ul.contains-task-list {
-  list-style: none;
-  padding-left: 1em;
-}
 .doc .task-list-item {
   list-style: none;
 }
@@ -695,7 +691,9 @@ body.exporting .doc .code-header {
 /* ---- Search bar ---- */
 #searchbar {
   position: fixed;
-  top: 56px; /* clears the toolbar */
+  /* Track the toolbar's real height (it can wrap to multiple rows on a narrow
+     window); --toolbar-h is kept in sync by a ResizeObserver in main.ts. */
+  top: calc(var(--toolbar-h, 56px) + 4px);
   right: 16px;
   z-index: 100;
   display: flex;
@@ -971,5 +969,24 @@ mark.search-current { background: #f59e0b; }
   /* Keep log level colors; hide JSON toggle buttons. */
   .log-json-toggle {
     display: none !important;
+  }
+}
+
+/* ---- Drag-and-drop affordance (B7) ---- */
+body.drag-over #content {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+  background: rgba(37, 99, 235, 0.04);
+}
+
+/* ---- Reduced motion (X4) ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }

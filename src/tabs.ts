@@ -378,10 +378,28 @@ export class TabManager {
 
   private renderTabbar(): void {
     this.tabbar.replaceChildren();
+    this.tabbar.setAttribute("role", "tablist");
     this.tabs.forEach((t, i) => {
+      const active = i === this.activeIndex;
       const tab = document.createElement("div");
-      tab.className = "tab" + (i === this.activeIndex ? " active" : "");
+      tab.className = "tab" + (active ? " active" : "");
       tab.title = t.path;
+      // a11y: expose tab semantics + selected state, and make tabs focusable
+      // with roving tabindex (only the active tab is in the tab order).
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(active));
+      tab.tabIndex = active ? 0 : -1;
+      tab.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+          e.preventDefault();
+          const d = e.key === "ArrowRight" ? 1 : -1;
+          this.activate((i + d + this.tabs.length) % this.tabs.length);
+          (this.tabbar.children[this.activeIndex] as HTMLElement | undefined)?.focus();
+        } else if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          this.activate(i);
+        }
+      });
 
       const label = document.createElement("span");
       label.className = "tab-label";
@@ -392,6 +410,7 @@ export class TabManager {
       close.className = "tab-close";
       close.textContent = "×";
       close.title = "Close tab";
+      close.setAttribute("aria-label", `Close ${t.title}`);
       close.addEventListener("click", (e) => {
         e.stopPropagation();
         this.closeTab(i);

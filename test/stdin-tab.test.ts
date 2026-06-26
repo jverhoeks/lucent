@@ -39,4 +39,15 @@ describe("TabManager stdin tab", () => {
     mgr.setStdin([]);
     expect(mgr.count()).toBe(0);
   });
+
+  it("disk-log follow appends incrementally with no phantom trailing row", () => {
+    const { mgr, content } = mk();
+    mgr.openOrActivate("/tmp/app.log", "a\nb");
+    expect(content.querySelectorAll(".log-line").length).toBe(2);
+    const firstRow = content.querySelector(".log-line");
+    // A disk change where the file ends with a trailing newline (typical).
+    mgr.updateContent("/tmp/app.log", "a\nb\nc\n");
+    expect(content.querySelectorAll(".log-line").length).toBe(3); // no phantom blank row
+    expect(content.querySelector(".log-line")).toBe(firstRow); // incremental reuse, not rebuilt
+  });
 });

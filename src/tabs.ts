@@ -1,7 +1,7 @@
 import hljs from "highlight.js";
 import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
-import { getCurrentLogView } from "./renderers/log";
+import { getCurrentLogView, toLines } from "./renderers/log";
 import { StyleSettings, Theme, Format, DataLang } from "./types";
 
 export const STDIN_PATH = "<stdin>";
@@ -140,7 +140,10 @@ export class TabManager {
     this.tabs[i].content = content;
     if (i !== this.activeIndex) return;
     const t = this.tabs[i];
-    const lines = content === "" ? [] : content.split("\n");
+    // Use the SAME line-splitting as the renderer (toLines) so the incremental
+    // prefix check matches — a raw split keeps a trailing "" that yields a
+    // phantom row and breaks the prefix every update.
+    const lines = toLines(content);
     if (!(effectiveFormat(t) === "log" && t.mode === "rendered" && this.streamLogUpdate(lines))) {
       this.repaint(false);
     }

@@ -80,8 +80,10 @@ export class LogView {
   }
 }
 
-/** Split source into lines, dropping a single trailing empty line from a final newline. */
-function toLines(source: string): string[] {
+/** Split source into lines, dropping a single trailing empty line from a final
+ *  newline. Shared with TabManager's incremental log path so both agree on the
+ *  line set (otherwise a trailing `\n` yields a phantom row + endless rebuilds). */
+export function toLines(source: string): string[] {
   const lines = source.split("\n");
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
   return lines;

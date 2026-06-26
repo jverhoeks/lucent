@@ -17,6 +17,12 @@ describe("LogView incremental rendering", () => {
     expect(c.querySelector(".log-line.lvl-error")).toBeTruthy();
   });
 
+  it("drops a single trailing empty line from a final newline", () => {
+    const c = mk();
+    renderLog("a\nb\n", c, { theme: "light" }); // file ends with newline
+    expect(c.querySelectorAll(".log-line").length).toBe(2); // not 3 (no phantom blank)
+  });
+
   it("appends ONLY new rows when lines are extended (no rebuild)", () => {
     const c = mk();
     const v = renderLog("a\nb", c, { theme: "light" });

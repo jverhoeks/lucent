@@ -557,6 +557,24 @@ body {
   margin-left: 9px;
 }
 
+/* Virtualized tree (large files): a full-height sizer gives the scrollbar its
+ * range; an absolutely-positioned window holds only the visible rows. Rows are
+ * forced to a uniform height (scaling with the font) so fixed-height windowing
+ * math holds — nesting is shown via per-row padding-left rather than guide lines. */
+.tree-sizer { position: relative; }
+.tree-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+.tree-virtual .tree-row {
+  height: 1.7em;
+  box-sizing: border-box;
+  align-items: center;
+  overflow: hidden;
+}
+
 .tree-toolbar {
   display: flex;
   gap: 6px;

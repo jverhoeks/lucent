@@ -32,21 +32,14 @@ export class TreeSearchProvider implements SearchProvider {
   reveal(id: number): void {
     const hit = this.hits[id];
     if (!hit) return;
-    this.clearCurrent();               // drop the previous current marker
-    this.tree.expandToPath(hit.path);  // expansion re-renders; row now exists
-    const row = this.tree.rowElement(hit.path);
-    if (row) {
-      row.classList.add("search-current");
-      row.scrollIntoView?.({ block: "center", behavior: "smooth" });
-    }
-  }
-
-  private clearCurrent(): void {
-    for (const h of this.hits) this.tree.rowElement(h.path)?.classList.remove("search-current");
+    // The TreeView owns the reveal sequence (expand ancestors, scroll the virtual
+    // window so the row is materialized, mark it) so this provider stays unaware
+    // of whether the tree is nested or virtualized.
+    this.tree.revealPath(hit.path);
   }
 
   clear(): void {
-    this.clearCurrent();
+    this.tree.clearCurrent();
     this.hits = [];
   }
 }

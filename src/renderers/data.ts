@@ -14,6 +14,9 @@ export function getCurrentTree(): TreeView | null {
 export const dataRenderer: Renderer = {
   format: "data",
   render(source: string, container: HTMLElement, ctx: RenderCtx, path?: string) {
+    // Release the previous tree's scroll listener (virtual mode attaches one to
+    // the shared #content scroller) before replacing the DOM.
+    currentTree?.destroy();
     currentTree = null;
     container.replaceChildren();
 

@@ -3,14 +3,16 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import appCss from "./styles.css?inline";
 import hljsCss from "highlight.js/styles/github.css?inline";
-import katex from "katex";
-import { renderMarkdown, runPostRender, applyCodeTheme } from "./render";
+import { renderMarkdown, renderMath, hasMath, runPostRender, applyCodeTheme } from "./render";
 import type { Theme } from "./types";
 
 // KaTeX glyph fonts aren't system fonts, so the exported HTML links the
 // CDN-hosted stylesheet (which serves its own fonts) rather than inlining CSS
-// whose relative font URLs would 404. Version tracks the installed package.
-const KATEX_VERSION = (katex as { version?: string }).version ?? "0.17.0";
+// whose relative font URLs would 404. Hardcoded to the installed version (a
+// static `import katex` here would defeat the lazy-loading in render.ts). BUMP ON
+// KATEX UPGRADE — drives only the exported HTML's CDN link; the live app's
+// bundled CSS auto-updates.
+const KATEX_VERSION = "0.17.0";
 const KATEX_CDN = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css`;
 
 /**
@@ -21,7 +23,10 @@ const KATEX_CDN = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/kate
 async function renderDocumentHtml(rawText: string): Promise<string> {
   const holder = document.createElement("div");
   holder.style.cssText = "position:fixed;left:-10000px;top:0;width:800px;";
-  holder.innerHTML = `<article class="doc">${renderMarkdown(rawText)}</article>`;
+  // Export must include rendered math, so use the (lazy) math renderer when the
+  // source contains any — otherwise the cheap synchronous base render.
+  const body = hasMath(rawText) ? await renderMath(rawText) : renderMarkdown(rawText);
+  holder.innerHTML = `<article class="doc">${body}</article>`;
   document.body.appendChild(holder);
   try {
     await runPostRender(holder, "light");

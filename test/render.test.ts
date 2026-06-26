@@ -33,9 +33,9 @@ describe("renderMarkdown", () => {
     const html = renderMarkdown("good :smile:");
     expect(html).not.toContain(":smile:");
   });
-  it("renders KaTeX math", () => {
-    const html = renderMarkdown("$E = mc^2$");
-    expect(html).toContain("katex");
+  it("leaves math untouched in the synchronous base render (katex is lazy)", () => {
+    // Base renderMarkdown no longer bundles katex — math renders via renderMath.
+    expect(renderMarkdown("$E = mc^2$")).not.toContain("katex");
   });
   it("renders custom containers", () => {
     const html = renderMarkdown("::: note\nheads up\n:::");

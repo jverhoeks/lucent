@@ -1,6 +1,7 @@
 mod commands;
 mod error;
 mod pdf;
+mod stdin;
 mod watcher;
 
 use std::path::Path;
@@ -35,12 +36,16 @@ fn collect_startup_files() -> Vec<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let stdin_buf = stdin::new_buffer();
+    let reader_buf = stdin_buf.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(watcher::WatchState::default())
-        .setup(|app| {
+        .manage(stdin_buf)
+        .setup(move |app| {
             app.manage(StartupFiles(collect_startup_files()));
+            stdin::spawn_reader(app.handle().clone(), reader_buf);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -53,6 +58,7 @@ pub fn run() {
             watcher::unwatch_file,
             watcher::unwatch_all,
             pdf::export_pdf_native,
+            stdin::stdin_lines,
             get_startup_files
         ])
         .run(tauri::generate_context!())

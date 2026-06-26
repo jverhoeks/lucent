@@ -1,7 +1,10 @@
 import hljs from "highlight.js";
 import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
+import { getCurrentLogView, toLines } from "./renderers/log";
 import { StyleSettings, Theme, Format, DataLang } from "./types";
+
+export const STDIN_PATH = "<stdin>";
 
 export interface Tab {
   path: string;
@@ -135,7 +138,15 @@ export class TabManager {
     const i = this.tabs.findIndex((t) => t.path === path);
     if (i < 0) return;
     this.tabs[i].content = content;
-    if (i === this.activeIndex) this.repaint(false);
+    if (i !== this.activeIndex) return;
+    const t = this.tabs[i];
+    // Use the SAME line-splitting as the renderer (toLines) so the incremental
+    // prefix check matches — a raw split keeps a trailing "" that yields a
+    // phantom row and breaks the prefix every update.
+    const lines = toLines(content);
+    if (!(effectiveFormat(t) === "log" && t.mode === "rendered" && this.streamLogUpdate(lines))) {
+      this.repaint(false);
+    }
   }
 
   activate(index: number): void {
@@ -194,6 +205,37 @@ export class TabManager {
     this.hooks.onChange();
   }
 
+  /** Create + activate the synthetic stdin log tab, or activate it if it exists. */
+  openStdin(): void {
+    const existing = this.tabs.findIndex((t) => t.path === STDIN_PATH);
+    if (existing >= 0) { this.activate(existing); return; }
+    this.tabs.push({
+      path: STDIN_PATH,
+      title: "stdin",
+      content: "",
+      format: "log",
+      forcedFormat: "log",
+      mode: "rendered",
+      follow: true,
+      scrollTop: 0,
+    });
+    this.activate(this.tabs.length - 1);
+  }
+
+  /** Replace the stdin tab's content with the latest snapshot from the Rust
+   *  buffer (creating the tab on the first non-empty snapshot). The buffer is
+   *  already capped backend-side, so no frontend ring-cap is needed. */
+  setStdin(lines: string[]): void {
+    let i = this.tabs.findIndex((t) => t.path === STDIN_PATH);
+    if (i < 0) {
+      if (lines.length === 0) return;
+      this.openStdin();
+      i = this.tabs.findIndex((t) => t.path === STDIN_PATH);
+    }
+    this.tabs[i].content = lines.join("\n");
+    if (i === this.activeIndex && !this.streamLogUpdate(lines)) this.repaint(false);
+  }
+
   applyStyle(s: StyleSettings): void {
     this.theme = s.theme;
     const el = this.content;
@@ -201,6 +243,22 @@ export class TabManager {
     el.dataset.font = s.fontFamily;
     el.style.setProperty("--font-size", `${s.fontSizePx}px`);
     el.style.setProperty("--max-width", `${s.maxWidthCh}ch`);
+  }
+
+  /** Stream `lines` into the active rendered-log view incrementally; preserves the
+   *  user's scroll when not following, pins to bottom when following. Returns true
+   *  if it handled the update incrementally. */
+  private streamLogUpdate(lines: string[]): boolean {
+    const t = this.active();
+    if (!t || effectiveFormat(t) !== "log" || t.mode !== "rendered") return false;
+    const view = getCurrentLogView();
+    if (!view) return false;
+    const atBottom = t.follow;
+    const prev = this.content.scrollTop;
+    view.setLines(lines);
+    if (atBottom) this.content.scrollTop = this.content.scrollHeight; // follow: newest
+    else this.content.scrollTop = prev;                                // frozen: stay put
+    return true;
   }
 
   private repaint(restoreScroll: boolean): void {

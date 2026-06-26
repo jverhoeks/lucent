@@ -80,18 +80,21 @@ export class VirtualLogView {
     this.onScroll = this.onScroll.bind(this);
     container.addEventListener("scroll", this.onScroll, { passive: true });
 
-    // Initial render
-    void this.renderVisible();
+    // Defer initial render until layout so clientHeight is measured
+    this.rafId = requestAnimationFrame(() => {
+      this.rafId = null;
+      void this.renderVisible();
+    });
   }
 
   // ─── public API ────────────────────────────────────────────────────────────
 
   /** Update total line count (e.g. file grew). If following the bottom, scroll to end. */
   setLineCount(n: number): void {
+    const oldHeight = this.lineCount_ * ROW_H;
     const wasAtBottom =
       this.lineCount_ > 0 &&
-      this.container.scrollTop + this.container.clientHeight >=
-        this.lineCount_ * ROW_H;
+      this.container.scrollTop + this.container.clientHeight >= oldHeight - ROW_H;
 
     this.lineCount_ = n;
     this.sizer.style.height = `${n * ROW_H}px`;

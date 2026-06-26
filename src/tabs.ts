@@ -1,6 +1,7 @@
 import hljs from "highlight.js";
 import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
+import { getCurrentLogView } from "./renderers/log";
 import { StyleSettings, Theme, Format, DataLang } from "./types";
 
 export const STDIN_PATH = "<stdin>";
@@ -137,7 +138,12 @@ export class TabManager {
     const i = this.tabs.findIndex((t) => t.path === path);
     if (i < 0) return;
     this.tabs[i].content = content;
-    if (i === this.activeIndex) this.repaint(false);
+    if (i !== this.activeIndex) return;
+    const t = this.tabs[i];
+    const lines = content === "" ? [] : content.split("\n");
+    if (!(effectiveFormat(t) === "log" && t.mode === "rendered" && this.streamLogUpdate(lines))) {
+      this.repaint(false);
+    }
   }
 
   activate(index: number): void {
@@ -224,7 +230,7 @@ export class TabManager {
       i = this.tabs.findIndex((t) => t.path === STDIN_PATH);
     }
     this.tabs[i].content = lines.join("\n");
-    if (i === this.activeIndex) this.repaint(false);
+    if (i === this.activeIndex && !this.streamLogUpdate(lines)) this.repaint(false);
   }
 
   applyStyle(s: StyleSettings): void {
@@ -234,6 +240,22 @@ export class TabManager {
     el.dataset.font = s.fontFamily;
     el.style.setProperty("--font-size", `${s.fontSizePx}px`);
     el.style.setProperty("--max-width", `${s.maxWidthCh}ch`);
+  }
+
+  /** Stream `lines` into the active rendered-log view incrementally; preserves the
+   *  user's scroll when not following, pins to bottom when following. Returns true
+   *  if it handled the update incrementally. */
+  private streamLogUpdate(lines: string[]): boolean {
+    const t = this.active();
+    if (!t || effectiveFormat(t) !== "log" || t.mode !== "rendered") return false;
+    const view = getCurrentLogView();
+    if (!view) return false;
+    const atBottom = t.follow;
+    const prev = this.content.scrollTop;
+    view.setLines(lines);
+    if (atBottom) this.content.scrollTop = this.content.scrollHeight; // follow: newest
+    else this.content.scrollTop = prev;                                // frozen: stay put
+    return true;
   }
 
   private repaint(restoreScroll: boolean): void {

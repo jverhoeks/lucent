@@ -25,7 +25,6 @@ export function renderLogRow(
 ): { row: HTMLElement; panel: HTMLElement | null } {
   const row = document.createElement("div");
   row.className = `log-line lvl-${detectLevel(text)}`;
-  row.dataset.line = String(lineNo);
 
   const gutter = document.createElement("span");
   gutter.className = "log-gutter";

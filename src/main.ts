@@ -12,9 +12,7 @@ import { copyAsMarkdown, copyAsRichText } from "./clipboard";
 import { exportHtml, exportPdf } from "./export";
 import { FilePayload, AppError, StyleSettings, Format, DataLang } from "./types";
 import { SearchController } from "./search/controller";
-import { DomSearchProvider } from "./search/dom-provider";
-import { TreeSearchProvider } from "./search/tree-provider";
-import { LogSearchProvider } from "./search/log-provider";
+import { createSearchProvider } from "./search/factory";
 import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
@@ -34,32 +32,22 @@ const searchBar = new SearchBar(search);
 /** Re-bind the search provider to the freshly-rendered content. */
 function rebindSearch() {
   if (!searchBar.isOpen()) return;
-  const fmt = manager.getActiveFormat();
-  const mode = manager.getActiveMode();
-  // Windowed log: use async backend search
-  if (manager.isActiveWindowed()) {
-    const view = manager.getActiveVirtualLogView();
-    const path = manager.getActivePath();
-    if (view && path) {
-      search.setProvider(new LogSearchProvider(
-        view,
-        (q) => invoke<number[]>("log_search", {
-          path,
-          query: q.text,
-          caseSensitive: q.caseSensitive,
-          regex: q.regex,
-        }),
-        () => search.refresh(),
-      ));
-      return;
-    }
-  }
-  if (mode === "rendered" && fmt === "data") {
-    const tree = getCurrentTree();
-    search.setProvider(tree ? new TreeSearchProvider(tree) : new DomSearchProvider(content));
-  } else {
-    search.setProvider(new DomSearchProvider(content));
-  }
+  search.setProvider(createSearchProvider({
+    format: manager.getActiveFormat(),
+    mode: manager.getActiveMode(),
+    windowed: manager.isActiveWindowed(),
+    content,
+    virtualLogView: manager.getActiveVirtualLogView(),
+    path: manager.getActivePath(),
+    tree: getCurrentTree(),
+    logSearch: (path, q) => invoke<number[]>("log_search", {
+      path,
+      query: q.text,
+      caseSensitive: q.caseSensitive,
+      regex: q.regex,
+    }),
+    onUpdate: () => search.refresh(),
+  }));
 }
 
 const manager = new TabManager(tabbar, content, settings, {

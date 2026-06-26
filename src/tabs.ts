@@ -1,7 +1,7 @@
 import hljs from "highlight.js";
 import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
-import { getCurrentLogView, toLines } from "./renderers/log";
+import { LogView, toLines } from "./renderers/log";
 import { VirtualLogView } from "./logs/virtual-log-view";
 import { StyleSettings, Theme, Format, DataLang } from "./types";
 
@@ -48,6 +48,10 @@ export class TabManager {
   private theme: Theme = "light";
   /** The VirtualLogView for the currently active windowed tab, if any. */
   private currentVlog: VirtualLogView | null = null;
+  /** The LogView for the currently active rendered (non-windowed) log tab, if
+   *  any — owned here (mirroring currentVlog) so streamLogUpdate can apply
+   *  incremental updates without a module-global "last render wins" singleton. */
+  private currentLog: LogView | null = null;
   /** Monotonic repaint generation; an async post-render tail only applies if it
    *  still matches (i.e. no newer repaint has run since). */
   private repaintSeq = 0;
@@ -317,8 +321,8 @@ export class TabManager {
   private streamLogUpdate(lines: string[]): boolean {
     const t = this.active();
     if (!t || effectiveFormat(t) !== "log" || t.mode !== "rendered") return false;
-    const view = getCurrentLogView();
-    if (!view) return false;
+    const view = this.currentLog;
+    if (!view) return false; // first stdin frame before any repaint → let repaint build it
     const atBottom = t.follow;
     const prev = this.content.scrollTop;
     view.setLines(lines);
@@ -334,6 +338,10 @@ export class TabManager {
     // callback could re-settle scroll (or show an error) against now-stale
     // content it no longer owns.
     const seq = ++this.repaintSeq;
+    // Clear the owned rendered-log view on EVERY repaint path (windowed, empty,
+    // and rendered) so it can never dangle at detached DOM; the log branch below
+    // re-sets it when the new tab is itself a rendered log.
+    this.currentLog = null;
 
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
@@ -351,6 +359,21 @@ export class TabManager {
     this.currentVlog = null;
 
     if (t.mode === "rendered") {
+      // Rendered log: TabManager owns the LogView so it can stream incremental
+      // updates (setLines) directly, with no module-global singleton.
+      if (effectiveFormat(t) === "log") {
+        try {
+          const view = new LogView(this.content);
+          view.setLines(toLines(t.content));
+          this.currentLog = view;
+        } catch (err) {
+          this.showRenderError(t, err);
+          return;
+        }
+        this.settleScroll(t, restoreScroll);
+        return;
+      }
+
       let result: void | Promise<void>;
       try {
         result = getRenderer(effectiveFormat(t)).render(

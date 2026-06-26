@@ -1,4 +1,4 @@
-import hljs from "highlight.js";
+import hljs from "./highlight";
 import { detectFormat, dataLangOf } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { LogView, toLines } from "./renderers/log";

@@ -1,5 +1,5 @@
 import MarkdownIt from "markdown-it";
-import hljs from "highlight.js";
+import hljs from "./highlight";
 import taskLists from "markdown-it-task-lists";
 import footnote from "markdown-it-footnote";
 import { full as emoji } from "markdown-it-emoji";
@@ -7,7 +7,6 @@ import deflist from "markdown-it-deflist";
 import anchor from "markdown-it-anchor";
 import container from "markdown-it-container";
 import katex from "@vscode/markdown-it-katex";
-import mermaid from "mermaid";
 import hljsLight from "highlight.js/styles/github.css?inline";
 import hljsDark from "highlight.js/styles/github-dark.css?inline";
 import type { Theme } from "./types";
@@ -165,25 +164,29 @@ let mermaidConfiguredTheme: Theme | null = null;
  */
 export async function runPostRender(container: HTMLElement, theme: Theme): Promise<void> {
   const nodes = Array.from(container.querySelectorAll<HTMLElement>("pre.mermaid"));
-  if (nodes.length === 0) return;
-  if (mermaidConfiguredTheme !== theme) {
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: theme === "dark" ? "dark" : "default",
-    });
-    mermaidConfiguredTheme = theme;
-  }
-  // Hide the raw mermaid source synchronously — BEFORE the first await — so the
-  // unprocessed `pre` text never paints as a flash in the window between the
-  // innerHTML set and the SVG swap. Revealed unconditionally in `finally`: even
-  // a diagram mermaid fails to process (it annotates inline rather than throwing)
-  // becomes visible again, so a broken diagram is never permanently hidden.
+  if (nodes.length === 0) return; // no diagrams → mermaid is never loaded
+  // Hide the raw mermaid source synchronously — BEFORE the first await (the
+  // dynamic import below) — so the unprocessed `pre` text never paints as a flash
+  // in the window between the innerHTML set and the SVG swap. Revealed
+  // unconditionally in `finally`: even a diagram mermaid fails to process (it
+  // annotates inline rather than throwing) becomes visible again, so a broken
+  // diagram is never permanently hidden.
   for (const n of nodes) n.style.visibility = "hidden";
   try {
+    // Mermaid (~MBs incl. its diagram renderers) is the heaviest dependency and
+    // only a fraction of documents use it, so load it lazily on first diagram.
+    const { default: mermaid } = await import("mermaid");
+    if (mermaidConfiguredTheme !== theme) {
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: theme === "dark" ? "dark" : "default",
+      });
+      mermaidConfiguredTheme = theme;
+    }
     await mermaid.run({ nodes });
   } catch {
-    /* mermaid annotates failing blocks inline */
+    /* mermaid annotates failing blocks inline; also swallows a failed chunk load */
   } finally {
     for (const n of nodes) n.style.visibility = "";
   }

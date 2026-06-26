@@ -134,6 +134,7 @@ export class TabManager {
     const existing = this.tabs.findIndex((t) => t.path === path);
     if (existing >= 0) {
       // Refresh windowed state in case it was already open
+      this.tabs[existing].windowed = true;
       this.tabs[existing].lineCount = lineCount;
       this.tabs[existing].fetchWindow = fetchWindow;
       this.activate(existing);

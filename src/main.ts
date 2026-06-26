@@ -368,7 +368,11 @@ content.addEventListener("click", async (e) => {
 // ---- Disk watch events ----
 listen<FilePayload>("file-changed", (e) => {
   manager.updateContent(e.payload.path, e.payload.content);
-  rebindSearch();
+  // Only the active, non-windowed tab re-renders its DOM on a disk change, so
+  // only then does the DOM-bound search provider need rebinding. A windowed tab
+  // uses a DOM-independent LogSearchProvider — don't reset it when some other
+  // watched file changes (its growth is handled via the log-grew event).
+  if (e.payload.path === manager.getActivePath() && !manager.isActiveWindowed()) rebindSearch();
 });
 listen<{ path: string }>("file-removed", (e) => showBanner(`File removed: ${e.payload.path}`));
 // Windowed log grew: update the virtual view's line count if the tab is active

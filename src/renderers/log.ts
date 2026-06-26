@@ -4,12 +4,6 @@ import { renderTree } from "../data/tree";
 import { parseValueToModel } from "../data/parse-value";
 import type { Renderer, RenderCtx } from "../types";
 
-let currentLogView: LogView | null = null;
-/** The LogView from the most recent log render (single active doc), for incremental updates. */
-export function getCurrentLogView(): LogView | null {
-  return currentLogView;
-}
-
 /**
  * Build the DOM for a single log row. Does NOT append to any parent — the
  * caller is responsible for placement (including the sibling `panel` when
@@ -186,15 +180,12 @@ export function toLines(source: string): string[] {
 export const logRenderer: Renderer = {
   format: "log",
   render(source: string, container: HTMLElement, _ctx: RenderCtx) {
-    const view = new LogView(container);
-    view.setLines(toLines(source));
-    currentLogView = view;
+    new LogView(container).setLines(toLines(source));
   },
 };
 
 export function renderLog(source: string, container: HTMLElement, _ctx: RenderCtx): LogView {
   const view = new LogView(container);
   view.setLines(toLines(source));
-  currentLogView = view;
   return view;
 }

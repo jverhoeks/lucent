@@ -6,7 +6,6 @@ import { full as emoji } from "markdown-it-emoji";
 import deflist from "markdown-it-deflist";
 import anchor from "markdown-it-anchor";
 import container from "markdown-it-container";
-import katex from "@vscode/markdown-it-katex";
 import hljsLight from "highlight.js/styles/github.css?inline";
 import hljsDark from "highlight.js/styles/github-dark.css?inline";
 import type { Theme } from "./types";
@@ -80,7 +79,10 @@ export function splitHighlightedLines(html: string): string[] {
   return lines;
 }
 
-function createRenderer(): MarkdownIt {
+/** Build a configured renderer. `katexPlugin` is applied only for the lazily
+ *  built math renderer (it transitively bundles katex, so the eager base
+ *  renderer is created without it — see renderMath). */
+function createRenderer(katexPlugin?: unknown): MarkdownIt {
   const md: MarkdownIt = new MarkdownIt({
     html: false, // no raw HTML passthrough (sanitization by exclusion)
     linkify: true,
@@ -91,9 +93,10 @@ function createRenderer(): MarkdownIt {
     .use(footnote)
     .use(emoji)
     .use(deflist)
-    .use(anchor, { permalink: anchor.permalink.headerLink() })
-    .use(katex)
-    .use(container, "note")
+    .use(anchor, { permalink: anchor.permalink.headerLink() });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (katexPlugin) md.use(katexPlugin as any);
+  md.use(container, "note")
     .use(container, "warning")
     .use(container, "tip");
 
@@ -151,8 +154,37 @@ function createRenderer(): MarkdownIt {
 
 const renderer = createRenderer();
 
+/** Synchronous base render — NO math. Math syntax is left as raw text; call
+ *  renderMath (async) for the katex-rendered HTML. */
 export function renderMarkdown(text: string): string {
   return renderer.render(text);
+}
+
+/**
+ * True when the source likely contains math the katex plugin would tokenize:
+ * paired `$…$` / `$$…$$`, OR a bare `\begin{…}` environment (which the plugin
+ * also tokenizes without any `$`). Deliberately an over-approximation — a false
+ * positive only wastes a lazy import, whereas a false negative would render math
+ * as raw text (a silent regression).
+ */
+export function hasMath(text: string): boolean {
+  return /\$[\s\S]*\$/.test(text) || /\\begin\s*\{/.test(text);
+}
+
+let mathRenderer: MarkdownIt | null = null;
+
+/**
+ * Render Markdown WITH math. The katex plugin transitively bundles katex (~78KB
+ * gzip), so it is dynamically imported on first use and the math-enabled renderer
+ * is cached — only documents that actually contain math pay the cost. The katex
+ * stylesheet stays eagerly imported (small, avoids a flash-of-unstyled-math).
+ */
+export async function renderMath(text: string): Promise<string> {
+  if (!mathRenderer) {
+    const mod = await import("@vscode/markdown-it-katex");
+    mathRenderer = createRenderer(mod.default);
+  }
+  return mathRenderer.render(text);
 }
 
 let mermaidConfiguredTheme: Theme | null = null;

@@ -31,6 +31,33 @@ export function visibleRange(opts: VisibleRangeOpts): VisibleRange {
   return { start, count };
 }
 
+/** Half-open range of rendered rows: `[start, end)`. */
+export interface Block {
+  start: number;
+  end: number;
+}
+
+/**
+ * Pure helper: decide whether the rendered block must be refetched/repainted
+ * for the current visible range. The rendered block spans `margin` rows beyond
+ * the viewport on each side; while the viewport stays within `margin/2` of both
+ * block edges, native scroll keeps the rows positioned and we render nothing.
+ * Returns true when nothing is rendered yet, or the viewport has scrolled within
+ * `margin/2` of an edge that still has more lines beyond it.
+ */
+export function needsRefetch(
+  visible: { start: number; end: number },
+  block: Block | null,
+  margin: number,
+  lineCount: number,
+): boolean {
+  if (!block) return true;
+  const half = Math.floor(margin / 2);
+  if (block.start > 0 && visible.start < block.start + half) return true;
+  if (block.end < lineCount && visible.end > block.end - half) return true;
+  return false;
+}
+
 // ─── VirtualLogView ───────────────────────────────────────────────────────────
 
 export interface VirtualLogViewOpts {
@@ -45,9 +72,11 @@ export class VirtualLogView {
   private opts: Required<VirtualLogViewOpts>;
 
   private lineCount_: number;
-  private lastStart = -1;
-  private lastCount = -1;
+  /** Currently rendered block, or null when nothing is painted yet. */
+  private block: Block | null = null;
   private rafId: number | null = null;
+  /** Bumped on each fetch so a stale (superseded) fetch can bail before painting. */
+  private fetchToken = 0;
   private currentMatch: number | null = null;
 
   /** Map from 0-based line number to rendered row element (in current window). */
@@ -104,9 +133,8 @@ export class VirtualLogView {
       this.container.scrollTop = n * ROW_H;
     }
 
-    // Invalidate cache so next scroll/render fetches fresh data
-    this.lastStart = -1;
-    this.lastCount = -1;
+    // Invalidate the block so the next render fetches fresh data.
+    this.block = null;
     void this.renderVisible();
   }
 
@@ -116,18 +144,26 @@ export class VirtualLogView {
   }
 
   /**
-   * Set (or clear) the search-current highlight on `line`.
-   * Stores `line` as `currentMatch` so `renderVisible` re-applies the class
-   * after the async fetch settles, avoiding the rAF race in `reveal()`.
-   * Pass `null` to clear.
+   * Set (or clear) the search-current highlight on `line`. If the match row is
+   * already in the rendered block, apply the class directly; otherwise force a
+   * block rebuild around it (`renderVisible` re-applies `currentMatch` on paint),
+   * avoiding the rAF race in `reveal()`. Pass `null` to clear.
    */
   highlightLine(line: number | null): void {
     this.currentMatch = line;
-    // Force a re-render even if the visible range hasn't changed (e.g. the
-    // match is already in the DOM but the class hasn't been applied yet).
-    this.lastStart = -1;
-    this.lastCount = -1;
-    void this.renderVisible();
+    this.window
+      .querySelectorAll(".search-current")
+      .forEach((el) => el.classList.remove("search-current"));
+    if (line === null) return;
+
+    const el = this.rowMap.get(line);
+    if (el) {
+      el.classList.add("search-current");
+    } else {
+      // Match isn't in the current block — force a fresh fetch/paint around it.
+      this.block = null;
+      void this.renderVisible();
+    }
   }
 
   /**
@@ -162,32 +198,49 @@ export class VirtualLogView {
     });
   }
 
-  private async renderVisible(): Promise<void> {
-    const { start, count } = visibleRange({
+  /** Raw visible row range `[start, end)` (no overscan), clamped to the file. */
+  private visibleRows(): { start: number; end: number } {
+    const r = visibleRange({
       scrollTop: this.container.scrollTop,
       viewportH: this.container.clientHeight,
       rowH: ROW_H,
       lineCount: this.lineCount_,
-      overscan: this.opts.overscan,
+      overscan: 0,
     });
+    return { start: r.start, end: r.start + r.count };
+  }
 
-    // Skip if the range hasn't changed
-    if (start === this.lastStart && count === this.lastCount) return;
-    this.lastStart = start;
-    this.lastCount = count;
+  /** Rows of buffer rendered beyond the viewport on each side (≥ one viewport). */
+  private blockMargin(): number {
+    const viewportRows = Math.ceil(this.container.clientHeight / ROW_H);
+    return Math.max(this.opts.overscan, viewportRows);
+  }
 
-    if (count === 0) {
+  private async renderVisible(): Promise<void> {
+    const visible = this.visibleRows();
+    const margin = this.blockMargin();
+
+    // While the viewport stays inside the rendered block, native scroll keeps
+    // the rows correctly positioned — render nothing, fetch nothing.
+    if (!needsRefetch(visible, this.block, margin, this.lineCount_)) return;
+
+    const start = Math.max(0, visible.start - margin);
+    const end = Math.min(this.lineCount_, visible.end + margin);
+    const count = end - start;
+
+    if (count <= 0) {
       this.window.replaceChildren();
       this.rowMap.clear();
       this.window.style.transform = "";
+      this.block = null;
       return;
     }
 
+    const token = ++this.fetchToken;
     const lines = await this.fetchWindow(start, count);
-
-    // Re-check range after async fetch — if it changed while we were fetching,
-    // skip this render (a newer one is already queued/running).
-    if (start !== this.lastStart || count !== this.lastCount) return;
+    // A newer fetch superseded this one — bail without touching the DOM so the
+    // currently-painted block stays on screen (no blank flash).
+    if (token !== this.fetchToken) return;
 
     this.window.replaceChildren();
     this.rowMap.clear();
@@ -206,9 +259,9 @@ export class VirtualLogView {
 
     this.window.appendChild(fragment);
     this.window.style.transform = `translateY(${start * ROW_H}px)`;
+    this.block = { start, end: start + lines.length };
 
-    // Apply search-current highlight. All rows are freshly created above so
-    // there is no stale class to clear — just add to the match row if visible.
+    // Re-apply the search-current highlight (all rows are freshly created).
     if (this.currentMatch !== null) {
       this.rowMap.get(this.currentMatch)?.classList.add("search-current");
     }

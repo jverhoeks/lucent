@@ -861,6 +861,46 @@ mark.search-current { background: #f59e0b; }
   border-bottom: 1px solid rgba(127, 127, 127, 0.1);
 }
 
+/* ---- Virtual Log View ---- */
+
+/* Scroll container — caller sets a fixed height */
+.vlog {
+  position: relative;
+  overflow: auto;
+  height: 100%;
+}
+
+/* Spacer that gives the scrollbar its full range */
+.vlog-sizer {
+  position: relative;
+}
+
+/* Absolutely-positioned window holding the current rendered rows */
+.vlog-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+/*
+ * Each virtual row has a fixed height matching ROW_H in virtual-log-view.ts.
+ * This overrides .log-line's white-space:pre-wrap with higher specificity so
+ * the fixed-height contract holds. When .wrap is toggled the override is lifted.
+ */
+.vlog-window .vlog-row {
+  height: 20px;
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* Wrap mode: best-effort scroll precision (documented caveat — rows vary in height) */
+.vlog-window.wrap .vlog-row {
+  height: auto;
+  white-space: pre-wrap;
+  overflow: visible;
+}
+
 /* Dark theme overrides */
 #content[data-theme="dark"] .log-gutter {
   color: #555;

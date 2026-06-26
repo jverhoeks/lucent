@@ -10,6 +10,57 @@ export function getCurrentLogView(): LogView | null {
   return currentLogView;
 }
 
+/**
+ * Build the DOM for a single log row. Does NOT append to any parent — the
+ * caller is responsible for placement (including the sibling `panel` when
+ * present). The gutter shows `lineNo + 1` (1-based), matching the original
+ * `renderRow` behaviour when called with the 0-based index.
+ *
+ * Returns `{ row, panel }` where `panel` is the lazy-JSON expander sibling
+ * (hidden by default) or `null` when the line has no embedded JSON.
+ */
+export function renderLogRow(
+  text: string,
+  lineNo: number,
+): { row: HTMLElement; panel: HTMLElement | null } {
+  const row = document.createElement("div");
+  row.className = `log-line lvl-${detectLevel(text)}`;
+  row.dataset.line = String(lineNo);
+
+  const gutter = document.createElement("span");
+  gutter.className = "log-gutter";
+  gutter.textContent = String(lineNo + 1);
+
+  const msg = document.createElement("span");
+  msg.className = "log-msg";
+  msg.textContent = text;
+
+  row.append(gutter, msg);
+
+  const found = extractJson(text);
+  if (found) {
+    const toggle = document.createElement("button");
+    toggle.className = "log-json-toggle";
+    toggle.textContent = "{ }";
+    toggle.title = "Decode embedded JSON";
+    const panel = document.createElement("div");
+    panel.className = "log-json";
+    panel.hidden = true;
+    toggle.addEventListener("click", () => {
+      if (!panel.dataset.rendered) {
+        renderTree(parseValueToModel(found.value), panel, { defaultDepth: 2 });
+        panel.dataset.rendered = "1";
+      }
+      panel.hidden = !panel.hidden;
+      toggle.classList.toggle("open", !panel.hidden);
+    });
+    msg.append(" ");
+    row.append(toggle);
+    return { row, panel };
+  }
+  return { row, panel: null };
+}
+
 export class LogView {
   private wrap: HTMLElement;
   private lines: string[] = [];
@@ -35,48 +86,14 @@ export class LogView {
       this.lines = [];
     }
     for (let i = this.lines.length; i < next.length; i++) {
-      this.renderRow(next[i], i);
+      const { row, panel } = renderLogRow(next[i], i);
+      if (panel) {
+        this.wrap.append(row, panel);
+      } else {
+        this.wrap.append(row);
+      }
     }
     this.lines = next.slice();
-  }
-
-  private renderRow(text: string, index: number): void {
-    const row = document.createElement("div");
-    row.className = `log-line lvl-${detectLevel(text)}`;
-
-    const gutter = document.createElement("span");
-    gutter.className = "log-gutter";
-    gutter.textContent = String(index + 1);
-
-    const msg = document.createElement("span");
-    msg.className = "log-msg";
-    msg.textContent = text;
-
-    row.append(gutter, msg);
-
-    const found = extractJson(text);
-    if (found) {
-      const toggle = document.createElement("button");
-      toggle.className = "log-json-toggle";
-      toggle.textContent = "{ }";
-      toggle.title = "Decode embedded JSON";
-      const panel = document.createElement("div");
-      panel.className = "log-json";
-      panel.hidden = true;
-      toggle.addEventListener("click", () => {
-        if (!panel.dataset.rendered) {
-          renderTree(parseValueToModel(found.value), panel, { defaultDepth: 2 });
-          panel.dataset.rendered = "1";
-        }
-        panel.hidden = !panel.hidden;
-        toggle.classList.toggle("open", !panel.hidden);
-      });
-      msg.append(" ");
-      row.append(toggle);
-      this.wrap.append(row, panel);
-    } else {
-      this.wrap.append(row);
-    }
   }
 }
 

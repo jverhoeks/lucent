@@ -15,6 +15,7 @@ function ctx(over: Partial<SearchContext>): SearchContext {
     windowed: false,
     content: document.createElement("div"),
     virtualLogView: null,
+    logLines: null,
     path: undefined,
     tree: null,
     logSearch: async () => [],
@@ -37,6 +38,16 @@ describe("createSearchProvider routing", () => {
   it("windowed but no view yet → falls through to DomSearchProvider", () => {
     const p = createSearchProvider(ctx({ windowed: true, virtualLogView: null, path: "/huge.log" }));
     expect(p).toBeInstanceOf(DomSearchProvider);
+  });
+
+  it("large in-memory log (virtual view, not windowed) → LogSearchProvider", () => {
+    const p = createSearchProvider(ctx({
+      windowed: false,
+      virtualLogView: {} as VirtualLogView,
+      logLines: ["line a", "line b"],
+      format: "log",
+    }));
+    expect(p).toBeInstanceOf(LogSearchProvider);
   });
 
   it("rendered data with a tree → TreeSearchProvider", () => {

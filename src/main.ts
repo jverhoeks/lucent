@@ -38,6 +38,7 @@ function rebindSearch() {
     windowed: manager.isActiveWindowed(),
     content,
     virtualLogView: manager.getActiveVirtualLogView(),
+    logLines: manager.getActiveLogLines(),
     path: manager.getActivePath(),
     tree: getCurrentTree(),
     logSearch: (path, q) => invoke<number[]>("log_search", {

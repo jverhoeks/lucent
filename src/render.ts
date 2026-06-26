@@ -51,6 +51,7 @@ function parseInfo(info: string): { lang: string; filename: string } {
  * code lines align exactly and be highlighted per-line.
  */
 export function splitHighlightedLines(html: string): string[] {
+  if (html === "") return []; // empty code block → no rows (avoids a phantom empty line)
   const lines: string[] = [];
   const open: string[] = [];
   let cur = "";

@@ -341,11 +341,25 @@ export class TabManager {
     this.currentVlog = null;
 
     if (t.mode === "rendered") {
-      getRenderer(effectiveFormat(t)).render(
-        t.content, this.content,
-        { theme: this.theme, dataLang: t.forcedLang },
-        t.path,
-      );
+      try {
+        getRenderer(effectiveFormat(t)).render(
+          t.content, this.content,
+          { theme: this.theme, dataLang: t.forcedLang },
+          t.path,
+        );
+      } catch (err) {
+        // A renderer throwing must not leave the content area half-built —
+        // show the raw text plus a clear error instead of a broken view.
+        const wrap = document.createElement("div");
+        wrap.className = "render-error";
+        const note = document.createElement("p");
+        note.textContent = `Couldn't render this file: ${err instanceof Error ? err.message : String(err)}`;
+        const pre = document.createElement("pre");
+        pre.className = "raw";
+        pre.textContent = t.content;
+        wrap.append(note, pre);
+        this.content.replaceChildren(wrap);
+      }
     } else {
       const pre = document.createElement("pre");
       pre.className = "raw";

@@ -7,6 +7,11 @@ export class SearchBar {
   private caseBtn: HTMLButtonElement;
   private regexBtn: HTMLButtonElement;
   private count: HTMLElement;
+  /** Pending trailing-debounce timer for typed input. */
+  private debounceId: ReturnType<typeof setTimeout> | undefined;
+
+  /** Trailing-debounce delay (ms) before a typed query runs the search. */
+  static readonly DEBOUNCE_MS = 250;
 
   constructor(private controller: SearchController) {
     this.el = document.getElementById("searchbar")!;
@@ -15,8 +20,13 @@ export class SearchBar {
     this.regexBtn = document.getElementById("search-regex") as HTMLButtonElement;
     this.count = document.getElementById("search-count")!;
 
-    const run = () => this.controller.setQuery(this.query());
-    this.input.addEventListener("input", run);
+    const run = () => { this.cancelDebounce(); this.controller.setQuery(this.query()); };
+    // Typing is debounced so we don't fire a search (a backend scan, for
+    // windowed logs) on every keystroke. Toggles and Enter run immediately.
+    this.input.addEventListener("input", () => {
+      this.cancelDebounce();
+      this.debounceId = setTimeout(run, SearchBar.DEBOUNCE_MS);
+    });
     this.caseBtn.addEventListener("click", () => { this.toggleBtn(this.caseBtn); run(); });
     this.regexBtn.addEventListener("click", () => { this.toggleBtn(this.regexBtn); run(); });
     document.getElementById("search-next")!.addEventListener("click", () => this.controller.next());
@@ -24,7 +34,12 @@ export class SearchBar {
     document.getElementById("search-close")!.addEventListener("click", () => this.close());
 
     this.input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); e.shiftKey ? this.controller.prev() : this.controller.next(); }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        // Flush any pending debounce so Enter searches the latest text now.
+        if (this.debounceId !== undefined) run();
+        e.shiftKey ? this.controller.prev() : this.controller.next();
+      }
       else if (e.key === "Escape") { e.preventDefault(); this.close(); }
     });
 
@@ -48,8 +63,19 @@ export class SearchBar {
   private renderState() {
     const n = this.controller.count();
     const i = this.controller.currentIndex();
-    this.count.textContent = this.controller.error() ? "err" : `${n ? i + 1 : 0}/${n}`;
-    this.input.classList.toggle("error", !!this.controller.error());
+    const err = this.controller.error();
+    this.count.textContent = err ? "err" : `${n ? i + 1 : 0}/${n}`;
+    // Surface the regex error detail on hover instead of a bare "err".
+    this.count.title = err ?? "";
+    this.input.title = err ?? "";
+    this.input.classList.toggle("error", !!err);
+  }
+
+  private cancelDebounce() {
+    if (this.debounceId !== undefined) {
+      clearTimeout(this.debounceId);
+      this.debounceId = undefined;
+    }
   }
 
   open() {
@@ -59,6 +85,7 @@ export class SearchBar {
     if (this.input.value) this.controller.setQuery(this.query());
   }
   close() {
+    this.cancelDebounce();
     this.el.hidden = true;
     this.controller.close();
   }

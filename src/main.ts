@@ -18,7 +18,7 @@ import { LogSearchProvider } from "./search/log-provider";
 import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
-import { detectFormat } from "./format";
+import { detectFormat, siblingIndex } from "./format";
 
 const tabbar = document.getElementById("tabbar")!;
 const tabstrip = document.getElementById("tabstrip")!;
@@ -211,7 +211,7 @@ btn("btn-next").addEventListener("click", async () => {
   if (!cur) return;
   try {
     const siblings = await invoke<string[]>("list_sibling_viewable", { path: cur });
-    const idx = siblings.indexOf(cur);
+    const idx = siblingIndex(siblings, cur);
     if (idx < 0 || siblings.length < 2) return;
     const next = siblings[(idx + 1) % siblings.length]; // wrap around
     // Open the next file in its own tab — or, if it's already open, switch to

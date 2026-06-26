@@ -173,6 +173,13 @@ async function openMany(paths: string[]) {
   for (const p of paths) await openPath(p);
 }
 
+// Keep the fixed search bar clear of the toolbar even when it wraps (X2).
+const toolbarEl = document.getElementById("toolbar")!;
+const syncToolbarHeight = () =>
+  document.documentElement.style.setProperty("--toolbar-h", `${toolbarEl.offsetHeight}px`);
+new ResizeObserver(syncToolbarHeight).observe(toolbarEl);
+syncToolbarHeight();
+
 // ---- Toolbar actions ----
 btn("btn-open").addEventListener("click", async () => {
   const sel = await open({
@@ -386,8 +393,14 @@ listen<{ path: string; lineCount: number }>("log-grew", (e) => {
 
 // ---- Drag-and-drop ----
 getCurrentWebview().onDragDropEvent((e) => {
-  if (e.payload.type === "drop" && e.payload.paths.length > 0) {
-    void openMany(e.payload.paths);
+  const p = e.payload;
+  if (p.type === "enter" || p.type === "over") {
+    document.body.classList.add("drag-over"); // highlight the drop target
+  } else if (p.type === "leave") {
+    document.body.classList.remove("drag-over");
+  } else if (p.type === "drop") {
+    document.body.classList.remove("drag-over");
+    if (p.paths.length > 0) void openMany(p.paths);
   }
 });
 

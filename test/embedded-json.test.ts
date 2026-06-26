@@ -11,6 +11,16 @@ describe("extractJson", () => {
   it("extracts a JSON array, skipping an earlier non-JSON [bracket]", () => {
     expect(extractJson("[Svc] tags [1,2,3]")!.value).toEqual([1, 2, 3]);
   });
+  it("stays bounded (and returns null) on a pathological bracket-heavy line", () => {
+    // 100k unbalanced openers would be O(n²) without the attempt cap; this
+    // must return quickly without scanning every opener to end-of-string.
+    const start = performance.now();
+    expect(extractJson("[".repeat(100_000))).toBeNull();
+    expect(performance.now() - start).toBeLessThan(500);
+  });
+  it("still extracts JSON that appears after a few non-JSON brackets", () => {
+    expect(extractJson('[a] [b] [c] {"ok":1}')!.value).toEqual({ ok: 1 });
+  });
   it("returns null when there is no parseable JSON", () => {
     expect(extractJson("plain line, no json")).toBeNull();
     expect(extractJson("ratio {incomplete")).toBeNull();

@@ -1,3 +1,7 @@
+/** Max `{`/`[` openers to try per line before giving up (DoS guard for
+ *  pathological bracket-heavy lines). Real embedded JSON balances far sooner. */
+const MAX_OPENER_ATTEMPTS = 200;
+
 /** Find a balanced {...} or [...] beginning at index i, respecting JSON string
  *  literals + escapes. Returns the substring, or null if unbalanced. */
 function findBalanced(s: string, i: number): string | null {
@@ -23,8 +27,13 @@ function findBalanced(s: string, i: number): string | null {
  *  matched source text and parsed value, or null. */
 export function extractJson(line: string): { text: string; value: unknown } | null {
   // Raw: the first balanced {/[ slice that parses (skips non-JSON [tag]s).
+  // Cap the number of opener attempts: real lines balance within a few openers,
+  // so this bounds the worst case (a bracket-heavy line where no opener parses)
+  // from O(n²) to O(MAX_OPENER_ATTEMPTS · n).
+  let attempts = 0;
   for (let i = 0; i < line.length; i++) {
     if (line[i] === "{" || line[i] === "[") {
+      if (++attempts > MAX_OPENER_ATTEMPTS) break;
       const cand = findBalanced(line, i);
       if (cand) {
         try { return { text: cand, value: JSON.parse(cand) }; } catch { /* keep scanning */ }

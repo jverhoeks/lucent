@@ -48,6 +48,7 @@ export class VirtualLogView {
   private lastStart = -1;
   private lastCount = -1;
   private rafId: number | null = null;
+  private currentMatch: number | null = null;
 
   /** Map from 0-based line number to rendered row element (in current window). */
   private rowMap = new Map<number, HTMLElement>();
@@ -112,6 +113,21 @@ export class VirtualLogView {
   /** Scroll the container so that line `i` is near the top of the viewport. */
   scrollToLine(i: number): void {
     this.container.scrollTop = i * ROW_H;
+  }
+
+  /**
+   * Set (or clear) the search-current highlight on `line`.
+   * Stores `line` as `currentMatch` so `renderVisible` re-applies the class
+   * after the async fetch settles, avoiding the rAF race in `reveal()`.
+   * Pass `null` to clear.
+   */
+  highlightLine(line: number | null): void {
+    this.currentMatch = line;
+    // Force a re-render even if the visible range hasn't changed (e.g. the
+    // match is already in the DOM but the class hasn't been applied yet).
+    this.lastStart = -1;
+    this.lastCount = -1;
+    void this.renderVisible();
   }
 
   /**
@@ -190,5 +206,11 @@ export class VirtualLogView {
 
     this.window.appendChild(fragment);
     this.window.style.transform = `translateY(${start * ROW_H}px)`;
+
+    // Apply search-current highlight. All rows are freshly created above so
+    // there is no stale class to clear — just add to the match row if visible.
+    if (this.currentMatch !== null) {
+      this.rowMap.get(this.currentMatch)?.classList.add("search-current");
+    }
   }
 }

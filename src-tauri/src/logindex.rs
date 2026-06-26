@@ -75,40 +75,10 @@ impl LineIndex {
 
     /// Return 0-based indices of lines that match `query`.
     ///
-    /// When `regex` is false the query is treated as a literal string (escaped
-    /// before compiling).  When `case_sensitive` is false the match is
-    /// case-insensitive.  An invalid regex pattern returns an empty `Vec`
-    /// instead of panicking.
+    /// Delegates to the free function `search_file` so the caller can hold no
+    /// lock while the scan runs.  See `log_search` for the pattern.
     pub fn search(&self, query: &str, case_sensitive: bool, regex: bool) -> Vec<usize> {
-        let pattern = if regex {
-            query.to_owned()
-        } else {
-            regex::escape(query)
-        };
-        let re = match RegexBuilder::new(&pattern)
-            .case_insensitive(!case_sensitive)
-            .build()
-        {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-
-        let file = match File::open(&self.path) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
-        };
-        let reader = BufReader::new(file);
-        let mut matches = Vec::new();
-        for (i, line) in reader.lines().enumerate() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
-            if re.is_match(&line) {
-                matches.push(i);
-            }
-        }
-        matches
+        search_file(&self.path, query, case_sensitive, regex)
     }
 
     /// Re-scan bytes appended since the last `build`/`extend` call.
@@ -198,6 +168,48 @@ impl LineIndex {
 }
 
 // ---------------------------------------------------------------------------
+// Free search helper (no lock held during the scan)
+// ---------------------------------------------------------------------------
+
+/// Stream `path` from disk and return 0-based indices of lines matching `query`.
+///
+/// Extracted from `LineIndex::search` so that `log_search` can drop the
+/// `LogIndexState` mutex guard before calling this (file streaming can take
+/// seconds on large files — holding the guard would block concurrent
+/// `log_window` / scroll calls).
+pub fn search_file(path: &str, query: &str, case_sensitive: bool, regex: bool) -> Vec<usize> {
+    let pattern = if regex {
+        query.to_owned()
+    } else {
+        regex::escape(query)
+    };
+    let re = match RegexBuilder::new(&pattern)
+        .case_insensitive(!case_sensitive)
+        .build()
+    {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+    let reader = BufReader::new(file);
+    let mut matches = Vec::new();
+    for (i, line) in reader.lines().enumerate() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        if re.is_match(&line) {
+            matches.push(i);
+        }
+    }
+    matches
+}
+
+// ---------------------------------------------------------------------------
 // Managed state + Tauri commands
 // ---------------------------------------------------------------------------
 
@@ -244,6 +256,10 @@ pub fn log_window(
 }
 
 /// Search an already-opened file and return 0-based matching line indices.
+///
+/// The `LogIndexState` mutex is locked only to verify the file is open and to
+/// clone its path, then immediately released.  The actual file scan runs
+/// lock-free so concurrent `log_window` (scroll) calls are not blocked.
 #[tauri::command]
 pub fn log_search(
     path: String,
@@ -252,14 +268,20 @@ pub fn log_search(
     regex: bool,
     state: tauri::State<LogIndexState>,
 ) -> Result<Vec<usize>, AppError> {
-    let guard = state
-        .0
-        .lock()
-        .map_err(|_| AppError::new(ErrorKind::Io, "lock poisoned"))?;
-    let idx = guard
-        .get(&path)
-        .ok_or_else(|| AppError::new(ErrorKind::NotFound, format!("File not open: {path}")))?;
-    Ok(idx.search(&query, case_sensitive, regex))
+    // Lock → verify open → clone path → drop guard.
+    let file_path = {
+        let guard = state
+            .0
+            .lock()
+            .map_err(|_| AppError::new(ErrorKind::Io, "lock poisoned"))?;
+        guard
+            .get(&path)
+            .ok_or_else(|| AppError::new(ErrorKind::NotFound, format!("File not open: {path}")))?
+            .path
+            .clone()
+        // guard is dropped here
+    };
+    Ok(search_file(&file_path, &query, case_sensitive, regex))
 }
 
 /// Return the byte length of `path` without reading its content.

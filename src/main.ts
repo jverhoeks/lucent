@@ -154,7 +154,9 @@ async function openPath(path: string) {
           lineCount,
           (start, count) => invoke<string[]>("log_window", { path, start, count }),
         );
-        await invoke("watch_file", { path });
+        // Windowed logs are NOT watched via the full-content read path.
+        // Live tail-growth for windowed logs is a deferred follow-up (the
+        // dedicated `log-grew` backend emitter).
         return;
       }
     } catch {

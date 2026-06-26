@@ -2,6 +2,7 @@ import type { SearchProvider, SearchQuery, Match } from "../types";
 
 interface ScrollTarget {
   scrollToLine(line: number): void;
+  highlightLine(line: number | null): void;
   rowEl(line: number): HTMLElement | null;
 }
 
@@ -43,16 +44,11 @@ export class LogSearchProvider implements SearchProvider {
   reveal(id: number): void {
     const line = this.lineNos[id];
     if (line === undefined) return;
-    this.clearCurrent();
     this.view.scrollToLine(line);
-    this.view.rowEl(line)?.classList.add("search-current");
-  }
-
-  private clearCurrent(): void {
-    for (const ln of this.lineNos) this.view.rowEl(ln)?.classList.remove("search-current");
+    this.view.highlightLine(line);
   }
 
   /** Removes highlight decorations only. Does NOT reset the search cache or
    *  lastKey — see class comment for why this matters. */
-  clear(): void { this.clearCurrent(); }
+  clear(): void { this.view.highlightLine(null); }
 }

@@ -156,7 +156,11 @@ function ancestorPaths(path: string): string[] {
   return out.filter(Boolean);
 }
 function cssEscape(s: string): string {
-  return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&");
+  if (window.CSS && CSS.escape) return CSS.escape(s);
+  // Fallback for the `[data-path="…"]` quoted-string context: backslash-escape
+  // the quote and backslash, and escape control chars (newlines are illegal
+  // unescaped inside a CSS string) so the selector stays valid for any key.
+  return s.replace(/["\\]/g, "\\$&").replace(/[\n\r\f]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `);
 }
 
 export function renderTree(

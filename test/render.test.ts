@@ -88,6 +88,9 @@ describe("splitHighlightedLines", () => {
   it("splits plain lines", () => {
     expect(splitHighlightedLines("a\nb\nc")).toEqual(["a", "b", "c"]);
   });
+  it("returns no rows for an empty code block", () => {
+    expect(splitHighlightedLines("")).toEqual([]);
+  });
   it("re-balances spans that straddle a newline", () => {
     // A span opened on line 1 and closed on line 2 must be closed/reopened.
     const input = '<span class="c">line1\nline2</span>';

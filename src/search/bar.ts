@@ -63,8 +63,12 @@ export class SearchBar {
   private renderState() {
     const n = this.controller.count();
     const i = this.controller.currentIndex();
-    this.count.textContent = this.controller.error() ? "err" : `${n ? i + 1 : 0}/${n}`;
-    this.input.classList.toggle("error", !!this.controller.error());
+    const err = this.controller.error();
+    this.count.textContent = err ? "err" : `${n ? i + 1 : 0}/${n}`;
+    // Surface the regex error detail on hover instead of a bare "err".
+    this.count.title = err ?? "";
+    this.input.title = err ?? "";
+    this.input.classList.toggle("error", !!err);
   }
 
   private cancelDebounce() {

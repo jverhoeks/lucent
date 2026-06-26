@@ -14,9 +14,11 @@ import { FilePayload, AppError, StyleSettings, Format, DataLang } from "./types"
 import { SearchController } from "./search/controller";
 import { DomSearchProvider } from "./search/dom-provider";
 import { TreeSearchProvider } from "./search/tree-provider";
+import { LogSearchProvider } from "./search/log-provider";
 import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
+import { detectFormat } from "./format";
 
 const tabbar = document.getElementById("tabbar")!;
 const tabstrip = document.getElementById("tabstrip")!;
@@ -34,6 +36,24 @@ function rebindSearch() {
   if (!searchBar.isOpen()) return;
   const fmt = manager.getActiveFormat();
   const mode = manager.getActiveMode();
+  // Windowed log: use async backend search
+  if (manager.isActiveWindowed()) {
+    const view = manager.getActiveVirtualLogView();
+    const path = manager.getActivePath();
+    if (view && path) {
+      search.setProvider(new LogSearchProvider(
+        view,
+        (q) => invoke<number[]>("log_search", {
+          path,
+          query: q.text,
+          caseSensitive: q.caseSensitive,
+          regex: q.regex,
+        }),
+        () => search.refresh(),
+      ));
+      return;
+    }
+  }
   if (mode === "rendered" && fmt === "data") {
     const tree = getCurrentTree();
     search.setProvider(tree ? new TreeSearchProvider(tree) : new DomSearchProvider(content));
@@ -119,10 +139,31 @@ async function readPath(path: string): Promise<string | null> {
   }
 }
 
+/** Files larger than this threshold are opened in windowed mode (no full read). */
+const WINDOW_THRESHOLD = 5 * 1024 * 1024; // 5 MB
+
 async function openPath(path: string) {
-  const content = await readPath(path);
-  if (content === null) return;
-  manager.openOrActivate(path, content);
+  // Check if this is a log file that should be opened windowed (no full content read)
+  if (detectFormat(path) === "log") {
+    try {
+      const size = await invoke<number>("file_size", { path });
+      if (size > WINDOW_THRESHOLD) {
+        const lineCount = await invoke<number>("log_open", { path });
+        manager.openWindowedLog(
+          path,
+          lineCount,
+          (start, count) => invoke<string[]>("log_window", { path, start, count }),
+        );
+        await invoke("watch_file", { path });
+        return;
+      }
+    } catch {
+      // If file_size/log_open fails, fall through to normal open
+    }
+  }
+  const fileContent = await readPath(path);
+  if (fileContent === null) return;
+  manager.openOrActivate(path, fileContent);
   await invoke("watch_file", { path });
 }
 
@@ -330,6 +371,12 @@ listen<FilePayload>("file-changed", (e) => {
   rebindSearch();
 });
 listen<{ path: string }>("file-removed", (e) => showBanner(`File removed: ${e.payload.path}`));
+// Windowed log grew: update the virtual view's line count if the tab is active
+listen<{ path: string; lineCount: number }>("log-grew", (e) => {
+  if (manager.getActivePath() === e.payload.path) {
+    manager.getActiveVirtualLogView()?.setLineCount(e.payload.lineCount);
+  }
+});
 
 // ---- Drag-and-drop ----
 getCurrentWebview().onDragDropEvent((e) => {

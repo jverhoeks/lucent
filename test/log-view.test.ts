@@ -32,12 +32,26 @@ describe("LogView incremental rendering", () => {
     expect(c.querySelector(".log-line")).toBe(firstRow); // original node reused, not rebuilt
   });
 
-  it("full-rebuilds when the front diverges (e.g. ring-cap dropped oldest)", () => {
+  it("incrementally drops the front on ring-buffer eviction (reuses surviving rows)", () => {
     const c = mk();
     const v = renderLog("a\nb\nc", c, { theme: "light" });
-    v.setLines(["b", "c", "d"]); // 'a' dropped from front → not a prefix
+    const rowB = c.querySelectorAll(".log-line")[1]; // the 'b' row, must survive
+    v.setLines(["b", "c", "d"]); // 'a' evicted from front, 'd' appended
+    const rows = [...c.querySelectorAll(".log-line")];
+    expect(rows.map((r) => r.querySelector(".log-msg")!.textContent)).toEqual(["b", "c", "d"]);
+    expect(rows[0]).toBe(rowB); // survivor reused, not torn down + recreated
+    // gutters renumbered to the new positions
+    expect([...c.querySelectorAll(".log-gutter")].map((g) => g.textContent)).toEqual(["1", "2", "3"]);
+  });
+
+  it("full-rebuilds when there is no front overlap", () => {
+    const c = mk();
+    const v = renderLog("a\nb\nc", c, { theme: "light" });
+    const rowA = c.querySelector(".log-line");
+    v.setLines(["x", "y", "z"]); // nothing in common → safe full rebuild
     const texts = [...c.querySelectorAll(".log-msg")].map((e) => e.textContent);
-    expect(texts).toEqual(["b", "c", "d"]);
+    expect(texts).toEqual(["x", "y", "z"]);
+    expect(c.querySelector(".log-line")).not.toBe(rowA); // genuinely rebuilt
   });
 
   it("lineCount tracks rendered lines", () => {

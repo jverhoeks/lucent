@@ -60,9 +60,16 @@ export function renderLogRow(
   return { row, panel: null };
 }
 
+/** Max candidate offsets to verify when detecting a front-eviction shift before
+ *  giving up and doing a full rebuild — bounds findDrop to ~O(n). */
+const MAX_DROP_CHECKS = 32;
+
 export class LogView {
   private wrap: HTMLElement;
   private lines: string[] = [];
+  /** Rendered DOM per line, parallel to `lines`, so we can drop/renumber the
+   *  front without tearing down the whole list. `gutter` is cached for renumber. */
+  private nodes: { row: HTMLElement; panel: HTMLElement | null; gutter: HTMLElement | null }[] = [];
 
   constructor(container: HTMLElement) {
     container.replaceChildren();
@@ -75,25 +82,96 @@ export class LogView {
     return this.lines.length;
   }
 
-  /** Reconcile the rendered rows to `next`: append the tail when `next` extends
-   *  the current lines (streaming append); otherwise rebuild from scratch. */
+  /**
+   * Reconcile the rendered rows to `next`:
+   *  - append-only (current is a prefix of next) → render just the new tail;
+   *  - front-eviction (ring buffer at cap: `next` is `lines` shifted left by
+   *    `drop`, plus a new tail) → remove the first `drop` rows, renumber the
+   *    survivors' gutters, append the tail — no full teardown;
+   *  - otherwise → full rebuild.
+   * The eviction path is what keeps a piped stdin at the 10k line cap from
+   * rebuilding every row on every new line.
+   */
   setLines(next: string[]): void {
-    const isPrefix =
-      this.lines.length <= next.length && this.lines.every((l, i) => l === next[i]);
-    if (!isPrefix) {
-      this.wrap.replaceChildren();
-      this.lines = [];
+    if (isPrefixOf(this.lines, next)) {
+      this.appendFrom(this.lines.length, next);
+      this.lines = next.slice();
+      return;
     }
-    for (let i = this.lines.length; i < next.length; i++) {
-      const { row, panel } = renderLogRow(next[i], i);
-      if (panel) {
-        this.wrap.append(row, panel);
-      } else {
-        this.wrap.append(row);
-      }
+
+    const drop = this.findDrop(next);
+    if (drop > 0) {
+      this.dropFront(drop);
+      this.lines = this.lines.slice(drop);
+      this.renumberGutters(); // survivors shifted down by `drop`
+      this.appendFrom(this.lines.length, next);
+      this.lines = next.slice();
+      return;
     }
+
+    // Genuine replacement — full rebuild (also the safe fallback when no cheap
+    // shift was found, so we never display rows out of sync with `lines`).
+    this.wrap.replaceChildren();
+    this.nodes = [];
+    this.lines = [];
+    this.appendFrom(0, next);
     this.lines = next.slice();
   }
+
+  /** Render lines [from, next.length) and append their rows to the DOM. */
+  private appendFrom(from: number, next: string[]): void {
+    for (let i = from; i < next.length; i++) {
+      const { row, panel } = renderLogRow(next[i], i);
+      if (panel) this.wrap.append(row, panel);
+      else this.wrap.append(row);
+      this.nodes.push({ row, panel, gutter: row.querySelector(".log-gutter") });
+    }
+  }
+
+  /** Smallest `drop` (1..) such that `lines[drop:]` is a prefix of `next`, or 0
+   *  if none is found cheaply (caller falls back to a full rebuild). */
+  private findDrop(next: string[]): number {
+    const cur = this.lines;
+    if (next.length === 0 || cur.length === 0) return 0;
+    const first = next[0];
+    let checks = 0;
+    for (let d = 1; d < cur.length; d++) {
+      if (cur[d] !== first) continue;
+      if (++checks > MAX_DROP_CHECKS) return 0;
+      const overlap = cur.length - d;
+      if (overlap > next.length) continue;
+      let ok = true;
+      for (let i = 0; i < overlap; i++) {
+        if (cur[d + i] !== next[i]) { ok = false; break; }
+      }
+      if (ok) return d;
+    }
+    return 0;
+  }
+
+  /** Remove the first `drop` rows (and their JSON panels) from the DOM. */
+  private dropFront(drop: number): void {
+    for (let k = 0; k < drop; k++) {
+      this.nodes[k].row.remove();
+      this.nodes[k].panel?.remove();
+    }
+    this.nodes.splice(0, drop);
+  }
+
+  /** Rewrite surviving rows' gutter numbers (1-based) after a front drop. */
+  private renumberGutters(): void {
+    for (let i = 0; i < this.nodes.length; i++) {
+      const g = this.nodes[i].gutter;
+      if (g) g.textContent = String(i + 1);
+    }
+  }
+}
+
+/** True when `a` is a prefix of `b` (append-only streaming case). */
+function isPrefixOf(a: string[], b: string[]): boolean {
+  if (a.length > b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 /** Split source into lines, dropping a single trailing empty line from a final

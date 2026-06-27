@@ -224,6 +224,7 @@ body {
   margin: 0 auto;
   font-size: var(--font-size);
   line-height: 1.6;
+  content-visibility: auto;
 }
 
 .doc h1,

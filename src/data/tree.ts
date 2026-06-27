@@ -20,7 +20,7 @@ const DEFAULT_EXPAND_CAP = 5000;
  *  because it bounds the visible count — a small-total file can never blow up
  *  even via expandAll, so it safely keeps the battle-tested nested path. Tests
  *  pass a tiny `virtualizeThreshold` to exercise the virtual path on fixtures. */
-const VIRTUALIZE_THRESHOLD = 2000;
+const VIRTUALIZE_THRESHOLD = 200;
 /** Indent per depth level (px) for the flat virtual rows (nesting is lost when
  *  flattened, so indentation is expressed as padding instead of nested divs). */
 const INDENT = 16;

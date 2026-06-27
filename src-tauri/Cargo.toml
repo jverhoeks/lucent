@@ -26,6 +26,7 @@ serde_json = "1"
 notify = "8"
 tauri-plugin-dialog = "2"
 regex = "1.12.4"
+memmap2 = "0.9"
 
 # Native one-click PDF export on macOS via WKWebView.createPDF.
 [target.'cfg(target_os = "macos")'.dependencies]

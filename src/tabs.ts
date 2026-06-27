@@ -8,10 +8,8 @@ import { StyleSettings, Theme, Format, DataLang } from "./types";
 export const STDIN_PATH = "<stdin>";
 
 /** A rendered (non-windowed) log with more than this many lines is rendered via
- *  a virtualized in-memory VirtualLogView instead of a full-DOM LogView. Set
- *  ABOVE the stdin ring-buffer cap (10k) so stdin and its incremental streaming
- *  path stay on LogView untouched — only large file logs (12k…5MB) virtualize. */
-export const LOG_VIRTUALIZE_LINES = 12000;
+ *  a virtualized in-memory VirtualLogView instead of a full-DOM LogView. */
+export const LOG_VIRTUALIZE_LINES = 500;
 
 export interface Tab {
   path: string;

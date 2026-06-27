@@ -574,16 +574,24 @@ export class TabManager {
 
       const seq = this.repaintSeq;
 
+      // ---- Helper: wrap rendered HTML in a `.doc` container (same as markdownRenderer) ----
+      const setPreview = (html: string) => {
+        const article = document.createElement("article");
+        article.className = "doc";
+        article.innerHTML = html;
+        prevPane.replaceChildren(article);
+      };
+
       // ---- Initial preview: full render with math + mermaid ----
       (async () => {
         try {
           const { renderMarkdown, renderMath, hasMath, runPostRender } = await import("./render");
           if (seq !== this.repaintSeq) return;
-          prevPane.innerHTML = await renderMarkdown(t.content);
+          setPreview(await renderMarkdown(t.content));
           if (hasMath(t.content)) {
             try {
               const html = await renderMath(t.content);
-              if (this.active() === t && seq === this.repaintSeq) prevPane.innerHTML = html;
+              if (this.active() === t && seq === this.repaintSeq) setPreview(html);
             } catch { /* keep the base render */ }
           }
           await runPostRender(prevPane, this.theme);
@@ -601,7 +609,7 @@ export class TabManager {
           const { renderMarkdown } = await import("./render");
           if (seq !== this.repaintSeq) return;
           try {
-            prevPane.innerHTML = await renderMarkdown(curText);
+            setPreview(await renderMarkdown(curText));
           } catch { /* preview failure is non-fatal */ }
         }, 100);
       };

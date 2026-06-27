@@ -23,6 +23,11 @@ export function applyCodeTheme(theme: Theme): void {
   hljsStyleEl.textContent = theme === "dark" ? hljsDark : hljsLight;
 }
 
+/** Remove the highlight.js style element (cleanup on destroy). */
+export function removeCodeTheme(): void {
+  if (hljsStyleEl) { hljsStyleEl.remove(); hljsStyleEl = null; }
+}
+
 /** Parse a fence info string into a language and an optional filename label.
  *  Supported: `lang`, `lang title="name"`, `lang title=name`, `lang:name`. */
 function parseInfo(info: string): { lang: string; filename: string } {

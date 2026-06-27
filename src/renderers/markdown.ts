@@ -9,6 +9,11 @@ export const markdownRenderer: Renderer = {
     const article = document.createElement("article");
     article.className = "doc";
     article.innerHTML = renderMarkdown(source);
+    // Hide mermaid source blocks before they paint — runPostRender reveals them
+    // as inlined SVGs once the async mermaid render finishes.
+    for (const pre of article.querySelectorAll<HTMLElement>("pre.mermaid")) {
+      pre.style.visibility = "hidden";
+    }
     container.replaceChildren(article);
     return finishRender(article, source, container, ctx.theme);
   },

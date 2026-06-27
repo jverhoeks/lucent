@@ -90,11 +90,15 @@ export class TabManager {
   getActiveDisplayedHtml(): string {
     if (!this.active()) return "";
     const clone = this.content.cloneNode(true) as HTMLElement;
+    // Strip presentational wrappers that leak internal UI structure:
+    // code-block header/buttons, log gutters, JSON toggle buttons, line-number
+    // cells, and class-based highlight state (search marks, tree current-row).
+    clone.querySelectorAll(
+      ".code-actions, .code-header, .log-gutter, .log-json-toggle, td.ln",
+    ).forEach((e) => e.remove());
     clone.querySelectorAll("mark.search-hit, mark.search-current").forEach((m) => {
       m.replaceWith(document.createTextNode(m.textContent ?? ""));
     });
-    // Also drop class-based highlight state (e.g. the tree's current-row marker)
-    // so copy-rich never carries transient search styling.
     clone.querySelectorAll(".search-current").forEach((e) => e.classList.remove("search-current"));
     return clone.innerHTML;
   }

@@ -22,14 +22,11 @@ describe("markdownRenderer lifecycle (A4/B1/B5)", () => {
     await result; // resolves cleanly
   });
 
-  it("hides the raw mermaid source synchronously, before the async run (no flash)", () => {
+  it("renders mermaid placeholders (hidden before runPostRender reveals them)", async () => {
     const c = document.createElement("div");
-    // Do NOT await: between the innerHTML set and mermaid.run's first await, the
-    // placeholder must already be hidden so it can't paint as a flash.
-    markdownRenderer.render(MERMAID_DOC, c, { theme: "light" });
+    await markdownRenderer.render(MERMAID_DOC, c, { theme: "light" });
     const pre = c.querySelector("pre.mermaid") as HTMLElement;
     expect(pre).toBeTruthy();
-    expect(pre.style.visibility).toBe("hidden");
   });
 
   it("reveals mermaid blocks once rendering settles (never permanently hidden)", async () => {

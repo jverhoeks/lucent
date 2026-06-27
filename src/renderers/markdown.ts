@@ -6,9 +6,9 @@ export const markdownRenderer: Renderer = {
   async render(source: string, container: HTMLElement, ctx: RenderCtx): Promise<void> {
     const article = document.createElement("article");
     article.className = "doc";
-    // Synchronous base paint (math, if any, shows as raw text) so the document
-    // is on screen instantly, then the lifecycle resolves the math + Mermaid.
-    article.innerHTML = renderMarkdown(source);
+    // Base paint — math, if any, shows as raw TeX. The async lifecycle
+    // upgrades math via katex and runs Mermaid via the post-render pass.
+    article.innerHTML = await renderMarkdown(source);
     // Hide mermaid source blocks before they paint — runPostRender reveals them
     // as inlined SVGs once the async mermaid render finishes.
     for (const pre of article.querySelectorAll<HTMLElement>("pre.mermaid")) {

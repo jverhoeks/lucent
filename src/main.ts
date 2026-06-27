@@ -54,6 +54,9 @@ const manager = new TabManager(tabbar, content, settings, {
   onChange: () => { refreshToolbar(); rebindSearch(); },
   onTabClosed: (path) => void invoke("unwatch_file", { path }),
   onCloseAll: () => void invoke("unwatch_all"),
+  onSave: async (path, content) => {
+    await invoke("save_text_file", { path, contents: content });
+  },
 });
 initStdin(manager);
 applyCodeTheme(settings.theme);
@@ -76,17 +79,29 @@ function refreshToolbar() {
 
   // Reflect the active tab's view mode in the toggle button.
   const isRaw = manager.getActiveMode() === "raw";
+  const isEdit = manager.getActiveMode() === "edit";
   const toggle = btn("btn-toggle");
   toggle.textContent = isRaw ? "</> Raw" : "👁 Rendered";
   toggle.classList.toggle("toggled", isRaw);
   toggle.setAttribute("aria-pressed", String(isRaw));
+  toggle.hidden = isEdit;
 
   // Show tail button only for logs; reflect follow state.
   const tail = btn("btn-tail");
   const isLog = manager.getActiveFormat() === "log";
-  tail.hidden = !isLog;
+  tail.hidden = !isLog || isEdit;
   tail.classList.toggle("toggled", manager.isFollowing());
   tail.setAttribute("aria-pressed", String(manager.isFollowing()));
+
+  // Edit / Save buttons
+  const editBtn = btn("btn-edit");
+  const saveBtn = btn("btn-save");
+  const isMd = manager.getActiveFormat() === "markdown";
+  editBtn.disabled = !has || !isMd;
+  editBtn.textContent = isEdit ? "✏️ Done" : "✏️ Edit";
+  editBtn.classList.toggle("toggled", isEdit);
+  saveBtn.hidden = !isEdit;
+  saveBtn.disabled = !manager.isEditing();
 }
 
 function showBanner(msg: string) {
@@ -199,9 +214,14 @@ window.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
     if (manager.count() > 0) { e.preventDefault(); manager.closeActiveTab(); }
   }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+    if (manager.isEditing()) { e.preventDefault(); void manager.saveActive(); }
+  }
 });
 
 btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
+btn("btn-edit").addEventListener("click", () => manager.toggleEdit());
+btn("btn-save").addEventListener("click", () => void manager.saveActive());
 btn("btn-tail").addEventListener("click", () => manager.toggleFollow());
 btn("btn-close-all").addEventListener("click", () => manager.closeAll());
 

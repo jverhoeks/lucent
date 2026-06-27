@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS: StyleSettings = {
 };
 
 export type Format = "markdown" | "data" | "log" | "text";
-export type Mode = "rendered" | "raw";
+export type Mode = "rendered" | "raw" | "edit";
 export type DataLang = "json" | "yaml" | "toml" | "ini";
 
 export interface SearchQuery {

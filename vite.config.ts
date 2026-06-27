@@ -6,6 +6,11 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
 
+  // Web Workers must use ESM output because render-core.ts uses dynamic imports
+  // (katex plugin, mermaid, etc.) which trigger code-splitting — IIFE doesn't
+  // support that.
+  worker: { format: "es" },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

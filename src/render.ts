@@ -10,6 +10,22 @@ import hljsLight from "highlight.js/styles/github.css?inline";
 import hljsDark from "highlight.js/styles/github-dark.css?inline";
 import type { Theme } from "./types";
 
+// KaTeX fonts add ~2MB to the bundle when imported from node_modules.
+// Load them from CDN on demand instead.
+const KATEX_CDN = "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css";
+let katexCssInjected = false;
+
+function injectKatexCss(): void {
+  if (katexCssInjected || typeof document === "undefined") return;
+  katexCssInjected = true;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = KATEX_CDN;
+  link.crossOrigin = "anonymous";
+  // Only inject into a live document head — skip if not in DOM (e.g. tests).
+  if (document.head) document.head.appendChild(link);
+}
+
 let hljsStyleEl: HTMLStyleElement | null = null;
 
 /** Swap the highlight.js color theme to match the app theme (dark code in dark mode). */
@@ -189,6 +205,7 @@ export async function renderMath(text: string): Promise<string> {
     const mod = await import("@vscode/markdown-it-katex");
     mathRenderer = createRenderer(mod.default);
   }
+  injectKatexCss();
   return mathRenderer.render(text);
 }
 

@@ -1,5 +1,4 @@
 import "./styles.css";
-import "katex/dist/katex.min.css";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";

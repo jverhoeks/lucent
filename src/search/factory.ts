@@ -1,4 +1,4 @@
-import type { Format, SearchProvider, SearchQuery } from "../types";
+import type { Format, Mode, SearchProvider, SearchQuery } from "../types";
 import type { TreeView } from "../data/tree";
 import type { VirtualLogView } from "../logs/virtual-log-view";
 import { DomSearchProvider } from "./dom-provider";
@@ -11,7 +11,7 @@ import { searchLogLines } from "../logs/log-search";
  *  `invoke`, and TabManager — and is unit-testable in isolation. */
 export interface SearchContext {
   format: Format | undefined;
-  mode: "rendered" | "raw" | undefined;
+  mode: Mode | undefined;
   /** Active tab is a huge windowed log (backend-indexed search). */
   windowed: boolean;
   /** The rendered content root (DOM-search fallback target). */
@@ -51,7 +51,7 @@ export function createSearchProvider(ctx: SearchContext): SearchProvider {
         : (q: SearchQuery) => Promise.resolve(searchLogLines(lines ?? [], q));
     return new LogSearchProvider(view, runSearch, ctx.onUpdate);
   }
-  if (ctx.mode === "rendered" && ctx.format === "data") {
+  if ((ctx.mode === "rendered" || ctx.mode === "edit") && ctx.format === "data") {
     return ctx.tree ? new TreeSearchProvider(ctx.tree) : new DomSearchProvider(ctx.content);
   }
   return new DomSearchProvider(ctx.content);

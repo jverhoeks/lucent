@@ -3,7 +3,8 @@ import { detectFormat, dataLangOf, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { LogView, toLines } from "./renderers/log";
 import { VirtualLogView } from "./logs/virtual-log-view";
-import { StyleSettings, Theme, Format, DataLang, Renderer } from "./types";
+import { StyleSettings, Theme, Format, DataLang, Renderer, Mode } from "./types";
+import type { EditorAPI } from "./editor";
 
 export const STDIN_PATH = "<stdin>";
 
@@ -18,9 +19,13 @@ export interface Tab {
   format: Format;          // detected format
   forcedFormat?: Format;   // "View as…" override
   forcedLang?: DataLang;   // "View as data:lang" override
-  mode: "rendered" | "raw";
+  mode: Mode;
   scrollTop: number;
   follow?: boolean;
+  /** True when the editor buffer has unsaved changes. */
+  editDirty?: boolean;
+  /** Saved editor scroll position (for sync scrolling). */
+  editScroll?: number;
   /** True when the file is too large to load into memory; rendered via VirtualLogView. */
   windowed?: boolean;
   /** Total line count for windowed tabs (from log_open). */
@@ -33,6 +38,7 @@ export interface TabHooks {
   onChange: () => void; // tabs/active changed — refresh toolbar enabled state
   onTabClosed: (path: string) => void; // stop watching one closed document
   onCloseAll: () => void; // stop watching everything
+  onSave?: (path: string, content: string) => Promise<void>; // save editor content to disk
 }
 
 /** The format actually used to render this tab (override beats detection). */
@@ -57,6 +63,10 @@ export class TabManager {
   /** Monotonic repaint generation; an async post-render tail only applies if it
    *  still matches (i.e. no newer repaint has run since). */
   private repaintSeq = 0;
+  /** The active CodeMirror editor instance (edit mode). */
+  private currentEditor: EditorAPI | null = null;
+  /** Debounce timer for live preview in edit mode. */
+  private editPreviewTimer: ReturnType<typeof setTimeout> | null = null;
   /** The Renderer from the previous repaint (for lifecycle cleanup). */
   private currentRenderer: Renderer | null = null;
 
@@ -102,7 +112,7 @@ export class TabManager {
     clone.querySelectorAll(".search-current").forEach((e) => e.classList.remove("search-current"));
     return clone.innerHTML;
   }
-  getActiveMode(): "rendered" | "raw" | undefined {
+  getActiveMode(): Mode | undefined {
     return this.active()?.mode;
   }
   getActiveFormat(): Format | undefined {
@@ -213,6 +223,9 @@ export class TabManager {
     if (i < 0) return;
     // Windowed logs never hold full content; growth comes via the log-grew event.
     if (this.tabs[i].windowed) return;
+    // Don't overwrite the editor buffer when the user has unsaved changes.
+    // The user's edits take priority over disk changes in edit mode.
+    if (i === this.activeIndex && this.currentEditor && this.tabs[i].editDirty) return;
     this.tabs[i].content = content;
     if (i !== this.activeIndex) return;
     const t = this.tabs[i];
@@ -277,6 +290,7 @@ export class TabManager {
   closeAll(): void {
     this.currentVlog?.destroy();
     this.currentVlog = null;
+    this.destroyEditor();
     this.tabs = [];
     this.activeIndex = -1;
     this.content.replaceChildren();
@@ -296,6 +310,54 @@ export class TabManager {
     t.mode = t.mode === "rendered" ? "raw" : "rendered";
     this.hooks.onChange();
     return this.repaint(false);
+  }
+
+  isEditing(): boolean {
+    return !!this.active()?.editDirty || !!this.currentEditor;
+  }
+
+  /** Enter or exit split-screen edit mode. Only markdown files can be edited. */
+  toggleEdit(): void | Promise<void> {
+    const t = this.active();
+    if (!t) return;
+
+    // Exiting edit mode
+    if (t.mode === "edit" || this.currentEditor) {
+      this.destroyEditor();
+      t.mode = "rendered";
+      this.hooks.onChange();
+      return this.repaint(false);
+    }
+
+    // Only markdown supports the editor
+    if (effectiveFormat(t) !== "markdown") return;
+
+    t.mode = "edit";
+    t.editDirty = false;
+    this.hooks.onChange();
+    return this.repaint(false);
+  }
+
+  /** Save the editor buffer to disk. Returns true if saved. */
+  async saveActive(): Promise<boolean> {
+    const t = this.active();
+    if (!t || !this.currentEditor || !t.editDirty) return false;
+    t.content = this.currentEditor.getValue();
+    t.editDirty = false;
+    this.renderTabbar();
+    this.hooks.onChange();
+    await this.hooks.onSave?.(t.path, t.content);
+    return true;
+  }
+
+  /** Destroy the active editor and clean up the split view. */
+  private destroyEditor(): void {
+    this.currentEditor?.destroy();
+    this.currentEditor = null;
+    if (this.editPreviewTimer !== null) {
+      clearTimeout(this.editPreviewTimer);
+      this.editPreviewTimer = null;
+    }
   }
 
   isFollowing(): boolean { return !!this.active()?.follow; }
@@ -378,6 +440,9 @@ export class TabManager {
     // detached DOM; the log branch below re-sets whichever it builds.
     this.currentLog = null;
     this.currentVlogLines = null;
+    // Clear any active editor before switching modes/tabs.
+    this.destroyEditor();
+    this.content.classList.remove("editing");
 
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
@@ -461,6 +526,90 @@ export class TabManager {
       return;
     }
 
+    if (t.mode === "edit") {
+      const split = document.createElement("div");
+      split.className = "split-view";
+      const edPane = document.createElement("div");
+      edPane.className = "split-pane split-editor";
+      const divider = document.createElement("div");
+      divider.className = "split-divider";
+      const prevPane = document.createElement("div");
+      prevPane.className = "split-pane split-preview";
+      split.append(edPane, divider, prevPane);
+      this.content.replaceChildren(split);
+      this.content.classList.add("editing");
+
+      // Attempt to create the editor and start the live preview.
+      // Sync DOM is already visible; the editor mounts and renders
+      // in the next microtask.
+      const seq = this.repaintSeq;
+      return (async () => {
+        const ed = await import("./editor");
+        if (seq !== this.repaintSeq) return;
+        this.currentEditor = await ed.createEditor(edPane, t.content, this.theme);
+
+        const { renderMarkdown } = await import("./render");
+        if (seq !== this.repaintSeq) return;
+        prevPane.innerHTML = await renderMarkdown(t.content);
+
+        this.currentEditor.onUpdate((text) => {
+          t.editDirty = text !== (this.active()?.content ?? t.content);
+          this.renderTabbar();
+          this.hooks.onChange();
+
+          if (this.editPreviewTimer !== null) clearTimeout(this.editPreviewTimer);
+          this.editPreviewTimer = setTimeout(async () => {
+            if (this.editPreviewTimer === null) return;
+            this.editPreviewTimer = null;
+            // Check the active tab still matches before updating preview
+            if (this.active() !== t) return;
+            if (seq !== this.repaintSeq) return;
+            try {
+              prevPane.innerHTML = await renderMarkdown(text);
+            } catch { /* preview failure is non-fatal */ }
+          }, 200);
+        });
+
+        // Drag the split divider
+        let dragging = false;
+        const onMove = (e: MouseEvent) => {
+          if (!dragging) return;
+          const rect = split.getBoundingClientRect();
+          if (rect.width === 0) return;
+          const pct = ((e.clientX - rect.left) / rect.width) * 100;
+          const clamped = Math.max(20, Math.min(80, pct));
+          edPane.style.width = `${clamped}%`;
+          prevPane.style.width = `${100 - clamped}%`;
+        };
+        const onUp = () => {
+          if (dragging) {
+            dragging = false;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+          }
+        };
+        divider.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          dragging = true;
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        });
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+
+        // When the editor is destroyed later, clean up drag listeners
+        const origDestroy = this.currentEditor.destroy.bind(this.currentEditor);
+        const patchDestroy = () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          origDestroy();
+        };
+        this.currentEditor.destroy = patchDestroy;
+
+        if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll);
+      })();
+    }
+
     const pre = document.createElement("pre");
     pre.className = "raw";
     pre.textContent = t.content; // paint plain text instantly — no async dependency
@@ -533,7 +682,7 @@ export class TabManager {
 
       const label = document.createElement("span");
       label.className = "tab-label";
-      label.textContent = t.title;
+      label.textContent = t.editDirty ? "● " + t.title : t.title;
       label.addEventListener("click", () => this.activate(i));
 
       const close = document.createElement("button");

@@ -1,6 +1,6 @@
 use crate::error::{AppError, ErrorKind};
+use memmap2::Mmap;
 use serde::Serialize;
-use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Serialize, Clone)]
@@ -18,8 +18,11 @@ pub fn read_file(path: String) -> Result<FilePayload, AppError> {
             format!("File not found: {path}"),
         ));
     }
-    let bytes = fs::read(p).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
-    let content = String::from_utf8(bytes)
+    let file =
+        std::fs::File::open(p).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    let mmap =
+        unsafe { Mmap::map(&file) }.map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    let content = String::from_utf8(mmap[..].to_vec())
         .map_err(|_| AppError::new(ErrorKind::NotUtf8, "File is not valid UTF-8"))?;
     Ok(FilePayload { path, content })
 }

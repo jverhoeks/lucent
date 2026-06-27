@@ -1,4 +1,3 @@
-import hljs from "./highlight";
 import { detectFormat, dataLangOf, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { LogView, toLines } from "./renderers/log";
@@ -460,15 +459,26 @@ export class TabManager {
 
     const pre = document.createElement("pre");
     pre.className = "raw";
-    const lang = effectiveFormat(t) === "data" ? (t.forcedLang ?? dataLangOf(t.path)) : null;
-    if (lang && hljs.getLanguage(lang)) {
-      pre.classList.add("hljs");
-      pre.innerHTML = hljs.highlight(t.content, { language: lang }).value; // hljs output is escaped/safe
-    } else {
-      pre.textContent = t.content;
-    }
+    pre.textContent = t.content; // paint plain text instantly — no async dependency
     this.content.replaceChildren(pre);
     this.settleScroll(t, restoreScroll);
+    // Async upgrade: lazy-load highlight.js and re-highlight when available.
+    // The plain text is already visible, so there is no flash — the highlighted
+    // replacement lands in a future microtask.
+    const lang = effectiveFormat(t) === "data" ? (t.forcedLang ?? dataLangOf(t.path)) : null;
+    if (lang) {
+      const mySeq = this.repaintSeq;
+      import("./highlight").then((m) => {
+        if (mySeq !== this.repaintSeq) return; // superseded by a newer repaint
+        const hljs = m.default;
+        if (hljs.getLanguage(lang)) {
+          pre.classList.add("hljs");
+          pre.innerHTML = hljs.highlight(t.content, { language: lang }).value;
+        }
+      }).catch(() => {
+        /* plain text is the acceptable fallback */
+      });
+    }
   }
 
   /** Restore the tab's saved scroll, then pin a followed log to the newest line. */

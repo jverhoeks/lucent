@@ -20,7 +20,7 @@ const KATEX_CDN = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/kate
  * the Mermaid post-render pass off-screen, so diagrams become inline SVG and
  * math is laid out. Returns the document's inner HTML.
  */
-async function renderDocumentHtml(rawText: string): Promise<string> {
+async function renderDocumentHtml(rawText: string, theme: Theme = "light"): Promise<string> {
   const holder = document.createElement("div");
   holder.style.cssText = "position:fixed;left:-10000px;top:0;width:800px;";
   // Export must include rendered math, so use the (lazy) math renderer when the
@@ -29,7 +29,7 @@ async function renderDocumentHtml(rawText: string): Promise<string> {
   holder.innerHTML = `<article class="doc">${body}</article>`;
   document.body.appendChild(holder);
   try {
-    await runPostRender(holder, "light");
+    await runPostRender(holder, theme);
     // The copy/save/line-toggle buttons are non-functional in a static file.
     holder.querySelectorAll(".code-actions").forEach((el) => el.remove());
     return holder.querySelector(".doc")!.innerHTML;
@@ -67,7 +67,8 @@ export async function exportHtml(rawText: string): Promise<void> {
     filters: [{ name: "HTML", extensions: ["html"] }],
   });
   if (!path) return;
-  const body = await renderDocumentHtml(rawText);
+  const theme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
+  const body = await renderDocumentHtml(rawText, theme);
   await invoke("save_text_file", { path, contents: buildStandaloneHtml(body) });
 }
 
@@ -85,7 +86,8 @@ function nextFrame(): Promise<void> {
  * temp HTML file and open it in the default browser with print auto-triggered.
  */
 async function exportPdfViaBrowser(rawText: string): Promise<void> {
-  const body = await renderDocumentHtml(rawText);
+  const theme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
+  const body = await renderDocumentHtml(rawText, theme);
   const path = await invoke<string>("write_temp_file", {
     filename: "markdown-export.html",
     contents: buildStandaloneHtml(body, true),

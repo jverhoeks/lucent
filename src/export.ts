@@ -12,7 +12,7 @@ import type { Theme } from "./types";
 // static `import katex` here would defeat the lazy-loading in render.ts). BUMP ON
 // KATEX UPGRADE — drives only the exported HTML's CDN link; the live app's
 // bundled CSS auto-updates.
-const KATEX_VERSION = "0.17.0";
+const KATEX_VERSION = "0.16.47";
 const KATEX_CDN = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css`;
 
 /**

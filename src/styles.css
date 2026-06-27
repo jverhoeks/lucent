@@ -1018,9 +1018,26 @@ body.drag-over #content {
   width: 50%;
   min-width: 20%;
   border-right: 1px solid var(--bar-border);
+  display: flex;
+  flex-direction: column;
+}
+/* Textarea shown instantly while CodeMirror loads */
+.split-textarea {
+  flex: 1;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 16px;
+  background: #fff;
+  color: #1a1a1a;
 }
 .split-editor .cm-editor {
   height: 100%;
+  flex: 1;
 }
 .split-editor .cm-scroller {
   font-family: var(--mono);
@@ -1029,6 +1046,7 @@ body.drag-over #content {
 .split-preview {
   flex: 1;
   padding: 32px 24px;
+  overflow: auto;
 }
 .split-preview .doc {
   max-width: var(--max-width);
@@ -1053,12 +1071,35 @@ body.drag-over #content {
 body:has(#content[data-theme="dark"]) .split-editor {
   border-right-color: rgba(255, 255, 255, 0.1);
 }
+body:has(#content[data-theme="dark"]) .split-textarea {
+  background: #1e1e1e;
+  color: #e6e6e6;
+}
 body:has(#content[data-theme="dark"]) .split-divider {
   background: #2a2a2a;
   border-color: rgba(255, 255, 255, 0.1);
 }
 body:has(#content[data-theme="dark"]) .split-divider:hover {
   background: #4a9eff;
+}
+
+/* ---- Tab loading indicator ---- */
+.tab-label.loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab-label.loading::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 /* ---- Reduced motion (X4) ---- */

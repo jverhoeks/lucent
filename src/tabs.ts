@@ -539,69 +539,103 @@ export class TabManager {
       this.content.replaceChildren(split);
       this.content.classList.add("editing");
 
-      // Attempt to create the editor and start the live preview.
-      // Sync DOM is already visible; the editor mounts and renders
-      // in the next microtask.
-      const seq = this.repaintSeq;
-      return (async () => {
-        const ed = await import("./editor");
-        if (seq !== this.repaintSeq) return;
-        this.currentEditor = await ed.createEditor(edPane, t.content, this.theme);
+      // ---- Drag the split divider (synchronous, no imports) ----
+      let dragging = false;
+      const onDivMove = (e: MouseEvent) => {
+        if (!dragging) return;
+        const rect = split.getBoundingClientRect();
+        if (rect.width === 0) return;
+        const pct = ((e.clientX - rect.left) / rect.width) * 100;
+        const clamped = Math.max(20, Math.min(80, pct));
+        edPane.style.width = `${clamped}%`;
+        prevPane.style.width = `${100 - clamped}%`;
+      };
+      const onDivUp = () => {
+        if (dragging) {
+          dragging = false;
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+        }
+      };
+      divider.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        dragging = true;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+      });
+      document.addEventListener("mousemove", onDivMove);
+      document.addEventListener("mouseup", onDivUp);
 
-        const { renderMarkdown } = await import("./render");
+      // ---- Show a plain textarea instantly, then upgrade to CodeMirror ----
+      const textarea = document.createElement("textarea");
+      textarea.className = "split-textarea";
+      textarea.value = t.content;
+      edPane.appendChild(textarea);
+
+      const seq = this.repaintSeq;
+
+      // ---- Initial preview: full render with math + mermaid ----
+      (async () => {
+        const { renderMarkdown, renderMath, hasMath, runPostRender } = await import("./render");
         if (seq !== this.repaintSeq) return;
         prevPane.innerHTML = await renderMarkdown(t.content);
+        if (hasMath(t.content)) {
+          try {
+            const html = await renderMath(t.content);
+            if (this.active() === t && seq === this.repaintSeq) prevPane.innerHTML = html;
+          } catch { /* keep the base render */ }
+        }
+        await runPostRender(prevPane, this.theme);
+      })();
 
-        this.currentEditor.onUpdate((text) => {
-          t.editDirty = text !== (this.active()?.content ?? t.content);
+      // ---- Live preview (debounced, base render only — no math/mermaid) ----
+      let curText = t.content;
+      const schedulePreview = () => {
+        if (this.editPreviewTimer !== null) clearTimeout(this.editPreviewTimer);
+        this.editPreviewTimer = setTimeout(async () => {
+          this.editPreviewTimer = null;
+          if (this.active() !== t) return;
+          if (seq !== this.repaintSeq) return;
+          const { renderMarkdown } = await import("./render");
+          if (seq !== this.repaintSeq) return;
+          try {
+            prevPane.innerHTML = await renderMarkdown(curText);
+          } catch { /* preview failure is non-fatal */ }
+        }, 100);
+      };
+
+      textarea.addEventListener("input", () => {
+        curText = textarea.value;
+        if (curText !== t.content) {
+          t.editDirty = true;
           this.renderTabbar();
           this.hooks.onChange();
+        }
+        schedulePreview();
+      });
 
-          if (this.editPreviewTimer !== null) clearTimeout(this.editPreviewTimer);
-          this.editPreviewTimer = setTimeout(async () => {
-            if (this.editPreviewTimer === null) return;
-            this.editPreviewTimer = null;
-            // Check the active tab still matches before updating preview
-            if (this.active() !== t) return;
-            if (seq !== this.repaintSeq) return;
-            try {
-              prevPane.innerHTML = await renderMarkdown(text);
-            } catch { /* preview failure is non-fatal */ }
-          }, 200);
-        });
+      // ---- Async upgrade: replace textarea with CodeMirror ----
+      (async () => {
+        const ed = await import("./editor");
+        if (seq !== this.repaintSeq) { edPane.textContent = ""; return; }
+        edPane.textContent = ""; // remove textarea
+        this.currentEditor = await ed.createEditor(edPane, t.content, this.theme);
 
-        // Drag the split divider
-        let dragging = false;
-        const onMove = (e: MouseEvent) => {
-          if (!dragging) return;
-          const rect = split.getBoundingClientRect();
-          if (rect.width === 0) return;
-          const pct = ((e.clientX - rect.left) / rect.width) * 100;
-          const clamped = Math.max(20, Math.min(80, pct));
-          edPane.style.width = `${clamped}%`;
-          prevPane.style.width = `${100 - clamped}%`;
-        };
-        const onUp = () => {
-          if (dragging) {
-            dragging = false;
-            document.body.style.cursor = "";
-            document.body.style.userSelect = "";
+        this.currentEditor.onUpdate((text) => {
+          if (text !== (this.active()?.content ?? t.content)) {
+            t.editDirty = true;
+            this.renderTabbar();
+            this.hooks.onChange();
           }
-        };
-        divider.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          dragging = true;
-          document.body.style.cursor = "col-resize";
-          document.body.style.userSelect = "none";
+          curText = text;
+          schedulePreview();
         });
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
 
         // When the editor is destroyed later, clean up drag listeners
         const origDestroy = this.currentEditor.destroy.bind(this.currentEditor);
         const patchDestroy = () => {
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
+          document.removeEventListener("mousemove", onDivMove);
+          document.removeEventListener("mouseup", onDivUp);
           origDestroy();
         };
         this.currentEditor.destroy = patchDestroy;

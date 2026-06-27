@@ -576,16 +576,18 @@ export class TabManager {
 
       // ---- Initial preview: full render with math + mermaid ----
       (async () => {
-        const { renderMarkdown, renderMath, hasMath, runPostRender } = await import("./render");
-        if (seq !== this.repaintSeq) return;
-        prevPane.innerHTML = await renderMarkdown(t.content);
-        if (hasMath(t.content)) {
-          try {
-            const html = await renderMath(t.content);
-            if (this.active() === t && seq === this.repaintSeq) prevPane.innerHTML = html;
-          } catch { /* keep the base render */ }
-        }
-        await runPostRender(prevPane, this.theme);
+        try {
+          const { renderMarkdown, renderMath, hasMath, runPostRender } = await import("./render");
+          if (seq !== this.repaintSeq) return;
+          prevPane.innerHTML = await renderMarkdown(t.content);
+          if (hasMath(t.content)) {
+            try {
+              const html = await renderMath(t.content);
+              if (this.active() === t && seq === this.repaintSeq) prevPane.innerHTML = html;
+            } catch { /* keep the base render */ }
+          }
+          await runPostRender(prevPane, this.theme);
+        } catch { /* preview failure is non-fatal */ }
       })();
 
       // ---- Live preview (debounced, base render only — no math/mermaid) ----
@@ -616,32 +618,35 @@ export class TabManager {
 
       // ---- Async upgrade: replace textarea with CodeMirror ----
       (async () => {
-        const ed = await import("./editor");
-        if (seq !== this.repaintSeq) { edPane.textContent = ""; return; }
-        edPane.textContent = ""; // remove textarea
-        this.currentEditor = await ed.createEditor(edPane, t.content, this.theme);
+        try {
+          const ed = await import("./editor");
+          if (seq !== this.repaintSeq) { edPane.textContent = ""; return; }
+          edPane.textContent = ""; // remove textarea
+          this.currentEditor = await ed.createEditor(edPane, t.content, this.theme);
 
-        this.currentEditor.onUpdate((text) => {
-          if (text !== (this.active()?.content ?? t.content)) {
-            t.editDirty = true;
-            this.renderTabbar();
-            this.hooks.onChange();
-          }
-          curText = text;
-          schedulePreview();
-        });
+          this.currentEditor.onUpdate((text) => {
+            if (text !== (this.active()?.content ?? t.content)) {
+              t.editDirty = true;
+              this.renderTabbar();
+              this.hooks.onChange();
+            }
+            curText = text;
+            schedulePreview();
+          });
 
-        // When the editor is destroyed later, clean up drag listeners
-        const origDestroy = this.currentEditor.destroy.bind(this.currentEditor);
-        const patchDestroy = () => {
-          document.removeEventListener("mousemove", onDivMove);
-          document.removeEventListener("mouseup", onDivUp);
-          origDestroy();
-        };
-        this.currentEditor.destroy = patchDestroy;
+          // When the editor is destroyed later, clean up drag listeners
+          const origDestroy = this.currentEditor.destroy.bind(this.currentEditor);
+          const patchDestroy = () => {
+            document.removeEventListener("mousemove", onDivMove);
+            document.removeEventListener("mouseup", onDivUp);
+            origDestroy();
+          };
+          this.currentEditor.destroy = patchDestroy;
 
-        if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll);
+          if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll);
+        } catch { /* CM upgrade failure — textarea remains as fallback */ }
       })();
+      return;
     }
 
     const pre = document.createElement("pre");

@@ -44,6 +44,8 @@ export class TreeView {
   private rafId: number | null = null;
   private currentPath: string | null = null;
   private readonly onScroll = () => this.scheduleRender();
+  /** Pool of recycled row elements (S9: DOM pooling). */
+  private rowPool: HTMLElement[] = [];
 
   constructor(
     private rootValue: DataValue,
@@ -51,21 +53,24 @@ export class TreeView {
     private opts: { defaultDepth?: number; expandCap?: number; virtualizeThreshold?: number } = {}
   ) {
     this.flat = [];
-    this.collectFlat(rootValue, "root", "root", 0);
-    // Seed expansion to the default depth (containers with pathDepth < depth).
+    // Lightweight count — no FlatNode allocation, just walks the tree shape.
+    const total = countNodes(rootValue);
+    this.virtual = total > (opts.virtualizeThreshold ?? VIRTUALIZE_THRESHOLD);
+
+    // Seed expansion to the default depth using a tree walk.
     const depth = opts.defaultDepth ?? 1;
-    for (const n of this.flat) {
-      if (isContainer(n.value) && pathDepth(n.path) < depth) this.expanded.add(n.path);
-    }
+    this.seedExpansion(rootValue, depth);
     if (isContainer(rootValue)) this.expanded.add("root");
 
-    this.virtual = this.flat.length > (opts.virtualizeThreshold ?? VIRTUALIZE_THRESHOLD);
     if (this.virtual) this.initVirtual();
     else this.repaint();
   }
 
-  /** Every node in tree order, model-based (independent of expansion/DOM). */
+  /** Every node in tree order, model-based (independent of expansion/DOM).
+   *  Lazily built on first call (search triggers this; initial render does not
+   *  need the full flat list). */
   nodes(): FlatNode[] {
+    if (this.flat.length === 0) this.buildFlat();
     return this.flat.filter((n) => n.path !== "root");
   }
 
@@ -74,9 +79,9 @@ export class TreeView {
     // exists only to bound the nested DOM) does not apply in virtual mode.
     if (!this.virtual) {
       const cap = this.opts.expandCap ?? DEFAULT_EXPAND_CAP;
-      if (this.flat.length > cap) return; // guarded; caller shows a notice
+      if (countNodes(this.rootValue) > cap) return;
     }
-    for (const n of this.flat) if (isContainer(n.value)) this.expanded.add(n.path);
+    this.expandAllWalk(this.rootValue);
     this.refresh();
   }
 
@@ -131,6 +136,7 @@ export class TreeView {
     if (this.scroller) this.scroller.removeEventListener("scroll", this.onScroll);
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     this.rafId = null;
+    this.rowPool = [];
   }
 
   // ─── shared ──────────────────────────────────────────────────────────────────
@@ -151,10 +157,42 @@ export class TreeView {
     this.refresh();
   }
 
-  private collectFlat(value: DataValue, key: string, path: string, _depth: number): void {
-    this.flat.push({ path, key, value });
-    if (value.kind === "object") for (const e of value.entries) this.collectFlat(e.value, e.key, e.path, _depth + 1);
-    else if (value.kind === "array") for (const e of value.items) this.collectFlat(e.value, e.key, e.path, _depth + 1);
+  /** Seed expansion: expand containers at depth < `maxDepth` (matching the
+   *  original `pathDepth(n.path) < depth` logic) without allocating FlatNodes. */
+  private seedExpansion(value: DataValue, maxDepth: number, currentDepth = 0): void {
+    const children: DataNode[] =
+      value.kind === "object" ? value.entries
+      : value.kind === "array" ? value.items
+      : [];
+    for (const node of children) {
+      if (isContainer(node.value) && currentDepth + 1 < maxDepth) this.expanded.add(node.path);
+      this.seedExpansion(node.value, maxDepth, currentDepth + 1);
+    }
+  }
+
+  /** Expand every container node (for expandAll). */
+  private expandAllWalk(value: DataValue): void {
+    if (value.kind === "object") {
+      for (const e of value.entries) {
+        this.expanded.add(e.path);
+        this.expandAllWalk(e.value);
+      }
+    } else if (value.kind === "array") {
+      for (const e of value.items) {
+        this.expanded.add(e.path);
+        this.expandAllWalk(e.value);
+      }
+    }
+  }
+
+  /** Build the flat list on demand (first call from search provider). */
+  private buildFlat(): void {
+    const walk = (value: DataValue, key: string, path: string): void => {
+      this.flat.push({ path, key, value });
+      if (value.kind === "object") for (const e of value.entries) walk(e.value, e.key, e.path);
+      else if (value.kind === "array") for (const e of value.items) walk(e.value, e.key, e.path);
+    };
+    walk(this.rootValue, "root", "root");
   }
 
   // ─── nested mode (unchanged; common case for normal-sized files) ──────────────
@@ -307,8 +345,18 @@ export class TreeView {
   private paintWindow(start: number, count: number): void {
     const win = this.win;
     if (!win) return;
+    // Return current window rows to the pool for reuse (S9).
+    while (win.firstElementChild) {
+      const el = win.firstElementChild as HTMLElement;
+      el.remove();
+      this.rowPool.push(el);
+    }
     const frag = document.createDocumentFragment();
-    for (let i = start; i < start + count; i++) frag.appendChild(this.buildVisRow(this.vis[i]));
+    for (let i = start; i < start + count; i++) {
+      const row = this.rowPool.pop() ?? document.createElement("div");
+      this.fillRow(row, this.vis[i]);
+      frag.appendChild(row);
+    }
     win.replaceChildren(frag);
     win.style.transform = `translateY(${start * this.rowH}px)`;
 
@@ -331,8 +379,10 @@ export class TreeView {
     }
   }
 
-  private buildVisRow(v: VisRow): HTMLElement {
-    const row = document.createElement("div");
+  /** Populate an existing element as a tree row for virtual entry `v`. */
+  private fillRow(row: HTMLElement, v: VisRow): void {
+    row.textContent = "";
+    row.removeAttribute("style");
     row.dataset.path = v.path;
     row.style.paddingLeft = `${v.depth * INDENT + BASE_PAD}px`;
     if (v.container) {
@@ -363,7 +413,6 @@ export class TreeView {
       valEl.textContent = scalar.type === "string" ? `"${scalar.text}"` : scalar.text;
       row.appendChild(valEl);
     }
-    return row;
   }
 
   private scheduleRender(): void {
@@ -385,8 +434,16 @@ export class TreeView {
 function isContainer(v: DataValue): boolean {
   return v.kind === "object" || v.kind === "array";
 }
-function pathDepth(path: string): number {
-  return (path.match(/\.|\[/g) || []).length;
+/** Lightweight count of DataValue nodes (no FlatNode allocation). */
+function countNodes(value: DataValue): number {
+  let count = 0;
+  const walk = (v: DataValue): void => {
+    count++;
+    if (v.kind === "object") for (const e of v.entries) walk(e.value);
+    else if (v.kind === "array") for (const e of v.items) walk(e.value);
+  };
+  walk(value);
+  return count;
 }
 function ancestorPaths(path: string): string[] {
   // For "root.a[2].b" → ["root", "root.a", "root.a[2]", "root.a[2].b"].

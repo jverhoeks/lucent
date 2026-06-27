@@ -1,5 +1,4 @@
 import MarkdownIt from "markdown-it";
-import hljs from "./highlight";
 import taskLists from "markdown-it-task-lists";
 import footnote from "markdown-it-footnote";
 import { full as emoji } from "markdown-it-emoji";
@@ -8,6 +7,7 @@ import anchor from "markdown-it-anchor";
 import container from "markdown-it-container";
 import hljsLight from "highlight.js/styles/github.css?inline";
 import hljsDark from "highlight.js/styles/github-dark.css?inline";
+import hljs from "./highlight";
 import type { Theme } from "./types";
 
 // KaTeX fonts add ~2MB to the bundle when imported from node_modules.
@@ -100,10 +100,29 @@ export function splitHighlightedLines(html: string): string[] {
   return lines;
 }
 
+let baseRenderer: MarkdownIt | null = null;
+
+function getBaseRenderer(): MarkdownIt {
+  if (!baseRenderer) {
+    baseRenderer = createRenderer(hljs);
+  }
+  return baseRenderer;
+}
+
+let mathRenderer: MarkdownIt | null = null;
+
+async function getMathRenderer(): Promise<MarkdownIt> {
+  if (!mathRenderer) {
+    const katexMod = await import("@vscode/markdown-it-katex");
+    mathRenderer = createRenderer(hljs, katexMod.default);
+  }
+  return mathRenderer;
+}
+
 /** Build a configured renderer. `katexPlugin` is applied only for the lazily
  *  built math renderer (it transitively bundles katex, so the eager base
  *  renderer is created without it — see renderMath). */
-function createRenderer(katexPlugin?: unknown): MarkdownIt {
+function createRenderer(hljs: { getLanguage: (lang: string) => unknown; highlight: (code: string, opts: { language: string }) => { value: string } }, katexPlugin?: unknown): MarkdownIt {
   const md: MarkdownIt = new MarkdownIt({
     html: false, // no raw HTML passthrough (sanitization by exclusion)
     linkify: true,
@@ -173,12 +192,10 @@ function createRenderer(katexPlugin?: unknown): MarkdownIt {
   return md;
 }
 
-const renderer = createRenderer();
-
 /** Synchronous base render — NO math. Math syntax is left as raw text; call
  *  renderMath (async) for the katex-rendered HTML. */
 export function renderMarkdown(text: string): string {
-  return renderer.render(text);
+  return getBaseRenderer().render(text);
 }
 
 /**
@@ -192,21 +209,15 @@ export function hasMath(text: string): boolean {
   return /\$[\s\S]*\$/.test(text) || /\\begin\s*\{/.test(text);
 }
 
-let mathRenderer: MarkdownIt | null = null;
-
 /**
  * Render Markdown WITH math. The katex plugin transitively bundles katex (~78KB
  * gzip), so it is dynamically imported on first use and the math-enabled renderer
- * is cached — only documents that actually contain math pay the cost. The katex
- * stylesheet stays eagerly imported (small, avoids a flash-of-unstyled-math).
+ * is cached — only documents that actually contain math pay the cost.
  */
 export async function renderMath(text: string): Promise<string> {
-  if (!mathRenderer) {
-    const mod = await import("@vscode/markdown-it-katex");
-    mathRenderer = createRenderer(mod.default);
-  }
+  const md = await getMathRenderer();
   injectKatexCss();
-  return mathRenderer.render(text);
+  return md.render(text);
 }
 
 let mermaidConfiguredTheme: Theme | null = null;

@@ -3,11 +3,11 @@ import type { Renderer, RenderCtx, Theme } from "../types";
 
 export const markdownRenderer: Renderer = {
   format: "markdown",
-  render(source: string, container: HTMLElement, ctx: RenderCtx): Promise<void> {
-    // Synchronous base paint (math, if any, shows as raw text) so the document
-    // is on screen instantly, then the lifecycle resolves the math + Mermaid.
+  async render(source: string, container: HTMLElement, ctx: RenderCtx): Promise<void> {
     const article = document.createElement("article");
     article.className = "doc";
+    // Synchronous base paint (math, if any, shows as raw text) so the document
+    // is on screen instantly, then the lifecycle resolves the math + Mermaid.
     article.innerHTML = renderMarkdown(source);
     // Hide mermaid source blocks before they paint — runPostRender reveals them
     // as inlined SVGs once the async mermaid render finishes.

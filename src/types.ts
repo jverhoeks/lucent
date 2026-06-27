@@ -60,6 +60,9 @@ export interface Renderer {
   format: Format;
   /** Render `source` into `container` (rendered mode). */
   render(source: string, container: HTMLElement, ctx: RenderCtx, path?: string): void | Promise<void>;
+  /** Release any resources held by the previous render (DOM refs, listeners, etc.).
+   *  Called by TabManager before the next repaint. */
+  destroy?(): void;
 }
 
 export type DataScalarType = "string" | "number" | "boolean" | "null";

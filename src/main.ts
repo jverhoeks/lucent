@@ -196,6 +196,9 @@ window.addEventListener("keydown", (e) => {
     searchBar.open();
     rebindSearch();
   }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+    if (manager.count() > 0) { e.preventDefault(); manager.closeActiveTab(); }
+  }
 });
 
 btn("btn-toggle").addEventListener("click", () => manager.toggleMode());

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { TabManager, basename } from "../src/tabs";
+import { TabManager } from "../src/tabs";
+import { basename } from "../src/format";
 import { DEFAULT_SETTINGS } from "../src/types";
 
 function makeManager() {
@@ -78,6 +79,25 @@ describe("TabManager", () => {
     expect(mgr.count()).toBe(0);
     expect(closedAll()).toBe(1);
     expect(mgr.getActivePath()).toBeUndefined();
+  });
+
+  it("closeActiveTab closes the active tab", () => {
+    const { mgr } = makeManager();
+    mgr.openOrActivate("/d/a.md", "# A");
+    mgr.openOrActivate("/d/b.md", "# B");
+    mgr.closeActiveTab();
+    expect(mgr.count()).toBe(1);
+    expect(mgr.getActivePath()).toBe("/d/a.md");
+  });
+
+  it("middle-click on a tab closes it", () => {
+    const { mgr, tabbar } = makeManager();
+    mgr.openOrActivate("/d/a.md", "# A");
+    mgr.openOrActivate("/d/b.md", "# B");
+    const tabs = tabbar.querySelectorAll(".tab");
+    tabs[0].dispatchEvent(new MouseEvent("auxclick", { button: 1 }));
+    expect(mgr.count()).toBe(1);
+    expect(mgr.getActivePath()).toBe("/d/b.md");
   });
 
   it("replaceActive swaps the active document in place", () => {

@@ -1,5 +1,5 @@
 import hljs from "./highlight";
-import { detectFormat, dataLangOf } from "./format";
+import { detectFormat, dataLangOf, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { LogView, toLines } from "./renderers/log";
 import { VirtualLogView } from "./logs/virtual-log-view";
@@ -35,12 +35,6 @@ export interface TabHooks {
   onChange: () => void; // tabs/active changed — refresh toolbar enabled state
   onTabClosed: (path: string) => void; // stop watching one closed document
   onCloseAll: () => void; // stop watching everything
-}
-
-/** Basename of a path, handling both / and \ separators. */
-export function basename(path: string): string {
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
 }
 
 /** The format actually used to render this tab (override beats detection). */
@@ -250,6 +244,10 @@ export class TabManager {
     this.repaint(true);
     this.renderTabbar();
     this.hooks.onChange();
+  }
+
+  closeActiveTab(): void {
+    if (this.activeIndex >= 0) this.closeTab(this.activeIndex);
   }
 
   closeTab(index: number): void {
@@ -495,6 +493,9 @@ export class TabManager {
       tab.setAttribute("role", "tab");
       tab.setAttribute("aria-selected", String(active));
       tab.tabIndex = active ? 0 : -1;
+      tab.addEventListener("auxclick", (e) => {
+        if (e.button === 1) { e.preventDefault(); this.closeTab(i); }
+      });
       tab.addEventListener("keydown", (e) => {
         if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
           e.preventDefault();

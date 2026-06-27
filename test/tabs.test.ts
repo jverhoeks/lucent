@@ -28,33 +28,33 @@ describe("basename", () => {
 describe("TabManager", () => {
   beforeEach(() => document.body.replaceChildren());
 
-  it("opens documents into tabs and tracks the active one", () => {
+  it("opens documents into tabs and tracks the active one", async () => {
     const { mgr, tabbar } = makeManager();
-    mgr.openOrActivate("/d/a.md", "# A");
-    mgr.openOrActivate("/d/b.md", "# B");
+    await mgr.openOrActivate("/d/a.md", "# A");
+    await mgr.openOrActivate("/d/b.md", "# B");
     expect(mgr.count()).toBe(2);
     expect(mgr.getActivePath()).toBe("/d/b.md");
     expect(tabbar.querySelectorAll(".tab").length).toBe(2);
     expect(mgr.getActiveDisplayedHtml()).toMatch(/<h1[\s\S]*B/);
   });
 
-  it("re-activates an already-open file instead of duplicating", () => {
+  it("re-activates an already-open file instead of duplicating", async () => {
     const { mgr } = makeManager();
-    mgr.openOrActivate("/d/a.md", "# A");
-    mgr.openOrActivate("/d/b.md", "# B");
-    mgr.openOrActivate("/d/a.md", "# A2");
+    await mgr.openOrActivate("/d/a.md", "# A");
+    await mgr.openOrActivate("/d/b.md", "# B");
+    await mgr.openOrActivate("/d/a.md", "# A2");
     expect(mgr.count()).toBe(2);
     expect(mgr.getActivePath()).toBe("/d/a.md");
     expect(mgr.getActiveRawText()).toBe("# A2");
   });
 
-  it("toggles between rendered and raw for the active tab", () => {
+  it("toggles between rendered and raw for the active tab", async () => {
     const { mgr, content } = makeManager();
-    mgr.openOrActivate("/d/a.md", "# A");
+    await mgr.openOrActivate("/d/a.md", "# A");
     expect(content.querySelector(".doc")).not.toBeNull();
-    mgr.toggleMode();
+    await mgr.toggleMode();
     expect(content.querySelector("pre.raw")?.textContent).toBe("# A");
-    mgr.toggleMode();
+    await mgr.toggleMode();
     expect(content.querySelector(".doc")).not.toBeNull();
   });
 
@@ -63,14 +63,14 @@ describe("TabManager", () => {
     mgr.openOrActivate("/d/a.md", "# A");
     mgr.updateContent("/d/a.md", "# changed");
     expect(mgr.getActiveRawText()).toBe("# changed");
-    mgr.updateContent("/d/not-open.md", "x"); // no throw, no effect
+    mgr.updateContent("/d/not-open.md", "x");
     expect(mgr.getActiveRawText()).toBe("# changed");
   });
 
-  it("closes a tab and notifies, then closes all", () => {
+  it("closes a tab and notifies, then closes all", async () => {
     const { mgr, closed, closedAll } = makeManager();
-    mgr.openOrActivate("/d/a.md", "# A");
-    mgr.openOrActivate("/d/b.md", "# B");
+    await mgr.openOrActivate("/d/a.md", "# A");
+    await mgr.openOrActivate("/d/b.md", "# B");
     mgr.closeTab(1);
     expect(mgr.count()).toBe(1);
     expect(closed).toEqual(["/d/b.md"]);
@@ -81,29 +81,29 @@ describe("TabManager", () => {
     expect(mgr.getActivePath()).toBeUndefined();
   });
 
-  it("closeActiveTab closes the active tab", () => {
+  it("closeActiveTab closes the active tab", async () => {
     const { mgr } = makeManager();
-    mgr.openOrActivate("/d/a.md", "# A");
-    mgr.openOrActivate("/d/b.md", "# B");
+    await mgr.openOrActivate("/d/a.md", "# A");
+    await mgr.openOrActivate("/d/b.md", "# B");
     mgr.closeActiveTab();
     expect(mgr.count()).toBe(1);
     expect(mgr.getActivePath()).toBe("/d/a.md");
   });
 
-  it("middle-click on a tab closes it", () => {
+  it("middle-click on a tab closes it", async () => {
     const { mgr, tabbar } = makeManager();
-    mgr.openOrActivate("/d/a.md", "# A");
-    mgr.openOrActivate("/d/b.md", "# B");
+    await mgr.openOrActivate("/d/a.md", "# A");
+    await mgr.openOrActivate("/d/b.md", "# B");
     const tabs = tabbar.querySelectorAll(".tab");
     tabs[0].dispatchEvent(new MouseEvent("auxclick", { button: 1 }));
     expect(mgr.count()).toBe(1);
     expect(mgr.getActivePath()).toBe("/d/b.md");
   });
 
-  it("replaceActive swaps the active document in place", () => {
+  it("replaceActive swaps the active document in place", async () => {
     const { mgr } = makeManager();
-    mgr.openOrActivate("/d/a.md", "# A");
-    mgr.replaceActive("/d/c.md", "# C");
+    await mgr.openOrActivate("/d/a.md", "# A");
+    await mgr.replaceActive("/d/c.md", "# C");
     expect(mgr.count()).toBe(1);
     expect(mgr.getActivePath()).toBe("/d/c.md");
     expect(mgr.getActiveDisplayedHtml()).toMatch(/<h1[\s\S]*C/);

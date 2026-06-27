@@ -7,7 +7,7 @@ import anchor from "markdown-it-anchor";
 import container from "markdown-it-container";
 import hljsLight from "highlight.js/styles/github.css?inline";
 import hljsDark from "highlight.js/styles/github-dark.css?inline";
-import hljs from "./highlight";
+import { loadHighlight } from "./highlight-loader";
 import type { Theme } from "./types";
 
 // KaTeX fonts add ~2MB to the bundle when imported from node_modules.
@@ -102,9 +102,9 @@ export function splitHighlightedLines(html: string): string[] {
 
 let baseRenderer: MarkdownIt | null = null;
 
-function getBaseRenderer(): MarkdownIt {
+async function getBaseRenderer(): Promise<MarkdownIt> {
   if (!baseRenderer) {
-    baseRenderer = createRenderer(hljs);
+    baseRenderer = createRenderer(await loadHighlight());
   }
   return baseRenderer;
 }
@@ -113,7 +113,10 @@ let mathRenderer: MarkdownIt | null = null;
 
 async function getMathRenderer(): Promise<MarkdownIt> {
   if (!mathRenderer) {
-    const katexMod = await import("@vscode/markdown-it-katex");
+    const [hljs, katexMod] = await Promise.all([
+      loadHighlight(),
+      import("@vscode/markdown-it-katex"),
+    ]);
     mathRenderer = createRenderer(hljs, katexMod.default);
   }
   return mathRenderer;
@@ -192,10 +195,12 @@ function createRenderer(hljs: { getLanguage: (lang: string) => unknown; highligh
   return md;
 }
 
-/** Synchronous base render — NO math. Math syntax is left as raw text; call
- *  renderMath (async) for the katex-rendered HTML. */
-export function renderMarkdown(text: string): string {
-  return getBaseRenderer().render(text);
+/** Base render — NO math. Math syntax is left as raw text; call
+ *  renderMath (async) for the katex-rendered HTML. highlight.js is loaded
+ *  lazily (shared via highlight-loader so the chunk is fetched at most once). */
+export async function renderMarkdown(text: string): Promise<string> {
+  const md = await getBaseRenderer();
+  return md.render(text);
 }
 
 /**

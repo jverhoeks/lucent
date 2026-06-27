@@ -1,3 +1,4 @@
+import { loadHighlight } from "./highlight-loader";
 import { detectFormat, dataLangOf, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { LogView, toLines } from "./renderers/log";
@@ -109,23 +110,22 @@ export class TabManager {
     return t ? effectiveFormat(t) : undefined;
   }
 
-  setActiveForcedFormat(format: Format, lang?: DataLang): void {
+  setActiveForcedFormat(format: Format, lang?: DataLang): void | Promise<void> {
     const t = this.active();
     if (!t) return;
     t.forcedFormat = format;
     t.forcedLang = lang;
     t.mode = format === "text" ? "raw" : "rendered";
-    this.repaint(false);
     this.hooks.onChange();
+    return this.repaint(false);
   }
 
   /** Open a file in a new tab, or activate (and refresh) an already-open one. */
-  openOrActivate(path: string, content: string): void {
+  openOrActivate(path: string, content: string): void | Promise<void> {
     const existing = this.tabs.findIndex((t) => t.path === path);
     if (existing >= 0) {
       this.tabs[existing].content = content;
-      this.activate(existing);
-      return;
+      return this.activate(existing);
     }
     const format = detectFormat(path);
     this.tabs.push({
@@ -136,7 +136,7 @@ export class TabManager {
       mode: format === "text" ? "raw" : "rendered",
       scrollTop: 0,
     });
-    this.activate(this.tabs.length - 1);
+    return this.activate(this.tabs.length - 1);
   }
 
   /** Open a huge log in windowed mode (no full content read). */
@@ -144,7 +144,7 @@ export class TabManager {
     path: string,
     lineCount: number,
     fetchWindow: (start: number, count: number) => Promise<string[]>,
-  ): void {
+  ): void | Promise<void> {
     const existing = this.tabs.findIndex((t) => t.path === path);
     if (existing >= 0) {
       // Refresh windowed state in case it was already open
@@ -185,7 +185,7 @@ export class TabManager {
   }
 
   /** Replace the active tab's document in place (used by "next file" paging). */
-  replaceActive(path: string, content: string): void {
+  replaceActive(path: string, content: string): void | Promise<void> {
     const t = this.active();
     if (!t) return;
     // Destroy windowed view if this tab was windowed
@@ -202,9 +202,9 @@ export class TabManager {
     t.fetchWindow = undefined;
     t.mode = t.format === "text" ? "raw" : "rendered";
     t.scrollTop = 0;
-    this.repaint(true);
     this.renderTabbar();
     this.hooks.onChange();
+    return this.repaint(true);
   }
 
   /** Apply fresh content from a disk change, if that document is open. */
@@ -239,24 +239,23 @@ export class TabManager {
     this.repaint(false);
   }
 
-  activate(index: number): void {
+  activate(index: number): void | Promise<void> {
     if (index < 0 || index >= this.tabs.length) return;
     const cur = this.active();
     if (cur) cur.scrollTop = this.content.scrollTop;
     this.activeIndex = index;
-    this.repaint(true);
     this.renderTabbar();
     this.hooks.onChange();
+    return this.repaint(true);
   }
 
   closeActiveTab(): void {
     if (this.activeIndex >= 0) this.closeTab(this.activeIndex);
   }
 
-  closeTab(index: number): void {
+  closeTab(index: number): void | Promise<void> {
     if (index < 0 || index >= this.tabs.length) return;
     const [closed] = this.tabs.splice(index, 1);
-    // If the closed tab was the active windowed tab, destroy its view
     if (index === this.activeIndex) {
       this.currentVlog?.destroy();
       this.currentVlog = null;
@@ -267,7 +266,9 @@ export class TabManager {
       this.content.replaceChildren();
     } else {
       this.activeIndex = Math.min(index, this.tabs.length - 1);
-      this.repaint(true);
+      this.renderTabbar();
+      this.hooks.onChange();
+      return this.repaint(true);
     }
     this.renderTabbar();
     this.hooks.onChange();
@@ -285,16 +286,16 @@ export class TabManager {
   }
 
   /** Re-render the active tab (e.g. after a theme change so Mermaid re-themes). */
-  rerenderActive(): void {
-    this.repaint(false);
+  rerenderActive(): void | Promise<void> {
+    return this.repaint(false);
   }
 
-  toggleMode(): void {
+  toggleMode(): void | Promise<void> {
     const t = this.active();
     if (!t) return;
     t.mode = t.mode === "rendered" ? "raw" : "rendered";
-    this.repaint(false);
     this.hooks.onChange();
+    return this.repaint(false);
   }
 
   isFollowing(): boolean { return !!this.active()?.follow; }
@@ -326,7 +327,7 @@ export class TabManager {
   /** Replace the stdin tab's content with the latest snapshot from the Rust
    *  buffer (creating the tab on the first non-empty snapshot). The buffer is
    *  already capped backend-side, so no frontend ring-cap is needed. */
-  setStdin(lines: string[]): void {
+  setStdin(lines: string[]): void | Promise<void> {
     let i = this.tabs.findIndex((t) => t.path === STDIN_PATH);
     if (i < 0) {
       if (lines.length === 0) return;
@@ -334,7 +335,7 @@ export class TabManager {
       i = this.tabs.findIndex((t) => t.path === STDIN_PATH);
     }
     this.tabs[i].content = lines.join("\n");
-    if (i === this.activeIndex && !this.streamLogUpdate(lines)) this.repaint(false);
+    if (i === this.activeIndex && !this.streamLogUpdate(lines)) return this.repaint(false);
   }
 
   applyStyle(s: StyleSettings): void {
@@ -362,7 +363,10 @@ export class TabManager {
     return true;
   }
 
-  private repaint(restoreScroll: boolean): void {
+  /** Re-render the active tab. Returns a Promise when the render is async
+   *  (e.g. markdown with Mermaid, or raw mode that lazy-loads highlight.js)
+   *  so callers can await the content being populated. */
+  private repaint(restoreScroll: boolean): void | Promise<void> {
     // Bump the generation counter FIRST — before any early return — so that a
     // switch to a windowed/empty tab also invalidates an in-flight async
     // post-render tail from a previous repaint. Otherwise a pending Mermaid
@@ -449,7 +453,7 @@ export class TabManager {
       // shorter pre-SVG layout; route a late rejection to the same error view.
       // The `seq` guard drops the callback if a newer repaint has superseded us.
       if (result instanceof Promise) {
-        result.then(
+        return result.then(
           () => { if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll); },
           (err) => { if (seq === this.repaintSeq) this.showRenderError(t, err); },
         );
@@ -468,9 +472,8 @@ export class TabManager {
     const lang = effectiveFormat(t) === "data" ? (t.forcedLang ?? dataLangOf(t.path)) : null;
     if (lang) {
       const mySeq = this.repaintSeq;
-      import("./highlight").then((m) => {
+      loadHighlight().then((hljs) => {
         if (mySeq !== this.repaintSeq) return; // superseded by a newer repaint
-        const hljs = m.default;
         if (hljs.getLanguage(lang)) {
           pre.classList.add("hljs");
           pre.innerHTML = hljs.highlight(t.content, { language: lang }).value;

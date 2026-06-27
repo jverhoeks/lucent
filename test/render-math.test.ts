@@ -14,7 +14,7 @@ describe("lazy math rendering (KaTeX code-split)", () => {
   });
 
   it("renderMath produces katex markup (the lazy path) while base render does not", async () => {
-    expect(renderMarkdown("$E = mc^2$")).not.toContain("katex");
+    expect(await renderMarkdown("$E = mc^2$")).not.toContain("katex");
     const html = await renderMath("$E = mc^2$");
     expect(html).toContain("katex"); // real katex.renderToString is pure → works in jsdom
   });

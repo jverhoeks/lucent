@@ -3,7 +3,7 @@ import { detectFormat, dataLangOf, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { LogView, toLines } from "./renderers/log";
 import { VirtualLogView } from "./logs/virtual-log-view";
-import { StyleSettings, Theme, Format, DataLang } from "./types";
+import { StyleSettings, Theme, Format, DataLang, Renderer } from "./types";
 
 export const STDIN_PATH = "<stdin>";
 
@@ -57,6 +57,8 @@ export class TabManager {
   /** Monotonic repaint generation; an async post-render tail only applies if it
    *  still matches (i.e. no newer repaint has run since). */
   private repaintSeq = 0;
+  /** The Renderer from the previous repaint (for lifecycle cleanup). */
+  private currentRenderer: Renderer | null = null;
 
   constructor(
     private tabbar: HTMLElement,
@@ -421,9 +423,15 @@ export class TabManager {
         return;
       }
 
+      const renderer = getRenderer(effectiveFormat(t));
+      // Release the previous renderer's resources before the new render.
+      if (renderer !== this.currentRenderer) {
+        this.currentRenderer?.destroy?.();
+        this.currentRenderer = renderer;
+      }
       let result: void | Promise<void>;
       try {
-        result = getRenderer(effectiveFormat(t)).render(
+        result = renderer.render(
           t.content, this.content,
           { theme: this.theme, dataLang: t.forcedLang },
           t.path,

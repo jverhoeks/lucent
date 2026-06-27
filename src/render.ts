@@ -4,7 +4,7 @@ import type { Theme } from "./types";
 
 // KaTeX fonts add ~2MB to the bundle when imported from node_modules.
 // Load them from CDN on demand instead.
-const KATEX_CDN = "https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css";
+const KATEX_CDN = "https://cdn.jsdelivr.net/npm/katex@0.16.47/dist/katex.min.css";
 let katexCssInjected = false;
 
 function injectKatexCss(): void {

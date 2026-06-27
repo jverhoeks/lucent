@@ -7,6 +7,12 @@ import { StyleSettings, Theme, Format, DataLang } from "./types";
 
 export const STDIN_PATH = "<stdin>";
 
+/** A rendered (non-windowed) log with more than this many lines is rendered via
+ *  a virtualized in-memory VirtualLogView instead of a full-DOM LogView. Set
+ *  ABOVE the stdin ring-buffer cap (10k) so stdin and its incremental streaming
+ *  path stay on LogView untouched — only large file logs (12k…5MB) virtualize. */
+export const LOG_VIRTUALIZE_LINES = 12000;
+
 export interface Tab {
   path: string;
   title: string;
@@ -52,6 +58,10 @@ export class TabManager {
    *  any — owned here (mirroring currentVlog) so streamLogUpdate can apply
    *  incremental updates without a module-global "last render wins" singleton. */
   private currentLog: LogView | null = null;
+  /** The in-memory line source backing a large rendered log's VirtualLogView
+   *  (null for backend-windowed logs and small LogView logs). The view's
+   *  fetchWindow reads from this, so growth = reassign + setLineCount. */
+  private currentVlogLines: string[] | null = null;
   /** Monotonic repaint generation; an async post-render tail only applies if it
    *  still matches (i.e. no newer repaint has run since). */
   private repaintSeq = 0;
@@ -161,9 +171,15 @@ export class TabManager {
     this.activate(this.tabs.length - 1);
   }
 
-  /** Return the active VirtualLogView (windowed tab), or null. */
+  /** Return the active VirtualLogView (backend-windowed OR large in-memory log), or null. */
   getActiveVirtualLogView(): VirtualLogView | null {
     return this.currentVlog;
+  }
+
+  /** The in-memory lines backing the active large rendered log (for synchronous
+   *  search), or null when the active log is backend-windowed or a small LogView. */
+  getActiveLogLines(): string[] | null {
+    return this.currentVlogLines;
   }
 
   /** True when the active tab is a windowed log. */
@@ -207,9 +223,23 @@ export class TabManager {
     // prefix check matches — a raw split keeps a trailing "" that yields a
     // phantom row and breaks the prefix every update.
     const lines = toLines(content);
-    if (!(effectiveFormat(t) === "log" && t.mode === "rendered" && this.streamLogUpdate(lines))) {
-      this.repaint(false);
+    if (effectiveFormat(t) === "log" && t.mode === "rendered") {
+      const big = lines.length > LOG_VIRTUALIZE_LINES;
+      // In-memory virtual log growing: swap the line source + update the count
+      // (the window re-renders cheaply); honor the follow flag explicitly.
+      if (big && this.currentVlog && this.currentVlogLines) {
+        this.currentVlogLines = lines;
+        const prev = this.content.scrollTop;
+        this.currentVlog.setLineCount(lines.length);
+        this.content.scrollTop = t.follow ? this.content.scrollHeight : prev;
+        return;
+      }
+      // Small log on the incremental LogView path.
+      if (!big && this.currentLog && this.streamLogUpdate(lines)) return;
+      // Otherwise (no view yet, or the line count crossed the threshold so the
+      // view type no longer matches) → full repaint builds the right renderer.
     }
+    this.repaint(false);
   }
 
   activate(index: number): void {
@@ -338,10 +368,11 @@ export class TabManager {
     // callback could re-settle scroll (or show an error) against now-stale
     // content it no longer owns.
     const seq = ++this.repaintSeq;
-    // Clear the owned rendered-log view on EVERY repaint path (windowed, empty,
-    // and rendered) so it can never dangle at detached DOM; the log branch below
-    // re-sets it when the new tab is itself a rendered log.
+    // Clear the owned rendered-log view + its in-memory line source on EVERY
+    // repaint path (windowed, empty, rendered) so they can never dangle at
+    // detached DOM; the log branch below re-sets whichever it builds.
     this.currentLog = null;
+    this.currentVlogLines = null;
 
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
@@ -354,18 +385,34 @@ export class TabManager {
       return;
     }
 
-    // Destroy any lingering windowed view when switching to a non-windowed tab
+    // Destroy any lingering virtual log view when switching to a non-windowed
+    // tab, and drop the `.vlog` class it added to the shared content element
+    // (the in-memory virtual branch below re-adds it when it builds one).
     this.currentVlog?.destroy();
     this.currentVlog = null;
+    this.content.classList.remove("vlog");
 
     if (t.mode === "rendered") {
-      // Rendered log: TabManager owns the LogView so it can stream incremental
-      // updates (setLines) directly, with no module-global singleton.
+      // Rendered log. Large logs (> threshold) render via a virtualized
+      // in-memory VirtualLogView (bounded DOM); smaller logs use the full-DOM
+      // LogView, which TabManager owns so it can stream incremental updates and
+      // which keeps inline-JSON expansion working for the common case.
       if (effectiveFormat(t) === "log") {
+        const lines = toLines(t.content);
         try {
-          const view = new LogView(this.content);
-          view.setLines(toLines(t.content));
-          this.currentLog = view;
+          if (lines.length > LOG_VIRTUALIZE_LINES) {
+            this.content.replaceChildren();
+            this.currentVlogLines = lines;
+            this.currentVlog = new VirtualLogView(
+              this.content,
+              lines.length,
+              (start, count) => Promise.resolve((this.currentVlogLines ?? []).slice(start, start + count)),
+            );
+          } else {
+            const view = new LogView(this.content);
+            view.setLines(lines);
+            this.currentLog = view;
+          }
         } catch (err) {
           this.showRenderError(t, err);
           return;

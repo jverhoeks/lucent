@@ -16,7 +16,7 @@ import { createSearchProvider } from "./search/factory";
 import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
-import { detectFormat, siblingIndex } from "./format";
+import { detectFormat, siblingIndex, basename } from "./format";
 
 const tabbar = document.getElementById("tabbar")!;
 const tabstrip = document.getElementById("tabstrip")!;
@@ -132,6 +132,7 @@ async function readPath(path: string): Promise<string | null> {
 const WINDOW_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 
 async function openPath(path: string) {
+  showBanner(`Loading ${basename(path)} …`);
   // Check if this is a log file that should be opened windowed (no full content read)
   if (detectFormat(path) === "log") {
     try {
@@ -367,13 +368,20 @@ content.addEventListener("click", async (e) => {
 });
 
 // ---- Disk watch events ----
+/** Debounce file-change events so rapid writes (editor auto-save) don't
+ *  cascade re-renders. Only the last event within 200ms is processed. */
+let watchDebounceId: ReturnType<typeof setTimeout> | undefined;
 listen<FilePayload>("file-changed", (e) => {
-  manager.updateContent(e.payload.path, e.payload.content);
-  // Only the active, non-windowed tab re-renders its DOM on a disk change, so
-  // only then does the DOM-bound search provider need rebinding. A windowed tab
-  // uses a DOM-independent LogSearchProvider — don't reset it when some other
-  // watched file changes (its growth is handled via the log-grew event).
-  if (e.payload.path === manager.getActivePath() && !manager.isActiveWindowed()) rebindSearch();
+  if (watchDebounceId !== undefined) clearTimeout(watchDebounceId);
+  watchDebounceId = setTimeout(() => {
+    watchDebounceId = undefined;
+    manager.updateContent(e.payload.path, e.payload.content);
+    // Only the active, non-windowed tab re-renders its DOM on a disk change, so
+    // only then does the DOM-bound search provider need rebinding. A windowed tab
+    // uses a DOM-independent LogSearchProvider — don't reset it when some other
+    // watched file changes (its growth is handled via the log-grew event).
+    if (e.payload.path === manager.getActivePath() && !manager.isActiveWindowed()) rebindSearch();
+  }, 200);
 });
 listen<{ path: string }>("file-removed", (e) => showBanner(`File removed: ${e.payload.path}`));
 // Windowed log grew: update the virtual view's line count if the tab is active

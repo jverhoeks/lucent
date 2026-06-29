@@ -1,431 +1,598 @@
 import "./styles.css";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { TabManager } from "./tabs";
 import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
 import { exportHtml, exportPdf } from "./export";
-import { FilePayload, AppError, StyleSettings, Format, DataLang } from "./types";
+import { AppError, StyleSettings, Format, DataLang } from "./types";
 import { SearchController } from "./search/controller";
 import { createSearchProvider } from "./search/factory";
 import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
-import { detectFormat, siblingIndex, basename } from "./format";
+import { detectFormat, siblingIndex, basename, dataLangOf } from "./format";
+import { injectSprite, setButtonIcon, iconMarkup } from "./icons";
+import type { PlatformAdapter } from "./platform/types";
 
-const tabbar = document.getElementById("tabbar")!;
-const tabstrip = document.getElementById("tabstrip")!;
-const content = document.getElementById("content")!;
-const banner = document.getElementById("banner")!;
-let settings: StyleSettings = loadSettings();
-
-const btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
-
-const search = new SearchController();
-const searchBar = new SearchBar(search);
-
-/** Re-bind the search provider to the freshly-rendered content. */
-function rebindSearch() {
-  if (!searchBar.isOpen()) return;
-  search.setProvider(createSearchProvider({
-    format: manager.getActiveFormat(),
-    mode: manager.getActiveMode(),
-    windowed: manager.isActiveWindowed(),
-    content,
-    virtualLogView: manager.getActiveVirtualLogView(),
-    logLines: manager.getActiveLogLines(),
-    path: manager.getActivePath(),
-    tree: getCurrentTree(),
-    logSearch: (path, q) => invoke<number[]>("log_search", {
-      path,
-      query: q.text,
-      caseSensitive: q.caseSensitive,
-      regex: q.regex,
-    }),
-    onUpdate: () => search.refresh(),
-  }));
+/** Trigger a browser file download from a string of content. */
+function downloadFile(content: string, filename: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-const manager = new TabManager(tabbar, content, settings, {
-  onChange: () => { refreshToolbar(); rebindSearch(); },
-  onTabClosed: (path) => void invoke("unwatch_file", { path }),
-  onCloseAll: () => void invoke("unwatch_all"),
-  onSave: async (path, content) => {
-    await invoke("save_text_file", { path, contents: content });
-  },
-});
-initStdin(manager);
-applyCodeTheme(settings.theme);
-
-function refreshToolbar() {
-  const has = manager.count() > 0;
-  for (const id of [
-    "btn-search",
-    "btn-toggle",
-    "btn-tail",
-    "btn-next",
-    "btn-export-html",
-    "btn-export-pdf",
-    "btn-copy-md",
-    "btn-copy-rich",
-  ]) {
-    btn(id).disabled = !has;
+/** Convert data between formats for download. */
+async function convertData(source: string, from: string, to: string): Promise<string> {
+  if (from === to) return source;
+  let parsed: unknown;
+  switch (from) {
+    case "json": parsed = JSON.parse(source); break;
+    case "yaml": { const { load } = await import("js-yaml"); parsed = load(source); break; }
+    case "toml": { const { parse } = await import("smol-toml"); parsed = parse(source); break; }
+    case "ini": { const { parse } = await import("ini"); parsed = parse(source); break; }
+    default: throw new Error(`Unsupported source format: ${from}`);
   }
-  tabstrip.hidden = !has;
-
-  // Reflect the active tab's view mode in the toggle button.
-  const isRaw = manager.getActiveMode() === "raw";
-  const isEdit = manager.getActiveMode() === "edit";
-  const toggle = btn("btn-toggle");
-  toggle.textContent = isRaw ? "</> Raw" : "👁 Rendered";
-  toggle.classList.toggle("toggled", isRaw);
-  toggle.setAttribute("aria-pressed", String(isRaw));
-  toggle.hidden = isEdit;
-
-  // Show tail button only for logs; reflect follow state.
-  const tail = btn("btn-tail");
-  const isLog = manager.getActiveFormat() === "log";
-  tail.hidden = !isLog || isEdit;
-  tail.classList.toggle("toggled", manager.isFollowing());
-  tail.setAttribute("aria-pressed", String(manager.isFollowing()));
-
-  // Edit / Save buttons
-  const editBtn = btn("btn-edit");
-  const saveBtn = btn("btn-save");
-  const isMd = manager.getActiveFormat() === "markdown";
-  editBtn.disabled = !has || !isMd;
-  editBtn.textContent = isEdit ? "✏️ Done" : "✏️ Edit";
-  editBtn.classList.toggle("toggled", isEdit);
-  saveBtn.hidden = !isEdit;
-  saveBtn.disabled = !manager.isEditing();
-}
-
-function showBanner(msg: string) {
-  banner.textContent = msg;
-  banner.hidden = false;
-  setTimeout(() => (banner.hidden = true), 4000);
-}
-
-const LANG_EXT: Record<string, string> = {
-  javascript: "js", js: "js", typescript: "ts", ts: "ts", python: "py", py: "py",
-  rust: "rs", rs: "rs", bash: "sh", sh: "sh", shell: "sh", json: "json", html: "html",
-  css: "css", go: "go", java: "java", c: "c", cpp: "cpp", "c++": "cpp", csharp: "cs",
-  yaml: "yaml", yml: "yml", sql: "sql", markdown: "md", md: "md",
-};
-
-/** Default save name for a code block: its filename if supplied, else by language. */
-function suggestedCodeName(block: Element): string {
-  const filename = block.getAttribute("data-filename");
-  if (filename) return filename;
-  const lang = (block.getAttribute("data-lang") || "").toLowerCase();
-  const ext = LANG_EXT[lang] || lang || "txt";
-  return `snippet.${ext}`;
-}
-
-/** A code block's exact raw source (stored at render time, blank lines intact). */
-function codeSourceOf(block: Element): string {
-  return block.getAttribute("data-src") ?? "";
-}
-
-async function readPath(path: string): Promise<string | null> {
-  try {
-    const payload = await invoke<FilePayload>("read_file", { path });
-    return payload.content;
-  } catch (e) {
-    const msg = (e as AppError)?.message ?? String(e);
-    showBanner(`Couldn't open ${path} — ${msg}`);
-    return null;
+  switch (to) {
+    case "json": return JSON.stringify(parsed, null, 2);
+    case "yaml": { const { dump } = await import("js-yaml"); return dump(parsed, { indent: 2 }); }
+    case "toml": { const { stringify } = await import("smol-toml"); return stringify(parsed as any); }
+    case "ini": { const { stringify } = await import("ini"); return stringify(parsed as any); }
+    default: throw new Error(`Unsupported target format: ${to}`);
   }
 }
 
-/** Files larger than this threshold are opened in windowed mode (no full read). */
-const WINDOW_THRESHOLD = 5 * 1024 * 1024; // 5 MB
+export function initApp(adapter: PlatformAdapter): void {
+  injectSprite();
+  const tabbar = document.getElementById("tabbar")!;
+  const tabstrip = document.getElementById("tabstrip")!;
+  const content = document.getElementById("content")!;
+  const banner = document.getElementById("banner")!;
+  let settings: StyleSettings = loadSettings();
 
-async function openPath(path: string) {
-  showBanner(`Loading ${basename(path)} …`);
-  // Check if this is a log file that should be opened windowed (no full content read)
-  if (detectFormat(path) === "log") {
-    try {
-      const size = await invoke<number>("file_size", { path });
-      if (size > WINDOW_THRESHOLD) {
-        const lineCount = await invoke<number>("log_open", { path });
-        manager.openWindowedLog(
-          path,
-          lineCount,
-          (start, count) => invoke<string[]>("log_window", { path, start, count }),
-        );
-        // Windowed logs are NOT watched via the full-content read path.
-        // Live tail-growth for windowed logs is a deferred follow-up (the
-        // dedicated `log-grew` backend emitter).
-        return;
-      }
-    } catch {
-      // If file_size/log_open fails, fall through to normal open
-    }
+  const btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
+
+  const search = new SearchController();
+  const searchBar = new SearchBar(search);
+
+  /** Re-bind the search provider to the freshly-rendered content. */
+  function rebindSearch() {
+    if (!searchBar.isOpen()) return;
+    search.setProvider(createSearchProvider({
+      format: manager.getActiveFormat(),
+      mode: manager.getActiveMode(),
+      windowed: manager.isActiveWindowed(),
+      content,
+      virtualLogView: manager.getActiveVirtualLogView(),
+      logLines: manager.getActiveLogLines(),
+      path: manager.getActivePath(),
+      tree: getCurrentTree(),
+      logSearch: (path, q) => adapter.readFile(path).then((p) => {
+        // Simple client-side log search fallback
+        const lines = p.content.split("\n");
+        const matches = lines
+          .map((line, i) => ({ line, i }))
+          .filter(({ line }) => {
+            const text = q.caseSensitive ? line : line.toLowerCase();
+            const query = q.caseSensitive ? q.text : q.text.toLowerCase();
+            if (q.regex) {
+              try { return new RegExp(query, q.caseSensitive ? "" : "i").test(line); }
+              catch { return false; }
+            }
+            return text.includes(query);
+          })
+          .map(({ i }) => i);
+        return matches;
+      }),
+      onUpdate: () => search.refresh(),
+    }));
   }
-  const fileContent = await readPath(path);
-  if (fileContent === null) return;
-  manager.openOrActivate(path, fileContent);
-  await invoke("watch_file", { path });
-}
 
-async function openMany(paths: string[]) {
-  for (const p of paths) await openPath(p);
-}
-
-// Keep the fixed search bar clear of the toolbar even when it wraps (X2).
-const toolbarEl = document.getElementById("toolbar")!;
-const syncToolbarHeight = () =>
-  document.documentElement.style.setProperty("--toolbar-h", `${toolbarEl.offsetHeight}px`);
-new ResizeObserver(syncToolbarHeight).observe(toolbarEl);
-syncToolbarHeight();
-
-// ---- Toolbar actions ----
-btn("btn-open").addEventListener("click", async () => {
-  const sel = await open({
-    multiple: true,
-    filters: [
-      { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
-      { name: "Text", extensions: ["txt", "log", "text"] },
-      { name: "Data", extensions: ["json", "yaml", "yml", "toml", "ini"] },
-    ],
+  const manager = new TabManager(tabbar, content, settings, {
+    onChange: () => { refreshToolbar(); rebindSearch(); },
+    onTabClosed: (path) => void adapter.unwatchFile(path),
+    onCloseAll: () => void adapter.unwatchAll(),
+    onSave: async (path, content) => {
+      await adapter.saveTextFile(path, content);
+    },
   });
-  if (Array.isArray(sel)) await openMany(sel);
-  else if (typeof sel === "string") await openPath(sel);
-});
 
-btn("btn-search").addEventListener("click", () => {
-  if (manager.count() === 0) return;
-  searchBar.toggle();
-  rebindSearch();
-});
-
-window.addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
-    if (manager.count() === 0) return;
-    e.preventDefault();
-    searchBar.open();
-    rebindSearch();
+  if (adapter.platform === "tauri") {
+    initStdin(manager);
   }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
-    if (manager.count() > 0) { e.preventDefault(); manager.closeActiveTab(); }
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-    if (manager.isEditing()) { e.preventDefault(); void manager.saveActive(); }
-  }
-});
-
-btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
-btn("btn-edit").addEventListener("click", () => manager.toggleEdit());
-btn("btn-save").addEventListener("click", () => void manager.saveActive());
-btn("btn-tail").addEventListener("click", () => manager.toggleFollow());
-btn("btn-close-all").addEventListener("click", () => manager.closeAll());
-
-btn("btn-next").addEventListener("click", async () => {
-  const cur = manager.getActivePath();
-  if (!cur) return;
-  try {
-    const siblings = await invoke<string[]>("list_sibling_viewable", { path: cur });
-    const idx = siblingIndex(siblings, cur);
-    if (idx < 0 || siblings.length < 2) return;
-    const next = siblings[(idx + 1) % siblings.length]; // wrap around
-    // Open the next file in its own tab — or, if it's already open, switch to
-    // that tab (openOrActivate, via openPath). The current tab stays open.
-    await openPath(next);
-  } catch (e) {
-    showBanner(`Couldn't list directory — ${(e as AppError)?.message ?? e}`);
-  }
-});
-
-btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRawText()));
-btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRawText()));
-btn("btn-copy-md").addEventListener("click", () => copyAsMarkdown(manager.getActiveRawText()));
-btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveDisplayedHtml()));
-
-// ---- Style controls ----
-const selFont = document.getElementById("sel-font") as HTMLSelectElement;
-const inpSize = document.getElementById("inp-size") as HTMLInputElement;
-const selTheme = document.getElementById("sel-theme") as HTMLSelectElement;
-selFont.value = settings.fontFamily;
-inpSize.value = String(settings.fontSizePx);
-selTheme.value = settings.theme;
-
-function updateStyle(patch: Partial<StyleSettings>) {
-  settings = { ...settings, ...patch };
+  applyCodeTheme(settings.theme);
   manager.applyStyle(settings);
-  saveSettings(settings);
-  refreshToolbar();
-  if ("theme" in patch) {
-    applyCodeTheme(settings.theme);
-    manager.rerenderActive(); // re-theme Mermaid diagrams
+  if (typeof window.matchMedia === "function") {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      if (settings.theme === "system") {
+        applyCodeTheme("system");
+        manager.applyStyle(settings);
+        manager.rerenderActive();
+      }
+    });
   }
-}
-selFont.addEventListener("change", () =>
-  updateStyle({ fontFamily: selFont.value as StyleSettings["fontFamily"] })
-);
-inpSize.addEventListener("input", () => updateStyle({ fontSizePx: Number(inpSize.value) }));
-selTheme.addEventListener("change", () =>
-  updateStyle({ theme: selTheme.value as StyleSettings["theme"] })
-);
 
-// ---- "View as…" format override ----
-const selViewAs = document.getElementById("sel-viewas") as HTMLSelectElement;
-selViewAs.addEventListener("change", () => {
-  const v = selViewAs.value;
-  if (v) {
-    if (v.startsWith("data:")) {
-      const lang = v.slice("data:".length) as DataLang;
-      manager.setActiveForcedFormat("data", lang);
-    } else {
-      manager.setActiveForcedFormat(v as Format);
+  function refreshToolbar() {
+    const has = manager.count() > 0;
+    for (const id of [
+      "btn-search",
+      "btn-toggle",
+      "btn-tail",
+      "btn-next",
+      "btn-export-html",
+      "btn-export-pdf",
+      "btn-copy-md",
+      "btn-copy-rich",
+    ]) {
+      btn(id).disabled = !has;
     }
-    // onChange triggers rebindSearch via manager hooks
-  }
-  selViewAs.value = ""; // reset to the placeholder label
-});
+    tabstrip.hidden = !has;
 
-// ---- Link handling ----
-// In-page anchors scroll; external URLs open in the system browser; relative
-// .md links open in a new tab. Without this, clicking a link would navigate the
-// whole webview away from the app.
-content.addEventListener("click", async (e) => {
-  const target = e.target as HTMLElement;
+    const isRaw = manager.getActiveMode() === "raw";
+    const isEdit = manager.getActiveMode() === "edit";
+    const toggle = btn("btn-toggle");
+    setButtonIcon(toggle, isRaw ? "ic-code" : "ic-eye", isRaw ? "Raw" : "Rendered");
+    toggle.classList.toggle("toggled", isRaw);
+    toggle.setAttribute("aria-pressed", String(isRaw));
+    toggle.hidden = isEdit;
 
-  // Per-block line-number toggle.
-  const linesBtn = target.closest(".code-lines");
-  if (linesBtn) {
-    const on = linesBtn.closest(".code-block")?.classList.toggle("line-numbers");
-    linesBtn.classList.toggle("toggled", !!on);
-    linesBtn.setAttribute("aria-pressed", String(!!on));
-    return;
-  }
+    const tail = btn("btn-tail");
+    const isLog = manager.getActiveFormat() === "log";
+    tail.hidden = !isLog || isEdit;
+    tail.classList.toggle("toggled", manager.isFollowing());
+    tail.setAttribute("aria-pressed", String(manager.isFollowing()));
 
-  // Click a line number to highlight that source line.
-  const lnCell = target.closest("td.ln");
-  if (lnCell) {
-    lnCell.parentElement?.classList.toggle("hl");
-    return;
-  }
+    const editBtn = btn("btn-edit");
+    const saveBtn = btn("btn-save");
+    const fmt = manager.getActiveFormat();
+    editBtn.disabled = !has || (fmt !== "markdown" && fmt !== "data");
+    setButtonIcon(editBtn, isEdit ? "ic-check" : "ic-pencil", isEdit ? "Done" : "Edit");
+    editBtn.classList.toggle("toggled", isEdit);
+    saveBtn.hidden = !isEdit;
+    saveBtn.disabled = !manager.isEditing();
 
-  // Copy-source button on a code block.
-  const copyBtn = target.closest(".code-copy");
-  if (copyBtn) {
-    const block = copyBtn.closest(".code-block");
-    if (block) {
-      await navigator.clipboard.writeText(codeSourceOf(block));
-      const prev = copyBtn.textContent;
-      copyBtn.textContent = "✓";
-      setTimeout(() => (copyBtn.textContent = prev), 1200);
+    // Web download button visibility
+    const dlSelect = document.querySelector(".download-format") as HTMLElement | null;
+    const dlBtn = document.getElementById("btn-download") as HTMLElement | null;
+    if (dlSelect && dlBtn) {
+      dlSelect.hidden = !has;
+      dlBtn.hidden = !has;
     }
-    return;
   }
 
-  // Save-source button on a code block.
-  const saveBtn = target.closest(".code-save");
-  if (saveBtn) {
-    const block = saveBtn.closest(".code-block");
-    if (block) {
-      const path = await save({ defaultPath: suggestedCodeName(block) });
-      if (path) {
-        await invoke("save_text_file", { path, contents: codeSourceOf(block) });
+  function showBanner(msg: string) {
+    banner.textContent = msg;
+    banner.hidden = false;
+    setTimeout(() => (banner.hidden = true), 4000);
+  }
+
+  const LANG_EXT: Record<string, string> = {
+    javascript: "js", js: "js", typescript: "ts", ts: "ts", python: "py", py: "py",
+    rust: "rs", rs: "rs", bash: "sh", sh: "sh", shell: "sh", json: "json", html: "html",
+    css: "css", go: "go", java: "java", c: "c", cpp: "cpp", "c++": "cpp", csharp: "cs",
+    yaml: "yaml", yml: "yml", sql: "sql", markdown: "md", md: "md",
+  };
+
+  function suggestedCodeName(block: Element): string {
+    const filename = block.getAttribute("data-filename");
+    if (filename) return filename;
+    const lang = (block.getAttribute("data-lang") || "").toLowerCase();
+    const ext = LANG_EXT[lang] || lang || "txt";
+    return `snippet.${ext}`;
+  }
+
+  function codeSourceOf(block: Element): string {
+    return block.getAttribute("data-src") ?? "";
+  }
+
+  async function readPath(path: string): Promise<string | null> {
+    try {
+      const payload = await adapter.readFile(path);
+      return payload.content;
+    } catch (e) {
+      const msg = (e as AppError)?.message ?? String(e);
+      showBanner(`Couldn't open ${path} — ${msg}`);
+      return null;
+    }
+  }
+
+  const WINDOW_THRESHOLD = 5 * 1024 * 1024;
+
+  async function openPath(path: string) {
+    showBanner(`Loading ${basename(path)} …`);
+    if (detectFormat(path) === "log") {
+      try {
+        const size = await adapter.fileSize(path);
+        if (size > WINDOW_THRESHOLD) {
+          const content = await adapter.readFile(path);
+          const lines = content.content.split("\n");
+          manager.openWindowedLog(
+            path,
+            lines.length,
+            (_start, _count) => Promise.resolve([]), // simplified for web
+          );
+          return;
+        }
+      } catch {
+        // fall through
       }
     }
-    return;
+    const fileContent = await readPath(path);
+    if (fileContent === null) return;
+    manager.openOrActivate(path, fileContent);
+    await adapter.watchFile(path);
   }
 
-  const anchor = target.closest("a");
-  if (!anchor) return;
-  const href = anchor.getAttribute("href");
-  if (!href) return;
+  async function openMany(paths: string[]) {
+    for (const p of paths) await openPath(p);
+  }
 
-  if (href.startsWith("#")) {
-    e.preventDefault();
-    const id = decodeURIComponent(href.slice(1));
-    content.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
+  const toolbarEl = document.getElementById("toolbar")!;
+  const syncToolbarHeight = () =>
+    document.documentElement.style.setProperty("--toolbar-h", `${toolbarEl.offsetHeight}px`);
+  new ResizeObserver(syncToolbarHeight).observe(toolbarEl);
+  syncToolbarHeight();
+
+  btn("btn-open").addEventListener("click", async () => {
+    const sel = await adapter.openDialog({
+      multiple: true,
+      filters: [
+        { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
+        { name: "Text", extensions: ["txt", "log", "text"] },
+        { name: "Data", extensions: ["json", "yaml", "yml", "toml", "ini"] },
+      ],
     });
-    return;
-  }
+    if (Array.isArray(sel)) await openMany(sel);
+    else if (typeof sel === "string") await openPath(sel);
+  });
 
-  // Absolute URL (parses with a scheme): only hand http/https/mailto to the OS
-  // handler; refuse anything else (file:, javascript:, custom app schemes, …).
-  let url: URL | null = null;
-  try {
-    url = new URL(href);
-  } catch {
-    url = null; // not absolute → treat as a relative link below
-  }
-  if (url) {
-    e.preventDefault();
-    const allowed = ["http:", "https:", "mailto:"];
-    if (allowed.includes(url.protocol)) {
-      await openUrl(href);
-    } else {
-      showBanner(`Blocked link with unsupported scheme: ${url.protocol}`);
+  btn("btn-search").addEventListener("click", () => {
+    if (manager.count() === 0) return;
+    searchBar.toggle();
+    rebindSearch();
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+      if (manager.count() === 0) return;
+      e.preventDefault();
+      searchBar.open();
+      rebindSearch();
     }
-    return;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+      if (manager.count() > 0) { e.preventDefault(); manager.closeActiveTab(); }
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      if (manager.isEditing()) { e.preventDefault(); void manager.saveActive(); }
+    }
+  });
+
+  btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
+  btn("btn-edit").addEventListener("click", () => manager.toggleEdit());
+  btn("btn-save").addEventListener("click", () => void manager.saveActive());
+  btn("btn-tail").addEventListener("click", () => manager.toggleFollow());
+  btn("btn-close-all").addEventListener("click", () => manager.closeAll());
+
+  // ---- Platform-specific toolbar ----
+  // Web: hide Next (no directory concept), hide export HTML/PDF, add Download
+  const isWeb = adapter.platform === "web";
+  const btnNext = btn("btn-next");
+  if (isWeb) {
+    btnNext.hidden = true;
+    btn("btn-export-html").hidden = true;
+    btn("btn-export-pdf").hidden = true;
   }
 
-  // Relative link — resolve against the open file and open in a tab.
-  e.preventDefault();
-  const base = manager.getActivePath();
-  if (!base) return;
-  try {
-    const target = await invoke<string>("resolve_sibling", {
-      base,
-      rel: href.split("#")[0],
+  if (isWeb) {
+    const group = btnNext.closest(".group")!;
+    const dlSelect = document.createElement("select");
+    dlSelect.className = "download-format";
+    dlSelect.title = "Download format";
+    dlSelect.innerHTML = `
+      <option value="">Download as…</option>
+      <option value="md">Markdown (.md)</option>
+      <option value="html">HTML (.html)</option>
+      <option value="pdf">PDF (.pdf)</option>
+      <option value="json">JSON (.json)</option>
+      <option value="yaml">YAML (.yaml)</option>
+      <option value="toml">TOML (.toml)</option>
+      <option value="ini">INI (.ini)</option>
+    `;
+    const dlBtn = document.createElement("button");
+    dlBtn.id = "btn-download";
+    dlBtn.className = "primary";
+    dlBtn.setAttribute("aria-label", "Download");
+    dlBtn.setAttribute("data-tip", "Download");
+    dlBtn.innerHTML = iconMarkup("ic-download");
+    dlBtn.disabled = true;
+    dlBtn.addEventListener("click", async () => {
+      const fmt = dlSelect.value;
+      if (!fmt) return;
+      const src = manager.getActiveRawText();
+      if (!src) return;
+      const path = manager.getActivePath() ?? "untitled";
+      const base = basename(path).replace(/\.[^.]+$/, "") || "document";
+      try {
+        let content = src;
+        let mime = "text/plain";
+        let ext = fmt;
+        if (fmt === "html" || fmt === "pdf") {
+          content = (await import("./export")).buildStandaloneHtml(
+            manager.getActiveDisplayedHtml(),
+            fmt === "pdf",
+          );
+          mime = "text/html";
+          ext = "html";
+        } else {
+          const fromFmt = dataLangOf(path) ?? "markdown";
+          if (fromFmt !== "markdown" && fmt !== "md" && fromFmt !== fmt) {
+            content = await convertData(src, fromFmt, fmt);
+          }
+          const mimeMap: Record<string, string> = {
+            md: "text/markdown", html: "text/html", json: "application/json",
+            yaml: "text/yaml", toml: "text/toml", ini: "text/plain",
+          };
+          mime = mimeMap[fmt] ?? "text/plain";
+        }
+        if (fmt === "pdf") {
+          const blob = new Blob([content], { type: "text/html" });
+          const url = URL.createObjectURL(blob);
+          window.open(url, "_blank");
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+        } else {
+          downloadFile(content, `${base}.${ext}`, mime);
+        }
+      } catch (err) {
+        showBanner(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      dlSelect.value = "";
     });
-    await openPath(target);
-  } catch {
-    showBanner(`Couldn't open ${href}`);
-  }
-});
+    dlSelect.addEventListener("change", () => {
+      dlBtn.disabled = !dlSelect.value;
+    });
+    group.appendChild(dlSelect);
+    group.appendChild(dlBtn);
 
-// ---- Disk watch events ----
-/** Debounce file-change events so rapid writes (editor auto-save) don't
- *  cascade re-renders. Only the last event within 200ms is processed. */
-let watchDebounceId: ReturnType<typeof setTimeout> | undefined;
-listen<FilePayload>("file-changed", (e) => {
-  if (watchDebounceId !== undefined) clearTimeout(watchDebounceId);
-  watchDebounceId = setTimeout(() => {
-    watchDebounceId = undefined;
-    manager.updateContent(e.payload.path, e.payload.content);
-    // Only the active, non-windowed tab re-renders its DOM on a disk change, so
-    // only then does the DOM-bound search provider need rebinding. A windowed tab
-    // uses a DOM-independent LogSearchProvider — don't reset it when some other
-    // watched file changes (its growth is handled via the log-grew event).
-    if (e.payload.path === manager.getActivePath() && !manager.isActiveWindowed()) rebindSearch();
-  }, 200);
-});
-listen<{ path: string }>("file-removed", (e) => showBanner(`File removed: ${e.payload.path}`));
-// Windowed log grew: update the virtual view's line count if the tab is active
-listen<{ path: string; lineCount: number }>("log-grew", (e) => {
-  if (manager.getActivePath() === e.payload.path) {
-    manager.getActiveVirtualLogView()?.setLineCount(e.payload.lineCount);
+    dlSelect.hidden = true;
+    dlBtn.hidden = true;
   }
-});
 
-// ---- Drag-and-drop ----
-getCurrentWebview().onDragDropEvent((e) => {
-  const p = e.payload;
-  if (p.type === "enter" || p.type === "over") {
-    document.body.classList.add("drag-over"); // highlight the drop target
-  } else if (p.type === "leave") {
-    document.body.classList.remove("drag-over");
-  } else if (p.type === "drop") {
-    document.body.classList.remove("drag-over");
-    if (p.paths.length > 0) void openMany(p.paths);
+  btn("btn-next").addEventListener("click", async () => {
+    const cur = manager.getActivePath();
+    if (!cur) return;
+    try {
+      const siblings = await adapter.listSiblingViewable(cur);
+      const idx = siblingIndex(siblings, cur);
+      if (idx < 0 || siblings.length < 2) return;
+      const next = siblings[(idx + 1) % siblings.length];
+      await openPath(next);
+    } catch (e) {
+      showBanner(`Couldn't list directory — ${(e as AppError)?.message ?? e}`);
+    }
+  });
+
+  btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRawText(), adapter));
+  btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRawText(), adapter));
+  btn("btn-copy-md").addEventListener("click", () => copyAsMarkdown(manager.getActiveRawText()));
+  btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveDisplayedHtml()));
+
+  const selFont = document.getElementById("sel-font") as HTMLSelectElement;
+  const inpSize = document.getElementById("inp-size") as HTMLInputElement;
+  const selTheme = document.getElementById("sel-theme") as HTMLSelectElement;
+  selFont.value = settings.fontFamily;
+  inpSize.value = String(settings.fontSizePx);
+  selTheme.value = settings.theme;
+
+  function updateStyle(patch: Partial<StyleSettings>) {
+    settings = { ...settings, ...patch };
+    manager.applyStyle(settings);
+    saveSettings(settings);
+    refreshToolbar();
+    if ("theme" in patch) {
+      applyCodeTheme(settings.theme);
+      manager.rerenderActive();
+    }
   }
-});
+  selFont.addEventListener("change", () =>
+    updateStyle({ fontFamily: selFont.value as StyleSettings["fontFamily"] })
+  );
+  inpSize.addEventListener("input", () => updateStyle({ fontSizePx: Number(inpSize.value) }));
+  selTheme.addEventListener("change", () =>
+    updateStyle({ theme: selTheme.value as StyleSettings["theme"] })
+  );
 
-// ---- Files passed on the command line (e.g. `markdown-gui *.md`) ----
-(async () => {
-  refreshToolbar();
-  const startup = await invoke<string[]>("get_startup_files");
-  if (startup.length > 0) await openMany(startup);
-})();
+  // Appearance popover (font / size / theme). Self-contained: light-dismiss on
+  // outside click or Escape. The Esc handler only acts while the popover is open
+  // and stops propagation then, so it never steals Escape from the search bar.
+  const appearanceBtn = document.getElementById("btn-appearance");
+  const appearancePanel = document.getElementById("appearance-panel");
+  if (appearanceBtn && appearancePanel) {
+    const setOpen = (open: boolean) => {
+      appearancePanel.hidden = !open;
+      appearanceBtn.classList.toggle("toggled", open);
+      appearanceBtn.setAttribute("aria-expanded", String(open));
+    };
+    appearanceBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setOpen(appearancePanel.hidden);
+    });
+    document.addEventListener("click", (e) => {
+      if (appearancePanel.hidden) return;
+      if (!appearancePanel.contains(e.target as Node)) setOpen(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !appearancePanel.hidden) {
+        e.stopPropagation();
+        setOpen(false);
+        appearanceBtn.focus();
+      }
+    });
+  }
+
+  const selViewAs = document.getElementById("sel-viewas") as HTMLSelectElement;
+  selViewAs.addEventListener("change", () => {
+    const v = selViewAs.value;
+    if (v) {
+      if (v.startsWith("data:")) {
+        const lang = v.slice("data:".length) as DataLang;
+        manager.setActiveForcedFormat("data", lang);
+      } else {
+        manager.setActiveForcedFormat(v as Format);
+      }
+    }
+    selViewAs.value = "";
+  });
+
+  content.addEventListener("click", async (e) => {
+    const target = e.target as HTMLElement;
+
+    const linesBtn = target.closest(".code-lines");
+    if (linesBtn) {
+      const on = linesBtn.closest(".code-block")?.classList.toggle("line-numbers");
+      linesBtn.classList.toggle("toggled", !!on);
+      linesBtn.setAttribute("aria-pressed", String(!!on));
+      return;
+    }
+
+    const lnCell = target.closest("td.ln");
+    if (lnCell) {
+      lnCell.parentElement?.classList.toggle("hl");
+      return;
+    }
+
+    const copyBtn = target.closest(".code-copy");
+    if (copyBtn) {
+      const block = copyBtn.closest(".code-block");
+      if (block) {
+        await navigator.clipboard.writeText(codeSourceOf(block));
+        const prev = copyBtn.textContent;
+        copyBtn.textContent = "✓";
+        setTimeout(() => (copyBtn.textContent = prev), 1200);
+      }
+      return;
+    }
+
+    const saveSourceBtn = target.closest(".code-save");
+    if (saveSourceBtn) {
+      const block = saveSourceBtn.closest(".code-block");
+      if (block) {
+        const path = await adapter.saveDialog({ defaultPath: suggestedCodeName(block) });
+        if (path) {
+          await adapter.saveTextFile(path, codeSourceOf(block));
+        }
+      }
+      return;
+    }
+
+    const anchor = target.closest("a");
+    if (!anchor) return;
+    const href = anchor.getAttribute("href");
+    if (!href) return;
+
+    if (href.startsWith("#")) {
+      e.preventDefault();
+      const id = decodeURIComponent(href.slice(1));
+      content.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      return;
+    }
+
+    let url: URL | null = null;
+    try {
+      url = new URL(href);
+    } catch {
+      url = null;
+    }
+    if (url) {
+      e.preventDefault();
+      const allowed = ["http:", "https:", "mailto:"];
+      if (allowed.includes(url.protocol)) {
+        await adapter.openUrl(href);
+      } else {
+        showBanner(`Blocked link with unsupported scheme: ${url.protocol}`);
+      }
+      return;
+    }
+
+    e.preventDefault();
+    const base = manager.getActivePath();
+    if (!base) return;
+    try {
+      const target = await adapter.resolveSibling(base, href.split("#")[0]);
+      await openPath(target);
+    } catch {
+      showBanner(`Couldn't open ${href}`);
+    }
+  });
+
+  let watchDebounceId: ReturnType<typeof setTimeout> | undefined;
+  adapter.onFileChanged((path, content) => {
+    if (watchDebounceId !== undefined) clearTimeout(watchDebounceId);
+    watchDebounceId = setTimeout(() => {
+      watchDebounceId = undefined;
+      manager.updateContent(path, content);
+      if (path === manager.getActivePath() && !manager.isActiveWindowed()) rebindSearch();
+    }, 200);
+  });
+
+  adapter.onFileRemoved((path) => showBanner(`File removed: ${path}`));
+
+  async function isTextFile(path: string): Promise<boolean> {
+    try {
+      const ext = path.split("/").pop()?.split(".").pop()?.toLowerCase();
+      const textExts = new Set(["md","markdown","mdown","mkd","txt","text","log","json","yaml","yml","toml","ini","csv","tsv","xml","html","htm","css","js","ts","jsx","tsx","py","rb","rs","go","java","c","cpp","h","hpp","sh","bash","zsh","fish","env","gitignore","dockerfile","cfg","conf"]);
+      if (ext && textExts.has(ext)) return true;
+      const size = await adapter.fileSize(path);
+      if (size > 1_048_576) return false;
+      return await adapter.probeIsText(path, 512);
+    } catch {
+      return true;
+    }
+  }
+
+  async function collectDropPaths(paths: string[]): Promise<string[]> {
+    const result: string[] = [];
+    for (const p of paths) {
+      try {
+        const children = await adapter.listViewableRecursive(p);
+        for (const child of children) {
+          if (await isTextFile(child)) result.push(child);
+        }
+      } catch {
+        // skip silently
+      }
+    }
+    return result;
+  }
+
+  adapter.onDrop((event) => {
+    if (event.type === "enter" || event.type === "over") {
+      document.body.classList.add("drag-over");
+    } else if (event.type === "leave") {
+      document.body.classList.remove("drag-over");
+    } else if (event.type === "drop") {
+      document.body.classList.remove("drag-over");
+      if (event.paths.length > 0) {
+        const total = event.paths.length;
+        void collectDropPaths(event.paths).then((collected) => {
+          const skipped = total - collected.length;
+          if (collected.length > 0) void openMany(collected);
+          if (skipped > 0) {
+            showBanner(`Opened ${collected.length} file${collected.length === 1 ? "" : "s"}, skipped ${skipped} binary/unreadable`);
+          }
+        });
+      }
+    }
+  });
+
+  (async () => {
+    refreshToolbar();
+    const startup = await adapter.getStartupFiles();
+    if (startup.length > 0) await openMany(startup);
+  })();
+}

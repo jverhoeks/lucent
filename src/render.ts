@@ -27,7 +27,10 @@ export function applyCodeTheme(theme: Theme): void {
     hljsStyleEl.id = "hljs-theme";
     document.head.appendChild(hljsStyleEl);
   }
-  hljsStyleEl.textContent = theme === "dark" ? hljsDark : hljsLight;
+  const resolved = theme === "system"
+    ? (typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+    : theme;
+  hljsStyleEl.textContent = resolved === "dark" ? hljsDark : hljsLight;
 }
 
 /** Remove the highlight.js style element (cleanup on destroy). */
@@ -128,19 +131,26 @@ let mermaidConfiguredTheme: Theme | null = null;
  * the rendered HTML is in the DOM. On a parse error mermaid annotates the block
  * inline rather than throwing, so one bad diagram doesn't break the document.
  */
+function resolveTheme(theme: Theme): Theme {
+  if (theme !== "system") return theme;
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 export async function runPostRender(container: HTMLElement, theme: Theme): Promise<void> {
+  const resolved = resolveTheme(theme);
   const nodes = Array.from(container.querySelectorAll<HTMLElement>("pre.mermaid"));
   if (nodes.length === 0) return;
   for (const n of nodes) n.style.visibility = "hidden";
   try {
     const { default: mermaid } = await import("mermaid");
-    if (mermaidConfiguredTheme !== theme) {
+    if (mermaidConfiguredTheme !== resolved) {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: "strict",
-        theme: theme === "dark" ? "dark" : "default",
+        theme: resolved === "dark" ? "dark" : "default",
       });
-      mermaidConfiguredTheme = theme;
+      mermaidConfiguredTheme = resolved;
     }
     await mermaid.run({ nodes });
   } catch {

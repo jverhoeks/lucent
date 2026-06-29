@@ -5,46 +5,80 @@
   --serif: Georgia, "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --accent: #2563eb;
+  --accent-hover: #1d4ed8;
   --bar-bg: #fbfbfd;
   --bar-border: rgba(0, 0, 0, 0.1);
   --btn-bg: #ffffff;
   --btn-border: rgba(0, 0, 0, 0.16);
   --btn-hover: #f0f1f3;
+  --text: #1d1d1f;
+  --text-muted: #6e6e73;
+  --bg: #ffffff;
+  --surface: #f5f5f7;
+  --focus-ring: rgba(37, 99, 235, 0.35);
+  --accent-soft: rgba(37, 99, 235, 0.12);
+  --accent-soft-hover: rgba(37, 99, 235, 0.18);
+  --btn-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.06);
+  --btn-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bar-bg: #1c1c1e;
+    --bar-border: rgba(255, 255, 255, 0.1);
+    --btn-bg: #2c2c2e;
+    --btn-border: rgba(255, 255, 255, 0.16);
+    --btn-hover: #3a3a3c;
+    --text: #f5f5f7;
+    --text-muted: #98989d;
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --accent: #5e9eff;
+    --accent-hover: #7ab2ff;
+    --focus-ring: rgba(94, 158, 255, 0.35);
+    --accent-soft: rgba(94, 158, 255, 0.16);
+    --accent-soft-hover: rgba(94, 158, 255, 0.24);
+    --btn-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.3);
+    --btn-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
 }
 
 * {
   box-sizing: border-box;
 }
 
-html,
-body {
+html, body {
   margin: 0;
   height: 100%;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
   display: flex;
   flex-direction: column;
-  font-family: var(--sans);
-  -webkit-font-smoothing: antialiased;
 }
 
 /* ---- Toolbar ---- */
 #toolbar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 6px 14px;
   border-bottom: 1px solid var(--bar-border);
   background: var(--bar-bg);
   flex-wrap: wrap;
   user-select: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 #toolbar .group {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 #toolbar .spacer {
@@ -52,1064 +86,671 @@ body {
 }
 
 #toolbar button,
-#toolbar select {
-  font: inherit;
-  font-size: 13px;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--btn-border);
-  border-radius: 8px;
+#toolbar select,
+#toolbar input[type="range"] {
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1;
+}
+
+#toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   background: var(--btn-bg);
-  color: #1a1a1a;
+  border: 1px solid var(--btn-border);
+  border-radius: 9px;
+  padding: 7px;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  color: var(--text-muted);
+  font-weight: 500;
+  box-shadow: var(--btn-shadow);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.08s, color 0.15s;
 }
 
-#toolbar select {
-  padding: 0 8px;
+/* Monochrome icon glyphs — inherit currentColor so they follow theme + accent */
+#toolbar .ic,
+.code-actions .ic {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-#toolbar button:hover:not(:disabled),
-#toolbar select:hover {
+#toolbar .ic {
+  width: 18px;
+  height: 18px;
+}
+
+.code-actions .ic {
+  width: 14px;
+  height: 14px;
+}
+
+/* Code-block action buttons (copy / save) — quiet icon buttons */
+.code-actions button:has(.ic) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.code-actions button:has(.ic):hover {
   background: var(--btn-hover);
+  color: var(--text);
+}
+
+#toolbar button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+#toolbar button:hover:not(:disabled) {
+  background: var(--btn-hover);
+  border-color: var(--accent);
+  box-shadow: var(--btn-shadow-hover);
 }
 
 #toolbar button:active:not(:disabled) {
-  background: #e6e7ea;
+  transform: translateY(0.5px) scale(0.97);
+  box-shadow: var(--btn-shadow);
+}
+
+#toolbar button:focus-visible,
+#toolbar select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 #toolbar button:disabled {
   opacity: 0.4;
   cursor: default;
+  box-shadow: none;
 }
 
 #toolbar button.primary {
+  border-color: transparent;
   background: var(--accent);
-  border-color: var(--accent);
   color: #fff;
-  font-weight: 600;
-}
-#toolbar button.primary:hover:not(:disabled) {
-  background: #1d4fd7;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 6px var(--accent-soft);
 }
 
-/* Toggle button shows a pressed state when raw view is active. */
-#toolbar button.toggled {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+#toolbar button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: transparent;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.16), 0 4px 12px var(--accent-soft-hover);
 }
-#toolbar button.toggled:hover:not(:disabled) {
-  background: #1d4fd7;
+
+/* Active/toggled state for Edit, Rendered/Raw, Tail (JS adds .toggled + aria-pressed) */
+#toolbar button.toggle,
+#toolbar button.toggled,
+#toolbar button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+#toolbar button.toggled:hover:not(:disabled),
+#toolbar button[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--accent-soft-hover);
+}
+
+#toolbar select {
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: var(--btn-shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#toolbar select:hover {
+  border-color: var(--accent);
+  box-shadow: var(--btn-shadow-hover);
 }
 
 #toolbar input[type="range"] {
-  width: 96px;
+  width: 60px;
   accent-color: var(--accent);
+  cursor: pointer;
+  height: 4px;
+}
+
+/* ---- Tooltips (icon-only buttons stay discoverable on hover + keyboard focus) ---- */
+#toolbar button[data-tip] {
+  position: relative;
+}
+
+#toolbar button[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-3px);
+  white-space: nowrap;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 10000;
+}
+
+#toolbar button[data-tip]:hover::after,
+#toolbar button[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ---- Appearance popover ---- */
+.popover-host {
+  position: relative;
+  display: inline-flex;
+}
+
+#toolbar .popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 200px;
+  padding: 14px;
+  background: var(--bar-bg);
+  border: 1px solid var(--bar-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: popIn 0.14s ease-out;
+}
+
+#toolbar .popover[hidden] {
+  display: none;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.popover-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.popover-row select {
+  min-width: 110px;
+}
+
+#toolbar .popover-row input[type="range"] {
+  width: 110px;
 }
 
 /* ---- Tab strip ---- */
 #tabstrip {
   display: flex;
-  align-items: stretch;
-  background: var(--bar-bg);
+  align-items: center;
+  background: var(--surface);
   border-bottom: 1px solid var(--bar-border);
+  padding: 3px 8px;
+  gap: 4px;
+  font-size: 12px;
+  min-height: 32px;
 }
+
+#tabstrip:not([hidden]) {
+  display: flex;
+}
+
 #tabbar {
   display: flex;
-  align-items: stretch;
   gap: 2px;
-  padding: 6px 10px 0;
-  flex: 1 1 auto;
+  flex: 1;
   overflow-x: auto;
+  scrollbar-width: none;
 }
-#btn-close-all {
-  flex: 0 0 auto;
-  align-self: center;
-  margin: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: #777;
-  font-size: 14px;
-  line-height: 1;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-#btn-close-all:hover {
-  background: rgba(185, 28, 28, 0.1);
-  color: #b91c1c;
+
+#tabbar::-webkit-scrollbar {
+  display: none;
 }
 
 #tabbar .tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 220px;
-  padding: 6px 8px 6px 12px;
-  font-size: 13px;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  background: transparent;
-  color: #555;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  font-family: var(--sans);
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
 }
 
 #tabbar .tab:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--btn-hover);
+  color: var(--text);
 }
 
 #tabbar .tab.active {
-  background: #fff;
-  color: #111;
-  border-color: var(--bar-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-weight: 500;
 }
 
-#tabbar .tab-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-#tabbar .tab-close {
+#tabbar .tab .close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
   border: none;
   background: transparent;
-  color: #999;
-  font-size: 15px;
-  line-height: 1;
-  padding: 0 4px;
-  border-radius: 4px;
   cursor: pointer;
-}
-#tabbar .tab-close:hover {
-  background: rgba(0, 0, 0, 0.12);
-  color: #333;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 0;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
 }
 
-/* ---- Content shell ---- */
+#tabbar .tab .close-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text);
+}
+
+#btn-close-all {
+  background: none;
+  border: 1px solid var(--bar-border);
+  border-radius: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: background 0.15s, color 0.15s;
+}
+
+#btn-close-all:hover {
+  background: var(--btn-hover);
+  color: var(--text);
+}
+
+/* ---- Search bar ---- */
+#searchbar {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--bar-border);
+  font-size: 12px;
+}
+
+#searchbar:not([hidden]) {
+  display: flex;
+}
+
+#searchbar input {
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--bar-border);
+  border-radius: 6px;
+  background: var(--btn-bg);
+  color: var(--text);
+  outline: none;
+  width: 200px;
+  transition: border-color 0.15s;
+}
+
+#searchbar input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+#searchbar button {
+  background: var(--btn-bg);
+  border: 1px solid var(--bar-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 11px;
+  transition: background 0.15s;
+}
+
+#searchbar button:hover {
+  background: var(--btn-hover);
+  border-color: var(--accent);
+}
+
+#searchbar button:focus-visible,
+#searchbar input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+#searchbar button.toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+#searchbar .count {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 30px;
+  text-align: center;
+}
+
+/* ---- Content ---- */
 #content {
   flex: 1;
   overflow: auto;
-  padding: 32px 24px;
+  padding: 16px 24px;
+  background: var(--bg);
+  color: var(--text);
 }
 
-#content[data-theme="light"] {
-  background: #ffffff;
-  color: #1a1a1a;
-}
-#content[data-theme="sepia"] {
-  background: #f4ecd8;
-  color: #433422;
-}
-#content[data-theme="dark"] {
-  background: #1e1e1e;
-  color: #e6e6e6;
+/* ---- Preview pane ---- */
+.preview-pane {
+  overflow: auto;
+  padding: 16px 24px;
 }
 
-/* Font preset applies to the rendered document only — raw view stays monospace. */
-#content[data-font="sans"] .doc {
-  font-family: var(--sans);
-}
-#content[data-font="serif"] .doc {
-  font-family: var(--serif);
-}
-#content[data-font="mono"] .doc {
-  font-family: var(--mono);
-}
-
-/* ---- Rendered document ---- */
-.doc {
-  max-width: var(--max-width);
-  margin: 0 auto;
-  font-size: var(--font-size);
-  line-height: 1.6;
-  content-visibility: auto;
-}
-
-.doc h1,
-.doc h2,
-.doc h3 {
-  line-height: 1.25;
-  margin-top: 1.6em;
-  margin-bottom: 0.6em;
-}
-.doc h1 {
-  font-size: 1.9em;
-}
-.doc h2 {
-  font-size: 1.5em;
-}
-.doc p,
-.doc ul,
-.doc ol,
-.doc blockquote,
-.doc table,
-.doc pre {
-  margin: 0 0 1em;
-}
-
-.doc a {
-  color: var(--accent);
-}
-#content[data-theme="dark"] .doc a {
-  color: #6ea8fe;
-}
-
-.doc blockquote {
-  margin-left: 0;
-  padding: 0.2em 1em;
-  border-left: 4px solid rgba(127, 127, 127, 0.4);
-  opacity: 0.9;
-}
-
-.doc code {
-  font-family: var(--mono);
-  font-size: 0.9em;
-  background: rgba(127, 127, 127, 0.15);
-  padding: 0.15em 0.35em;
-  border-radius: 4px;
-}
-
-.doc .code-block {
-  margin: 0 0 1em;
-  border: 1px solid rgba(127, 127, 127, 0.3);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.doc .code-header {
+/* ---- Layout ---- */
+.outer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 8px 4px 12px;
-  font-size: 12px;
-  background: rgba(127, 127, 127, 0.1);
-  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
-}
-.doc .code-label {
-  font-family: var(--mono);
-  color: #666;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#content[data-theme="dark"] .doc .code-label {
-  color: #aaa;
-}
-#content[data-theme="dark"] .doc .code-block {
-  border-color: rgba(255, 255, 255, 0.12);
-}
-#content[data-theme="dark"] .doc .code-header {
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom-color: rgba(255, 255, 255, 0.1);
-}
-#content[data-theme="dark"] .doc .code-block.line-numbers td.ln {
-  color: #6e7681;
-  background: #161b22;
-  border-right-color: rgba(255, 255, 255, 0.12);
-}
-#content[data-theme="dark"] .doc .code-block.line-numbers td.ln:hover {
-  color: #c9d1d9;
-}
-.doc .code-actions {
-  display: flex;
-  gap: 2px;
-  flex: 0 0 auto;
-}
-.doc .code-lines,
-.doc .code-copy,
-.doc .code-save {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 3px 7px;
-  border-radius: 5px;
-}
-.doc .code-lines {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: #777;
-  letter-spacing: 1px;
-}
-.doc .code-lines.toggled {
-  background: var(--accent);
-  color: #fff;
-}
-.doc .code-copy:hover,
-.doc .code-save:hover,
-.doc .code-lines:hover:not(.toggled) {
-  background: rgba(127, 127, 127, 0.25);
-}
-
-.doc pre.hljs {
-  margin: 0;
-  padding: 0;
-  border-radius: 0;
-  overflow-x: auto;
-  font-family: var(--mono);
-  font-size: 0.85em;
-  line-height: 1.5;
-}
-.doc .ctab {
-  border-collapse: collapse;
-  width: 100%; /* so a highlighted line spans the full block width */
-}
-.doc .ctab td {
-  padding: 0;
-  vertical-align: top;
-  border: none;
-  line-height: 1.55;
-}
-/* Code line: one row each → perfect alignment with its number. */
-.doc td.cc {
-  white-space: pre;
-  padding: 0 16px;
-}
-/* Line-number column: hidden unless this block has line numbers on. Sticky so
-   it stays put while the code scrolls horizontally. */
-.doc td.ln {
-  display: none;
-}
-.doc .code-block.line-numbers td.ln {
-  display: table-cell;
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  padding: 0 10px;
-  text-align: right;
-  color: #9aa0a6;
-  background: #f3f3f3;
-  border-right: 1px solid rgba(127, 127, 127, 0.25);
-  user-select: none;
-  cursor: pointer;
-  font-variant-numeric: tabular-nums;
-}
-.doc .code-block.line-numbers td.ln:hover {
-  color: #444;
-}
-/* Highlighted (clicked) line. */
-.doc tr.hl td.cc {
-  background: rgba(250, 204, 21, 0.22);
-}
-.doc .code-block.line-numbers tr.hl td.ln {
-  background: rgba(250, 204, 21, 0.4);
-  color: #444;
-}
-
-.doc table {
-  border-collapse: collapse;
-  width: 100%;
-}
-.doc th,
-.doc td {
-  border: 1px solid rgba(127, 127, 127, 0.4);
-  padding: 6px 10px;
-  text-align: left;
-}
-
-.doc ul.contains-task-list {
-  list-style: none;
-  padding-left: 1em;
-}
-
-/* ---- Rich rendering (Phase 2) ---- */
-.doc .header-anchor {
-  text-decoration: none;
-  color: inherit;
-}
-.doc .task-list-item {
-  list-style: none;
-}
-.doc .task-list-item input[type="checkbox"] {
-  margin: 0 0.5em 0 -1.2em;
-}
-.doc .katex-display {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0.2em 0;
-}
-.doc pre.mermaid {
-  background: none;
-  padding: 0;
-  text-align: center;
-}
-.doc pre.mermaid svg {
-  max-width: 100%;
-  height: auto;
-}
-.doc .footnotes {
-  margin-top: 2em;
-  padding-top: 1em;
-  border-top: 1px solid rgba(127, 127, 127, 0.3);
-  font-size: 0.9em;
-}
-.doc .note,
-.doc .warning,
-.doc .tip {
-  border-left: 4px solid;
-  border-radius: 6px;
-  padding: 0.6em 1em;
-  margin: 0 0 1em;
-}
-.doc .note {
-  border-color: #2563eb;
-  background: rgba(37, 99, 235, 0.08);
-}
-.doc .warning {
-  border-color: #d97706;
-  background: rgba(217, 119, 6, 0.1);
-}
-.doc .tip {
-  border-color: #16a34a;
-  background: rgba(22, 163, 74, 0.1);
-}
-
-/* ---- Raw view (always monospace) ---- */
-/* Raw source (incl. logs) is left-aligned and full-width — not constrained to
-   the centered prose column, which is only for rendered markdown. */
-.raw {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: var(--font-size);
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* Shown when a renderer throws — the error note above the raw fallback text. */
-.render-error > p {
-  margin: 0 0 0.75rem;
-  padding: 0.5rem 0.75rem;
-  border-left: 3px solid #c0392b;
-  background: rgba(192, 57, 43, 0.08);
-  color: #c0392b;
-  font-family: var(--mono);
-  font-size: 0.9em;
-}
-
-/* ---- Tree view (data renderer) ---- */
-.tree {
-  font-family: var(--mono);
-  font-size: 0.88em;
-  line-height: 1.6;
-}
-
-.tree-row {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  white-space: nowrap;
-}
-
-.tree-row:hover {
-  background: rgba(127, 127, 127, 0.08);
-}
-
-.tree-toggle {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  line-height: 16px;
-  text-align: center;
-  font-size: 12px;
-  border: 1px solid rgba(127, 127, 127, 0.35);
-  border-radius: 3px;
-  background: transparent;
-  cursor: pointer;
-  color: #555;
-  padding: 0;
-  font-family: var(--mono);
-}
-.tree-toggle:hover {
-  background: rgba(127, 127, 127, 0.15);
-}
-
-.tree-key {
-  color: #0550ae;
-  font-weight: 500;
-}
-.tree-key::after {
-  content: ":";
-  color: #555;
-  font-weight: 400;
-}
-
-.tree-meta {
-  color: #888;
-  font-size: 0.9em;
-}
-
-.tree-value {
   flex: 1;
-}
-.tree-value.type-string  { color: #0a7c4f; }
-.tree-value.type-number  { color: #b07e00; }
-.tree-value.type-boolean { color: #7c3aed; }
-.tree-value.type-null    { color: #888; font-style: italic; }
-
-.tree-children {
-  padding-left: 20px;
-  border-left: 1px solid rgba(127, 127, 127, 0.2);
-  margin-left: 9px;
-}
-
-/* Virtualized tree (large files): a full-height sizer gives the scrollbar its
- * range; an absolutely-positioned window holds only the visible rows. Rows are
- * forced to a uniform height (scaling with the font) so fixed-height windowing
- * math holds — nesting is shown via per-row padding-left rather than guide lines. */
-.tree-sizer { position: relative; }
-.tree-window {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-}
-.tree-virtual .tree-row {
-  height: 1.7em;
-  box-sizing: border-box;
-  align-items: center;
   overflow: hidden;
 }
 
-.tree-toolbar {
+.editor-pane {
   display: flex;
-  gap: 6px;
-  padding: 6px 0 8px;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--bar-border);
 }
 
-.tree-action {
-  font: inherit;
+.split-editor .preview-pane {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ---- Preview toolbar ---- */
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--bar-border);
   font-size: 12px;
-  height: 26px;
-  padding: 0 10px;
+  color: var(--text-muted);
+}
+
+.preview-toolbar button {
+  background: var(--btn-bg);
   border: 1px solid var(--btn-border);
   border-radius: 6px;
-  background: var(--btn-bg);
-  color: #1a1a1a;
+  padding: 3px 8px;
   cursor: pointer;
-  transition: background 0.12s ease;
+  font-size: 11px;
+  color: var(--text);
+  transition: background 0.15s;
 }
-.tree-action:hover {
+
+.preview-toolbar button:hover {
   background: var(--btn-hover);
 }
 
-.tree-notice {
-  font-size: 0.88em;
-  color: #92400e;
-  background: rgba(217, 119, 6, 0.1);
-  border-left: 3px solid #d97706;
-  border-radius: 4px;
-  padding: 6px 10px;
-  margin-bottom: 8px;
+.preview-toolbar button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
-/* Dark theme overrides for tree */
-#content[data-theme="dark"] .tree-toggle {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #bbb;
-}
-#content[data-theme="dark"] .tree-toggle:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-#content[data-theme="dark"] .tree-key {
-  color: #6ea8fe;
-}
-#content[data-theme="dark"] .tree-key::after {
-  color: #888;
-}
-#content[data-theme="dark"] .tree-meta {
-  color: #777;
-}
-#content[data-theme="dark"] .tree-value.type-string  { color: #7ee787; }
-#content[data-theme="dark"] .tree-value.type-number  { color: #ffa657; }
-#content[data-theme="dark"] .tree-value.type-boolean { color: #d2a8ff; }
-#content[data-theme="dark"] .tree-value.type-null    { color: #666; }
-#content[data-theme="dark"] .tree-children {
-  border-left-color: rgba(255, 255, 255, 0.1);
-}
-#content[data-theme="dark"] .tree-action {
-  color: #e6e6e6;
-}
-#content[data-theme="dark"] .tree-notice {
-  color: #fcd34d;
-  background: rgba(217, 119, 6, 0.15);
-  border-left-color: #d97706;
+/* ---- Sync scroll toggle ---- */
+#btn-sync-scroll {
+  margin-left: auto;
 }
 
-/* Search highlight for tree rows */
-.tree-row.search-current {
-  background: rgba(245, 158, 11, 0.25);
-  outline: 1px solid rgba(245, 158, 11, 0.6);
-  outline-offset: -1px;
+/* ---- Conflict bar ---- */
+.conflict-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #fff3cd;
+  border-bottom: 1px solid #ffc107;
+  font-size: 12px;
+  color: #856404;
 }
-#content[data-theme="dark"] .tree-row.search-current {
-  background: rgba(184, 134, 11, 0.3);
-  outline-color: rgba(184, 134, 11, 0.8);
+
+.conflict-bar button {
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.15s;
+}
+
+.conflict-bar button:hover {
+  background: var(--btn-hover);
+}
+
+/* ---- Drag & drop ---- */
+body.drag-over::after {
+  content: "Drop file(s) to open";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 3px dashed var(--accent);
+  border-radius: 14px;
+  pointer-events: none;
+  animation: fadeIn 0.12s ease-out;
 }
 
 /* ---- Banner ---- */
 #banner {
   position: fixed;
-  bottom: 16px;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: #b91c1c;
+  background: #323232;
   color: #fff;
-  padding: 8px 16px;
-  border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-  max-width: 80%;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  z-index: 9999;
+  animation: fadeIn 0.2s ease-out;
 }
 
-/* ---- Native PDF capture (macOS WKWebView.createPDF) ----
-   createPDF renders screen media, so we restructure the live DOM: hide chrome
-   and let the body grow to the full document height for a clean, full-length
-   capture on a white page. */
-body.exporting #toolbar,
-body.exporting #tabstrip,
-body.exporting #banner {
-  display: none !important;
-}
-/* Lay the document out on a fixed A4-width canvas (210mm @ 96dpi ≈ 794px) so the
-   captured PDF is consistent regardless of window size or zoom. */
-body.exporting {
-  width: 794px;
-  height: auto;
-}
-body.exporting #content {
-  width: 794px;
-  overflow: visible;
-  height: auto;
-  padding: 48px 56px;
-  background: #ffffff !important;
-  color: #111111 !important;
-}
-body.exporting .doc {
-  max-width: none; /* fill the page width within the margins */
-  margin: 0;
-}
-/* Native PDF capture: drop the code chrome/border but keep code + (toggled)
-   line numbers. */
-body.exporting .doc .code-actions {
-  display: none !important;
-}
-body.exporting .doc .code-block {
-  border: none !important;
-}
-body.exporting .doc .code-header {
-  background: none !important;
-  border-bottom: none !important;
-  padding-left: 0 !important;
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
-/* ---- Search bar ---- */
-#searchbar {
-  position: fixed;
-  /* Track the toolbar's real height (it can wrap to multiple rows on a narrow
-     window); --toolbar-h is kept in sync by a ResizeObserver in main.ts. */
-  top: calc(var(--toolbar-h, 56px) + 4px);
-  right: 16px;
-  z-index: 100;
+/* ---- Download format selector ---- */
+.download-format {
+  font-family: var(--sans);
+  font-size: 12px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 7px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+/* ---- Tree editing ---- */
+.tree-editor {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tree-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 10px;
-  background: var(--bar-bg);
-  border: 1px solid var(--bar-border);
-  border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 1px 0;
 }
 
-#searchbar[hidden] {
-  display: none;
+.tree-indent {
+  display: inline-block;
 }
 
-#search-input {
-  font: inherit;
-  font-size: 13px;
-  height: 28px;
-  width: 200px;
-  padding: 0 8px;
-  border: 1px solid var(--btn-border);
-  border-radius: 6px;
-  background: var(--btn-bg);
-  color: #1a1a1a;
-  outline: none;
+.tree-bracket {
+  color: var(--text-muted);
 }
 
-#search-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+.tree-key {
+  font-weight: 500;
 }
 
-#search-input.error {
-  outline: 1px solid red;
-  border-color: red;
+.tree-eq {
+  color: var(--text-muted);
+  margin: 0 4px;
 }
 
-#searchbar button {
-  font: inherit;
-  font-size: 13px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--btn-border);
-  border-radius: 6px;
-  background: var(--btn-bg);
-  color: #1a1a1a;
+.tree-val {
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  border-radius: 3px;
+  padding: 0 3px;
+  transition: background 0.1s;
 }
 
-#searchbar button:hover:not(:disabled) {
-  background: var(--btn-hover);
+.tree-val:hover {
+  background: var(--surface);
 }
 
-#searchbar button:active:not(:disabled) {
-  background: #e6e7ea;
-}
-
-/* Reuse toggled-button look for case/regex toggle buttons in the search bar. */
-#searchbar button.toggle.toggled {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-#searchbar button.toggle.toggled:hover:not(:disabled) {
-  background: #1d4fd7;
-}
-
-#search-count {
-  font-size: 12px;
-  color: #666;
-  padding: 0 4px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Dark theme overrides for search bar */
-body:has(#content[data-theme="dark"]) #searchbar {
-  --bar-bg: #2a2a2a;
-  --bar-border: rgba(255, 255, 255, 0.1);
-  --btn-bg: #3a3a3a;
-  --btn-border: rgba(255, 255, 255, 0.15);
-  --btn-hover: #4a4a4a;
-}
-body:has(#content[data-theme="dark"]) #search-input {
-  color: #e6e6e6;
-}
-body:has(#content[data-theme="dark"]) #search-count {
-  color: #aaa;
-}
-/* Non-toggled nav buttons (▲ ▼ ✕) need light text in dark mode; toggled
-   buttons keep their explicit white-on-accent, so exclude them here. */
-body:has(#content[data-theme="dark"]) #searchbar button:not(.toggled) {
-  color: #e6e6e6;
-}
-
-/* ---- Search highlights ---- */
-mark.search-hit { background: #fde68a; color: inherit; border-radius: 2px; }
-mark.search-current { background: #f59e0b; }
-#content[data-theme="dark"] mark.search-hit { background: #7c5b16; color: #fff; }
-#content[data-theme="dark"] mark.search-current { background: #b8860b; }
-
-/* ---- Log renderer ---- */
-.log {
+.tree-val.edit-input {
   font-family: var(--mono);
-  font-size: var(--font-size);
-  line-height: 1.55;
-  text-align: left;
-  width: 100%;
-}
-
-.log-line {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 1px 4px;
-  border-bottom: 1px solid rgba(127, 127, 127, 0.06);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.log-gutter {
-  flex: 0 0 3.5ch;
-  text-align: right;
-  color: #bbb;
-  user-select: none;
-  font-variant-numeric: tabular-nums;
-}
-
-.log-msg {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Level colors — light theme */
-.lvl-error .log-msg { color: #d32f2f; font-weight: 600; }
-.lvl-warn  .log-msg { color: #e67700; }
-.lvl-info  .log-msg { color: inherit; }
-.lvl-debug .log-msg { color: #888; }
-.lvl-none  .log-msg { color: inherit; }
-
-/* JSON toggle button */
-.log-json-toggle {
-  flex: 0 0 auto;
-  font: inherit;
-  font-size: 11px;
-  font-family: var(--mono);
-  height: 20px;
-  padding: 0 6px;
-  border: 1px solid rgba(127, 127, 127, 0.3);
+  font-size: 13px;
+  border: 1px solid var(--accent);
   border-radius: 4px;
-  background: transparent;
-  color: #777;
-  cursor: pointer;
-  line-height: 1;
-  transition: background 0.1s ease, color 0.1s ease;
-}
-.log-json-toggle:hover {
-  background: rgba(127, 127, 127, 0.12);
-  color: #444;
-}
-.log-json-toggle.open {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-/* Expanded JSON tree panel */
-.log-json {
-  padding: 4px 4px 4px 3.5ch;
-  border-bottom: 1px solid rgba(127, 127, 127, 0.1);
-}
-
-/* ---- Virtual Log View ---- */
-
-/* Scroll container — caller sets a fixed height */
-.vlog {
-  position: relative;
-  overflow: auto;
-  height: 100%;
-}
-
-/* Spacer that gives the scrollbar its full range */
-.vlog-sizer {
-  position: relative;
-}
-
-/* Absolutely-positioned window holding the current rendered rows */
-.vlog-window {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-}
-
-/*
- * Each virtual row has a fixed height matching ROW_H in virtual-log-view.ts.
- * This overrides .log-line's white-space:pre-wrap with higher specificity so
- * the fixed-height contract holds. When .wrap is toggled the override is lifted.
- */
-.vlog-window .vlog-row {
-  height: 20px;
-  white-space: pre;
-  overflow: hidden;
-}
-
-/* Wrap mode: best-effort scroll precision (documented caveat — rows vary in height) */
-.vlog-window.wrap .vlog-row {
-  height: auto;
-  white-space: pre-wrap;
-  overflow: visible;
-}
-
-/* Dark theme overrides */
-#content[data-theme="dark"] .log-gutter {
-  color: #555;
-}
-#content[data-theme="dark"] .lvl-error .log-msg { color: #ff6b6b; }
-#content[data-theme="dark"] .lvl-warn  .log-msg { color: #ffa94d; }
-#content[data-theme="dark"] .lvl-debug .log-msg { color: #999; }
-#content[data-theme="dark"] .log-json-toggle {
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #aaa;
-}
-#content[data-theme="dark"] .log-json-toggle:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ddd;
-}
-#content[data-theme="dark"] .log-line {
-  border-bottom-color: rgba(255, 255, 255, 0.04);
-}
-
-/* ---- Browser print / PDF fallback ---- */
-@media print {
-  #toolbar,
-  #tabstrip,
-  #banner,
-  #searchbar {
-    display: none !important;
-  }
-  mark.search-hit,
-  mark.search-current {
-    background: transparent;
-  }
-  .tree-row.search-current {
-    background: transparent;
-    outline: none;
-  }
-  #content {
-    overflow: visible;
-    padding: 0;
-    background: #fff !important;
-    color: #000 !important;
-  }
-  .doc {
-    max-width: none;
-  }
-  /* Drop the code chrome/border in print; line numbers still print if enabled. */
-  .doc .code-actions {
-    display: none !important;
-  }
-  .doc .code-block {
-    border: none !important;
-  }
-  .doc .code-header {
-    background: none !important;
-    border-bottom: none !important;
-    padding-left: 0 !important;
-  }
-  /* Keep log level colors; hide JSON toggle buttons. */
-  .log-json-toggle {
-    display: none !important;
-  }
-}
-
-/* ---- Drag-and-drop affordance (B7) ---- */
-body.drag-over #content {
-  outline: 2px dashed var(--accent);
-  outline-offset: -6px;
-  background: rgba(37, 99, 235, 0.04);
-}
-
-/* ---- Split-screen editor ---- */
-#content.editing {
-  padding: 0;
-  overflow: hidden;
-  display: flex;
-}
-.split-view {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-.split-pane {
-  overflow: auto;
-  height: 100%;
-}
-.split-editor {
-  width: 50%;
-  min-width: 20%;
-  border-right: 1px solid var(--bar-border);
-  display: flex;
-  flex-direction: column;
-}
-/* Textarea shown instantly while CodeMirror loads */
-.split-textarea {
-  flex: 1;
-  width: 100%;
-  border: none;
+  padding: 0 4px;
+  background: var(--btn-bg);
+  color: var(--text);
   outline: none;
-  resize: none;
-  font-family: var(--mono);
-  font-size: 14px;
-  line-height: 1.55;
-  padding: 16px;
-  background: #fff;
-  color: #1a1a1a;
 }
-.split-editor .cm-editor {
+
+.tree-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 0 3px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: background 0.1s, color 0.1s;
+  opacity: 0;
+}
+
+.tree-row:hover .tree-btn {
+  opacity: 1;
+}
+
+.tree-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tree-add-btn {
+  font-size: 11px;
+  color: var(--accent);
+  opacity: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 4px;
+  transition: opacity 0.1s;
+}
+
+.tree-add-btn:hover {
+  background: var(--surface);
+}
+
+.tree-section:hover .tree-add-btn {
+  opacity: 1;
+}
+
+.tree-del-btn {
+  color: #ef4444;
+}
+
+.tree-del-btn:hover {
+  color: #dc2626;
+}
+
+/* ---- Code mirror overrides ---- */
+.cm-editor {
   height: 100%;
-  flex: 1;
-}
-.split-editor .cm-scroller {
-  font-family: var(--mono);
-  font-size: 14px;
-}
-.split-preview {
-  flex: 1;
-  padding: 32px 24px;
-  overflow: auto;
-}
-.split-preview .doc {
-  max-width: var(--max-width);
-  margin: 0 auto;
-  font-size: var(--font-size);
-  line-height: 1.6;
-  content-visibility: auto;
-}
-.split-divider {
-  width: 6px;
-  cursor: col-resize;
-  background: var(--bar-bg);
-  border-left: 1px solid var(--bar-border);
-  border-right: 1px solid var(--bar-border);
-  flex: 0 0 auto;
-  transition: background 0.12s ease;
-}
-.split-divider:hover {
-  background: var(--accent);
-}
-/* Dark theme overrides for split editor */
-body:has(#content[data-theme="dark"]) .split-editor {
-  border-right-color: rgba(255, 255, 255, 0.1);
-}
-body:has(#content[data-theme="dark"]) .split-textarea {
-  background: #1e1e1e;
-  color: #e6e6e6;
-}
-body:has(#content[data-theme="dark"]) .split-divider {
-  background: #2a2a2a;
-  border-color: rgba(255, 255, 255, 0.1);
-}
-body:has(#content[data-theme="dark"]) .split-divider:hover {
-  background: #4a9eff;
 }
 
-/* ---- Tab loading indicator ---- */
-.tab-label.loading {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.tab-label.loading::after {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: pulse 1s infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+.cm-editor.cm-focused {
+  outline: none;
 }
 
-/* ---- Reduced motion (X4) ---- */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-  }
+.cm-scroller {
+  font-family: var(--mono) !important;
+}
+
+/* ---- KaTeX / Mermaid ---- */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.mermaid svg {
+  max-width: 100%;
 }

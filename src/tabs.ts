@@ -4,7 +4,8 @@ import { getRenderer } from "./renderers/registry";
 import { LogView, toLines } from "./renderers/log";
 import { VirtualLogView } from "./logs/virtual-log-view";
 import { StyleSettings, Theme, Format, DataLang, Renderer, Mode } from "./types";
-import type { EditorAPI } from "./editor";
+import type { EditorAPI, EditorLang } from "./editor";
+import type { TreeView } from "./data/tree";
 
 export const STDIN_PATH = "<stdin>";
 
@@ -46,12 +47,25 @@ function effectiveFormat(t: Tab): Format {
   return t.forcedFormat ?? t.format;
 }
 
+function fmtToEditorLang(t: Tab): EditorLang | undefined {
+  const fmt = effectiveFormat(t);
+  if (fmt === "markdown") return "markdown";
+  if (fmt === "data") {
+    const lang = t.forcedLang ?? dataLangOf(t.path);
+    if (lang === "json") return "json";
+    if (lang === "yaml") return "yaml";
+  }
+  return undefined;
+}
+
 export class TabManager {
   private tabs: Tab[] = [];
   private activeIndex = -1;
   private theme: Theme = "light";
   /** The VirtualLogView for the currently active windowed tab, if any. */
   private currentVlog: VirtualLogView | null = null;
+  /** The data TreeView from the editor preview, if any. */
+  private currentDataTree: TreeView | null = null;
   /** The LogView for the currently active rendered (non-windowed) log tab, if
    *  any — owned here (mirroring currentVlog) so streamLogUpdate can apply
    *  incremental updates without a module-global "last render wins" singleton. */
@@ -217,18 +231,46 @@ export class TabManager {
     return this.repaint(true);
   }
 
+  /** Signal a file-changed-on-disk conflict during edit mode. */
+  private externalEditConflict(_t: Tab, diskContent: string): void {
+    const conflictBar = this.content.querySelector(".edit-conflict") as HTMLElement | null;
+    if (conflictBar) {
+      conflictBar.hidden = false;
+      conflictBar.dataset.diskContent = diskContent;
+    }
+  }
+
   /** Apply fresh content from a disk change, if that document is open. */
   updateContent(path: string, content: string): void {
     const i = this.tabs.findIndex((t) => t.path === path);
     if (i < 0) return;
     // Windowed logs never hold full content; growth comes via the log-grew event.
     if (this.tabs[i].windowed) return;
-    // Don't overwrite the editor buffer when the user has unsaved changes.
-    // The user's edits take priority over disk changes in edit mode.
-    if (i === this.activeIndex && this.currentEditor && this.tabs[i].editDirty) return;
+    // In edit mode with unsaved changes: show conflict rather than overwriting.
+    if (i === this.activeIndex && this.currentEditor && this.tabs[i].editDirty) {
+      this.externalEditConflict(this.tabs[i], content);
+      return;
+    }
     this.tabs[i].content = content;
     if (i !== this.activeIndex) return;
     const t = this.tabs[i];
+
+    // Edit mode with no unsaved changes: update editor buffer + preview in place
+    // without destroying the editor (full repaint would destroyEditor).
+    if (t.mode === "edit" && this.currentEditor) {
+      this.currentEditor.setValue(content);
+      const fmt = effectiveFormat(t);
+      if (fmt === "markdown") {
+        import("./render").then(({ renderMarkdown }) => {
+          renderMarkdown(content).then((html) => {
+            const article = this.content.querySelector(".split-preview .doc") as HTMLElement | null;
+            if (article) article.innerHTML = html;
+          });
+        });
+      }
+      return;
+    }
+
     // Use the SAME line-splitting as the renderer (toLines) so the incremental
     // prefix check matches — a raw split keeps a trailing "" that yields a
     // phantom row and breaks the prefix every update.
@@ -316,21 +358,33 @@ export class TabManager {
     return !!this.active()?.editDirty || !!this.currentEditor;
   }
 
-  /** Enter or exit split-screen edit mode. Only markdown files can be edited. */
+  /** Enter or exit split-screen edit mode. Supported: markdown and data (json/yaml/toml/ini). */
   toggleEdit(): void | Promise<void> {
     const t = this.active();
     if (!t) return;
 
-    // Exiting edit mode
+    // Exiting edit mode: auto-save before leaving
     if (t.mode === "edit" || this.currentEditor) {
-      this.destroyEditor();
-      t.mode = "rendered";
-      this.hooks.onChange();
-      return this.repaint(false);
+      const doExit = () => {
+        this.destroyEditor();
+        t.mode = "rendered";
+        this.hooks.onChange();
+        return this.repaint(false);
+      };
+      if (t.editDirty && this.currentEditor) {
+        t.content = this.currentEditor.getValue();
+        t.editDirty = false;
+        this.renderTabbar();
+        this.hooks.onChange();
+        const saved = this.hooks.onSave?.(t.path, t.content);
+        return saved ? saved.then(doExit) : doExit();
+      }
+      return doExit();
     }
 
-    // Only markdown supports the editor
-    if (effectiveFormat(t) !== "markdown") return;
+    // Only markdown and data files support the editor
+    const fmt = effectiveFormat(t);
+    if (fmt !== "markdown" && fmt !== "data") return;
 
     t.mode = "edit";
     t.editDirty = false;
@@ -354,6 +408,8 @@ export class TabManager {
   private destroyEditor(): void {
     this.currentEditor?.destroy();
     this.currentEditor = null;
+    this.currentDataTree?.destroy();
+    this.currentDataTree = null;
     if (this.editPreviewTimer !== null) {
       clearTimeout(this.editPreviewTimer);
       this.editPreviewTimer = null;
@@ -403,7 +459,10 @@ export class TabManager {
   applyStyle(s: StyleSettings): void {
     this.theme = s.theme;
     const el = this.content;
-    el.dataset.theme = s.theme;
+    const resolved = s.theme === "system"
+      ? (typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : s.theme;
+    el.dataset.theme = resolved;
     el.dataset.font = s.fontFamily;
     el.style.setProperty("--font-size", `${s.fontSizePx}px`);
     el.style.setProperty("--max-width", `${s.maxWidthCh}ch`);
@@ -566,6 +625,41 @@ export class TabManager {
       document.addEventListener("mousemove", onDivMove);
       document.addEventListener("mouseup", onDivUp);
 
+      // ---- Sync scrolling (toggled on by default) ----
+      let syncScrollEnabled = true;
+      let syncing = false; // guard against mutual recursion
+
+      const syncScroll = (from: HTMLElement, to: HTMLElement) => {
+        if (!syncScrollEnabled || syncing) return;
+        syncing = true;
+        const pct = from.scrollTop / (from.scrollHeight - from.clientHeight || 1);
+        to.scrollTop = pct * (to.scrollHeight - to.clientHeight || 1);
+        syncing = false;
+      };
+      // Both panes sync each other via the scroll event on prevPane + the
+      // editor's scroll event registered later once CodeMirror is ready.
+
+      const syncBtn = document.createElement("button");
+      syncBtn.className = "sync-toggle toggled";
+      syncBtn.title = "Toggle sync scrolling";
+      syncBtn.textContent = "🔗";
+      syncBtn.addEventListener("click", () => {
+        syncScrollEnabled = !syncScrollEnabled;
+        syncBtn.classList.toggle("toggled", syncScrollEnabled);
+        syncBtn.textContent = syncScrollEnabled ? "🔗" : "🔗";
+        syncBtn.title = syncScrollEnabled ? "Sync scrolling (on)" : "Sync scrolling (off)";
+      });
+
+      // ---- Conflict indicator bar ----
+      const conflictBar = document.createElement("div");
+      conflictBar.className = "edit-conflict";
+      conflictBar.hidden = true;
+      conflictBar.innerHTML = `
+        <span>⚠ File changed on disk</span>
+        <button class="conflict-accept">Overwrite with mine</button>
+        <button class="conflict-reload">Reload from disk</button>
+      `;
+
       // ---- Show a plain textarea instantly, then upgrade to CodeMirror ----
       const textarea = document.createElement("textarea");
       textarea.className = "split-textarea";
@@ -573,47 +667,183 @@ export class TabManager {
       edPane.appendChild(textarea);
 
       const seq = this.repaintSeq;
-
-      // ---- Helper: wrap rendered HTML in a `.doc` container (same as markdownRenderer) ----
-      const setPreview = (html: string) => {
-        const article = document.createElement("article");
-        article.className = "doc";
-        article.innerHTML = html;
-        prevPane.replaceChildren(article);
-      };
-
-      // ---- Initial preview: full render with math + mermaid ----
-      (async () => {
-        try {
-          const { renderMarkdown, renderMath, hasMath, runPostRender } = await import("./render");
-          if (seq !== this.repaintSeq) return;
-          setPreview(await renderMarkdown(t.content));
-          if (hasMath(t.content)) {
-            try {
-              const html = await renderMath(t.content);
-              if (this.active() === t && seq === this.repaintSeq) setPreview(html);
-            } catch { /* keep the base render */ }
-          }
-          await runPostRender(prevPane, this.theme);
-        } catch { /* preview failure is non-fatal */ }
-      })();
-
-      // ---- Live preview (debounced, base render only — no math/mermaid) ----
+      const fmt = effectiveFormat(t);
       let curText = t.content;
-      const schedulePreview = () => {
-        if (this.editPreviewTimer !== null) clearTimeout(this.editPreviewTimer);
-        this.editPreviewTimer = setTimeout(async () => {
-          this.editPreviewTimer = null;
-          if (this.active() !== t) return;
-          if (seq !== this.repaintSeq) return;
-          const { renderMarkdown } = await import("./render");
-          if (seq !== this.repaintSeq) return;
-          try {
-            setPreview(await renderMarkdown(curText));
-          } catch { /* preview failure is non-fatal */ }
-        }, 100);
-      };
+      let schedulePreview: () => void;
 
+      if (fmt === "markdown") {
+        // ---- Helper: wrap rendered HTML in a `.doc` container ----
+        const setPreview = (html: string) => {
+          const article = document.createElement("article");
+          article.className = "doc";
+          article.innerHTML = html;
+          prevPane.replaceChildren(article);
+        };
+
+        // ---- Initial preview: full render with math + mermaid ----
+        (async () => {
+          try {
+            const { renderMarkdown, renderMath, hasMath, runPostRender } = await import("./render");
+            if (seq !== this.repaintSeq) return;
+            setPreview(await renderMarkdown(t.content));
+            if (hasMath(t.content)) {
+              try {
+                const html = await renderMath(t.content);
+                if (this.active() === t && seq === this.repaintSeq) setPreview(html);
+              } catch { /* keep the base render */ }
+            }
+            await runPostRender(prevPane, this.theme);
+          } catch { /* preview failure is non-fatal */ }
+        })();
+
+        // ---- Live preview (debounced, base render only — no math/mermaid) ----
+        schedulePreview = () => {
+          if (this.editPreviewTimer !== null) clearTimeout(this.editPreviewTimer);
+          this.editPreviewTimer = setTimeout(async () => {
+            this.editPreviewTimer = null;
+            if (this.active() !== t) return;
+            if (seq !== this.repaintSeq) return;
+            const { renderMarkdown } = await import("./render");
+            if (seq !== this.repaintSeq) return;
+            try {
+              setPreview(await renderMarkdown(curText));
+            } catch { /* preview failure is non-fatal */ }
+          }, 100);
+        };
+
+        schedulePreview();
+      } else if (fmt === "data") {
+        // ---- Data preview: parse + render tree (editable) ----
+        let currentTreeView: TreeView | null = null;
+        let suppressPreview = false;
+
+        schedulePreview = () => {
+          if (suppressPreview) return;
+          if (this.editPreviewTimer !== null) clearTimeout(this.editPreviewTimer);
+          this.editPreviewTimer = setTimeout(async () => {
+            this.editPreviewTimer = null;
+            if (this.active() !== t) return;
+            if (seq !== this.repaintSeq) return;
+            try {
+              const { parseData, serializeData } = await import("./data/parse");
+              const { renderTree } = await import("./data/tree");
+              if (seq !== this.repaintSeq) return;
+
+              if (currentTreeView) {
+                currentTreeView.destroy();
+                currentTreeView = null;
+                this.currentDataTree = null;
+              }
+              prevPane.replaceChildren();
+
+              if (!curText.trim()) {
+                prevPane.textContent = "(empty)";
+                return;
+              }
+
+              const lang = t.forcedLang ?? dataLangOf(t.path);
+              if (!lang) {
+                prevPane.textContent = "Could not detect a data format";
+                return;
+              }
+
+              const result = parseData(curText, lang);
+              if (!result.ok || !result.value) {
+                const errDiv = document.createElement("div");
+                errDiv.className = "data-parse-error";
+                errDiv.textContent = `Parse error: ${result.error?.message ?? "unknown"}`;
+                prevPane.appendChild(errDiv);
+                return;
+              }
+
+              currentTreeView = renderTree(result.value, prevPane, {
+                defaultDepth: 2,
+                editable: true,
+                onEdit: (val) => {
+                  try {
+                    const serialized = serializeData(val, lang);
+                    curText = serialized;
+                    suppressPreview = true;
+                    if (this.currentEditor) {
+                      this.currentEditor.setValue(serialized);
+                    } else {
+                      textarea.value = serialized;
+                    }
+                    suppressPreview = false;
+                    if (serialized !== t.content) {
+                      t.editDirty = true;
+                      this.renderTabbar();
+                      this.hooks.onChange();
+                    }
+                  } catch {
+                    suppressPreview = false;
+                  }
+                },
+              });
+              this.currentDataTree = currentTreeView;
+            } catch (err) {
+              prevPane.replaceChildren();
+              const errDiv = document.createElement("div");
+              errDiv.className = "data-parse-error";
+              errDiv.textContent = `Error: ${err instanceof Error ? err.message : String(err)}`;
+              prevPane.appendChild(errDiv);
+            }
+          }, 100);
+        };
+
+        schedulePreview();
+      }
+
+      // ---- Sync button in preview pane toolbar ----
+      const previewToolbar = document.createElement("div");
+      previewToolbar.className = "preview-toolbar";
+      previewToolbar.appendChild(syncBtn);
+      prevPane.prepend(previewToolbar);
+
+      // ---- Scroll sync between panes ----
+      // Preview scroll → editor. Editor scroll → preview is registered later
+      // once CodeMirror is ready (or via textarea scroll before upgrade).
+      prevPane.addEventListener("scroll", () => {
+        if (this.currentEditor) {
+          syncScroll(prevPane, this.currentEditor.getScrollDOM());
+        } else {
+          syncScroll(prevPane, textarea);
+        }
+      });
+      textarea.addEventListener("scroll", () => {
+        syncScroll(textarea, prevPane);
+      });
+
+      // ---- Append conflict bar below split ----
+      split.after(conflictBar);
+
+      conflictBar.querySelector(".conflict-accept")?.addEventListener("click", () => {
+        if (conflictBar.dataset.diskContent) {
+          conflictBar.hidden = true;
+          delete conflictBar.dataset.diskContent;
+        }
+      });
+
+      conflictBar.querySelector(".conflict-reload")?.addEventListener("click", () => {
+        const diskContent = conflictBar.dataset.diskContent;
+        if (diskContent) {
+          t.content = diskContent;
+          curText = diskContent;
+          t.editDirty = false;
+          conflictBar.hidden = true;
+          delete conflictBar.dataset.diskContent;
+          schedulePreview();
+          if (this.currentEditor) {
+            this.currentEditor.setValue(diskContent);
+          } else {
+            textarea.value = diskContent;
+          }
+          this.renderTabbar();
+          this.hooks.onChange();
+        }
+      });
+
+      // ---- Textarea input (same for all formats) ----
       textarea.addEventListener("input", () => {
         curText = textarea.value;
         if (curText !== t.content) {
@@ -630,7 +860,7 @@ export class TabManager {
           const ed = await import("./editor");
           if (seq !== this.repaintSeq) { edPane.textContent = ""; return; }
           edPane.textContent = ""; // remove textarea
-          this.currentEditor = await ed.createEditor(edPane, t.content, this.theme);
+          this.currentEditor = await ed.createEditor(edPane, t.content, this.theme, fmtToEditorLang(t));
 
           this.currentEditor.onUpdate((text) => {
             if (text !== (this.active()?.content ?? t.content)) {
@@ -640,6 +870,15 @@ export class TabManager {
             }
             curText = text;
             schedulePreview();
+          });
+
+          // Sync scroll from editor → preview
+          this.currentEditor.onScroll((scrollTop) => {
+            if (!syncScrollEnabled || syncing) return;
+            syncing = true;
+            const pct = scrollTop / (this.currentEditor!.getScrollHeight() - this.currentEditor!.getClientHeight() || 1);
+            prevPane.scrollTop = pct * (prevPane.scrollHeight - prevPane.clientHeight || 1);
+            syncing = false;
           });
 
           // When the editor is destroyed later, clean up drag listeners

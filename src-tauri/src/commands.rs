@@ -1,6 +1,7 @@
 use crate::error::{AppError, ErrorKind};
 use memmap2::Mmap;
 use serde::Serialize;
+use std::io::Read;
 use std::path::Path;
 
 #[derive(Debug, Serialize, Clone)]
@@ -160,6 +161,60 @@ pub fn resolve_sibling(base: String, rel: String) -> Result<String, AppError> {
         ));
     }
     Ok(target.to_string_lossy().to_string())
+}
+
+/// Probe whether a file is text by reading its first `max_bytes` and checking
+/// for null bytes. Files with known viewable extensions skip the probe.
+/// Returns `true` if the file is likely text or has a viewable extension.
+#[tauri::command]
+pub fn probe_is_text(path: String, max_bytes: u64) -> Result<bool, AppError> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(AppError::new(ErrorKind::NotFound, format!("File not found: {path}")));
+    }
+    // Known viewable extension → no probe needed
+    if is_viewable(p) || is_markdown(p) {
+        return Ok(true);
+    }
+    // Read first max_bytes and check for null bytes (binary indicator)
+    let file = std::fs::File::open(p).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    let mut buf = vec![0u8; max_bytes as usize];
+    let n = file.take(max_bytes).read(&mut buf).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    Ok(!buf[..n].contains(&0u8))
+}
+
+/// Recursively collect viewable file paths under `path` (file or directory).
+/// If `path` is a file, returns it if viewable; if a directory, walks it
+/// recursively (up to a reasonable depth).
+#[tauri::command]
+pub fn list_viewable_recursive(path: String) -> Result<Vec<String>, AppError> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(AppError::new(ErrorKind::NotFound, format!("Path not found: {path}")));
+    }
+    let mut results = Vec::new();
+    walk_viewable(p, &mut results, 0)?;
+    results.sort_by(|a, b| natural_cmp(file_basename(a), file_basename(b)));
+    Ok(results)
+}
+
+fn walk_viewable(p: &Path, results: &mut Vec<String>, depth: u32) -> Result<(), AppError> {
+    if depth > 32 {
+        return Ok(()); // safety limit
+    }
+    if p.is_file() {
+        if is_viewable(p) || is_markdown(p) {
+            results.push(p.to_string_lossy().to_string());
+        }
+        return Ok(());
+    }
+    if p.is_dir() {
+        for entry in std::fs::read_dir(p).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))? {
+            let entry = entry.map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?;
+            walk_viewable(&entry.path(), results, depth + 1)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

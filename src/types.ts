@@ -10,7 +10,7 @@ export interface AppError {
   message: string;
 }
 
-export type Theme = "light" | "sepia" | "dark";
+export type Theme = "system" | "light" | "sepia" | "dark";
 export type FontFamily = "sans" | "serif" | "mono";
 
 export interface StyleSettings {
@@ -23,7 +23,7 @@ export interface StyleSettings {
 export const DEFAULT_SETTINGS: StyleSettings = {
   fontFamily: "sans",
   fontSizePx: 17,
-  theme: "light",
+  theme: "system",
   maxWidthCh: 74,
 };
 

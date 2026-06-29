@@ -2,7 +2,7 @@ import { StyleSettings, DEFAULT_SETTINGS } from "./types";
 
 const KEY = "mdv.settings";
 
-const THEMES = new Set<StyleSettings["theme"]>(["light", "sepia", "dark"]);
+const THEMES = new Set<StyleSettings["theme"]>(["system", "light", "sepia", "dark"]);
 const FONTS = new Set<StyleSettings["fontFamily"]>(["sans", "serif", "mono"]);
 
 /** Coerce one parsed (untrusted) object into a valid StyleSettings, falling back

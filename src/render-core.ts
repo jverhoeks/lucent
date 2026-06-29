@@ -6,6 +6,7 @@ import deflist from "markdown-it-deflist";
 import anchor from "markdown-it-anchor";
 import container from "markdown-it-container";
 import { loadHighlight } from "./highlight-loader";
+import { iconMarkup } from "./icons";
 
 /** Parse a fence info string into a language and an optional filename label.
  *  Supported: `lang`, `lang title="name"`, `lang title=name`, `lang:name`. */
@@ -116,8 +117,8 @@ function createRenderer(hljs: HLJS, katexPlugin?: unknown): MarkdownIt {
     const actions =
       `<span class="code-actions">` +
       `<button class="code-lines" type="button" title="Toggle line numbers" aria-label="Toggle line numbers" aria-pressed="false">123</button>` +
-      `<button class="code-copy" type="button" title="Copy source" aria-label="Copy source">📋</button>` +
-      `<button class="code-save" type="button" title="Save source to file" aria-label="Save source">💾</button>` +
+      `<button class="code-copy" type="button" title="Copy source" aria-label="Copy source">${iconMarkup("ic-copy")}</button>` +
+      `<button class="code-save" type="button" title="Save source to file" aria-label="Save source">${iconMarkup("ic-save")}</button>` +
       `</span>`;
     const header = `<div class="code-header">${labelHtml}${actions}</div>`;
 

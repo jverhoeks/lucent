@@ -12,6 +12,7 @@ import type {
   FileRemovedCallback,
   DropCallback,
   DropEvent,
+  OpenFilesCallback,
 } from "./types";
 
 export const tauriAdapter: PlatformAdapter = {
@@ -101,6 +102,12 @@ export const tauriAdapter: PlatformAdapter = {
         type: p.type as DropEvent["type"],
         paths: (p as any).paths ?? [],
       });
+    });
+  },
+
+  async onOpenFiles(cb: OpenFilesCallback): Promise<void> {
+    await listen<string[]>("open-files", (e) => {
+      cb(e.payload);
     });
   },
 

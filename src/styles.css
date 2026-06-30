@@ -520,7 +520,10 @@ body {
   margin: 0 auto;
   font-size: var(--font-size);
   line-height: 1.6;
-  content-visibility: auto;
+  /* NOTE: `content-visibility: auto` was removed here. In WKWebView it skips
+     repainting off-screen `.doc` subtrees on a color-only change, so switching
+     theme (light/sepia/dark) left rendered markdown stale until a scroll/resize
+     forced a repaint — the theme appeared not to apply to markdown at all. */
 }
 
 .doc h1,

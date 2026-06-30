@@ -431,7 +431,7 @@ export function initApp(adapter: PlatformAdapter): void {
   btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRawText(), adapter));
   btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRawText(), adapter));
   btn("btn-copy-md").addEventListener("click", () => copyAsMarkdown(manager.getActiveRawText()));
-  btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveDisplayedHtml()));
+  btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveDisplayedHtml({ forCopy: true })));
 
   const selFont = document.getElementById("sel-font") as HTMLSelectElement;
   const inpSize = document.getElementById("inp-size") as HTMLInputElement;

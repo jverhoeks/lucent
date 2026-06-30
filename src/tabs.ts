@@ -111,7 +111,7 @@ export class TabManager {
    * transient search-highlight <mark> wrappers stripped so copy-as-rich-text
    * never leaks highlight markup (or copies stale state) into the clipboard.
    */
-  getActiveDisplayedHtml(): string {
+  getActiveDisplayedHtml(opts?: { forCopy?: boolean }): string {
     if (!this.active()) return "";
     const clone = this.content.cloneNode(true) as HTMLElement;
     // Strip presentational wrappers that leak internal UI structure:
@@ -124,6 +124,28 @@ export class TabManager {
       m.replaceWith(document.createTextNode(m.textContent ?? ""));
     });
     clone.querySelectorAll(".search-current").forEach((e) => e.classList.remove("search-current"));
+    // Copy-as-rich-text cleanups (export keeps the full structure):
+    if (opts?.forCopy) {
+      // Unwrap heading anchor links so titles paste as clean headings.
+      // markdown-it-anchor's headerLink() wraps each heading in an
+      // <a href="#slug">; that bare fragment is a dead link in Confluence /
+      // Word / Docs (which strip it to plain text anyway). Unwrap (not
+      // textContent) to preserve inline formatting inside the heading.
+      clone.querySelectorAll("a.header-anchor").forEach((a) => a.replaceWith(...a.childNodes));
+      // Flatten the per-line code-block <table> (line numbers + highlight
+      // cells) into a plain <pre><code> from the original source. Pasting the
+      // table into Confluence/Word otherwise loses the line breaks. data-src
+      // holds the raw code with newlines; textContent escapes it safely.
+      clone.querySelectorAll(".code-block").forEach((el) => {
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        const lang = el.getAttribute("data-lang");
+        if (lang) code.className = `language-${lang}`;
+        code.textContent = el.getAttribute("data-src") ?? el.textContent ?? "";
+        pre.appendChild(code);
+        el.replaceWith(pre);
+      });
+    }
     return clone.innerHTML;
   }
   getActiveMode(): Mode | undefined {

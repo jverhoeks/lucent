@@ -43,6 +43,22 @@
   }
 }
 
+/* In-app theme selector (light / sepia / dark) — restored: dropped in the
+   web/app split (f0f9c31), which left the selector inert. */
+#content[data-theme="light"] {
+  background: #ffffff;
+  color: #1a1a1a;
+}
+#content[data-theme="sepia"] {
+  background: #f4ecd8;
+  color: #433422;
+}
+#content[data-theme="dark"] {
+  background: #1e1e1e;
+  color: #e6e6e6;
+}
+
+
 * {
   box-sizing: border-box;
 }
@@ -275,12 +291,13 @@ body {
   gap: 12px;
   min-width: 200px;
   padding: 14px;
-  background: var(--bar-bg);
+  /* Solid surface, not --bar-bg + blur: the popover floats over scrolling
+     content, where WKWebView's backdrop-filter compositing can drop the
+     panel's own background and render it see-through. */
+  background: var(--surface);
   border: 1px solid var(--bar-border);
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   animation: popIn 0.14s ease-out;
 }
 
@@ -482,6 +499,289 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+
+/* ---- Rendered Markdown document (.doc) ---- */
+/* Restored: these generic .doc rules were dropped in the web/app split
+   (f0f9c31); .split-preview .doc covers edit mode but normal rendered
+   view needs these too. */
+#content[data-font="sans"] .doc {
+  font-family: var(--sans);
+}
+#content[data-font="serif"] .doc {
+  font-family: var(--serif);
+}
+#content[data-font="mono"] .doc {
+  font-family: var(--mono);
+}
+
+/* ---- Rendered document ---- */
+.doc {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  font-size: var(--font-size);
+  line-height: 1.6;
+  content-visibility: auto;
+}
+
+.doc h1,
+.doc h2,
+.doc h3 {
+  line-height: 1.25;
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+}
+.doc h1 {
+  font-size: 1.9em;
+}
+.doc h2 {
+  font-size: 1.5em;
+}
+.doc p,
+.doc ul,
+.doc ol,
+.doc blockquote,
+.doc table,
+.doc pre {
+  margin: 0 0 1em;
+}
+
+.doc a {
+  color: var(--accent);
+}
+#content[data-theme="dark"] .doc a {
+  color: #6ea8fe;
+}
+
+.doc blockquote {
+  margin-left: 0;
+  padding: 0.2em 1em;
+  border-left: 4px solid rgba(127, 127, 127, 0.4);
+  opacity: 0.9;
+}
+
+.doc code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: rgba(127, 127, 127, 0.15);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+}
+
+.doc .code-block {
+  margin: 0 0 1em;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.doc .code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  font-size: 12px;
+  background: rgba(127, 127, 127, 0.1);
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+}
+.doc .code-label {
+  font-family: var(--mono);
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#content[data-theme="dark"] .doc .code-label {
+  color: #aaa;
+}
+#content[data-theme="dark"] .doc .code-block {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+#content[data-theme="dark"] .doc .code-header {
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+#content[data-theme="dark"] .doc .code-block.line-numbers td.ln {
+  color: #6e7681;
+  background: #161b22;
+  border-right-color: rgba(255, 255, 255, 0.12);
+}
+#content[data-theme="dark"] .doc .code-block.line-numbers td.ln:hover {
+  color: #c9d1d9;
+}
+.doc .code-actions {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.doc .code-lines,
+.doc .code-copy,
+.doc .code-save {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 5px;
+}
+.doc .code-lines {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #777;
+  letter-spacing: 1px;
+}
+.doc .code-lines.toggled {
+  background: var(--accent);
+  color: #fff;
+}
+.doc .code-copy:hover,
+.doc .code-save:hover,
+.doc .code-lines:hover:not(.toggled) {
+  background: rgba(127, 127, 127, 0.25);
+}
+
+.doc pre.hljs {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.doc .ctab {
+  border-collapse: collapse;
+  width: 100%; /* so a highlighted line spans the full block width */
+}
+.doc .ctab td {
+  padding: 0;
+  vertical-align: top;
+  border: none;
+  line-height: 1.55;
+}
+/* Code line: one row each → perfect alignment with its number. */
+.doc td.cc {
+  white-space: pre;
+  padding: 0 16px;
+}
+/* Line-number column: hidden unless this block has line numbers on. Sticky so
+   it stays put while the code scrolls horizontally. */
+.doc td.ln {
+  display: none;
+}
+.doc .code-block.line-numbers td.ln {
+  display: table-cell;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 0 10px;
+  text-align: right;
+  color: #9aa0a6;
+  background: #f3f3f3;
+  border-right: 1px solid rgba(127, 127, 127, 0.25);
+  user-select: none;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.doc .code-block.line-numbers td.ln:hover {
+  color: #444;
+}
+/* Highlighted (clicked) line. */
+.doc tr.hl td.cc {
+  background: rgba(250, 204, 21, 0.22);
+}
+.doc .code-block.line-numbers tr.hl td.ln {
+  background: rgba(250, 204, 21, 0.4);
+  color: #444;
+}
+
+.doc table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.doc th,
+.doc td {
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.doc ul.contains-task-list {
+  list-style: none;
+  padding-left: 1em;
+}
+
+/* ---- Rich rendering (Phase 2) ---- */
+.doc .header-anchor {
+  text-decoration: none;
+  color: inherit;
+}
+.doc .task-list-item {
+  list-style: none;
+}
+.doc .task-list-item input[type="checkbox"] {
+  margin: 0 0.5em 0 -1.2em;
+}
+.doc .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
+.doc pre.mermaid {
+  background: none;
+  padding: 0;
+  text-align: center;
+}
+.doc pre.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.doc .footnotes {
+  margin-top: 2em;
+  padding-top: 1em;
+  border-top: 1px solid rgba(127, 127, 127, 0.3);
+  font-size: 0.9em;
+}
+.doc .note,
+.doc .warning,
+.doc .tip {
+  border-left: 4px solid;
+  border-radius: 6px;
+  padding: 0.6em 1em;
+  margin: 0 0 1em;
+}
+.doc .note {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+.doc .warning {
+  border-color: #d97706;
+  background: rgba(217, 119, 6, 0.1);
+}
+.doc .tip {
+  border-color: #16a34a;
+  background: rgba(22, 163, 74, 0.1);
+}
+
+body.exporting .doc {
+  max-width: none; /* fill the page width within the margins */
+  margin: 0;
+}
+/* Native PDF capture: drop the code chrome/border but keep code + (toggled)
+   line numbers. */
+body.exporting .doc .code-actions {
+  display: none !important;
+}
+body.exporting .doc .code-block {
+  border: none !important;
+}
+body.exporting .doc .code-header {
+  background: none !important;
+  border-bottom: none !important;
+  padding-left: 0 !important;
+}
+
+/* ---- Search bar ---- */
 
 /* ---- Preview pane ---- */
 .preview-pane {
@@ -753,4 +1053,144 @@ body.drag-over::after {
 
 .mermaid svg {
   max-width: 100%;
+}
+
+/* ---- Search highlights (restored: dropped in f0f9c31) ---- */
+/* ---- Search highlights ---- */
+mark.search-hit { background: #fde68a; color: inherit; border-radius: 2px; }
+mark.search-current { background: #f59e0b; }
+#content[data-theme="dark"] mark.search-hit { background: #7c5b16; color: #fff; }
+#content[data-theme="dark"] mark.search-current { background: #b8860b; }
+
+/* Log renderer + virtual log view (restored: dropped in f0f9c31; the code in
+   renderers/log.ts + logs/virtual-log-view.ts emits these classes, and
+   .vlog-row's height is required for virtual-scroll math). */
+/* ---- Log renderer ---- */
+.log {
+  font-family: var(--mono);
+  font-size: var(--font-size);
+  line-height: 1.55;
+  text-align: left;
+  width: 100%;
+}
+
+.log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 1px 4px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.06);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-gutter {
+  flex: 0 0 3.5ch;
+  text-align: right;
+  color: #bbb;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-msg {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Level colors — light theme */
+.lvl-error .log-msg { color: #d32f2f; font-weight: 600; }
+.lvl-warn  .log-msg { color: #e67700; }
+.lvl-info  .log-msg { color: inherit; }
+.lvl-debug .log-msg { color: #888; }
+.lvl-none  .log-msg { color: inherit; }
+
+/* JSON toggle button */
+.log-json-toggle {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 11px;
+  font-family: var(--mono);
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: #777;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.log-json-toggle:hover {
+  background: rgba(127, 127, 127, 0.12);
+  color: #444;
+}
+.log-json-toggle.open {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Expanded JSON tree panel */
+.log-json {
+  padding: 4px 4px 4px 3.5ch;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.1);
+}
+
+/* ---- Virtual Log View ---- */
+
+/* Scroll container — caller sets a fixed height */
+.vlog {
+  position: relative;
+  overflow: auto;
+  height: 100%;
+}
+
+/* Spacer that gives the scrollbar its full range */
+.vlog-sizer {
+  position: relative;
+}
+
+/* Absolutely-positioned window holding the current rendered rows */
+.vlog-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+/*
+ * Each virtual row has a fixed height matching ROW_H in virtual-log-view.ts.
+ * This overrides .log-line's white-space:pre-wrap with higher specificity so
+ * the fixed-height contract holds. When .wrap is toggled the override is lifted.
+ */
+.vlog-window .vlog-row {
+  height: 20px;
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* Wrap mode: best-effort scroll precision (documented caveat — rows vary in height) */
+.vlog-window.wrap .vlog-row {
+  height: auto;
+  white-space: pre-wrap;
+  overflow: visible;
+}
+
+/* Dark theme overrides */
+#content[data-theme="dark"] .log-gutter {
+  color: #555;
+}
+#content[data-theme="dark"] .lvl-error .log-msg { color: #ff6b6b; }
+#content[data-theme="dark"] .lvl-warn  .log-msg { color: #ffa94d; }
+#content[data-theme="dark"] .lvl-debug .log-msg { color: #999; }
+#content[data-theme="dark"] .log-json-toggle {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #aaa;
+}
+#content[data-theme="dark"] .log-json-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ddd;
+}
+#content[data-theme="dark"] .log-line {
+  border-bottom-color: rgba(255, 255, 255, 0.04);
 }

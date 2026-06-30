@@ -3,6 +3,7 @@ import { TabManager } from "./tabs";
 import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
+import { copyMermaidSvg, copyMermaidPng } from "./mermaid-export";
 import { exportHtml, exportPdf } from "./export";
 import { AppError, StyleSettings, Format, DataLang } from "./types";
 import { SearchController } from "./search/controller";
@@ -471,6 +472,24 @@ export function initApp(adapter: PlatformAdapter): void {
         const prev = copyBtn.textContent;
         copyBtn.textContent = "✓";
         setTimeout(() => (copyBtn.textContent = prev), 1200);
+      }
+      return;
+    }
+
+    const mermaidBtn = target.closest<HTMLElement>(".mermaid-copy");
+    if (mermaidBtn) {
+      const svg = mermaidBtn.closest(".mermaid")?.querySelector("svg");
+      const label = mermaidBtn.querySelector(".mermaid-copy-label");
+      if (svg && label) {
+        const prev = label.textContent;
+        try {
+          if (mermaidBtn.dataset.kind === "png") await copyMermaidPng(svg as SVGSVGElement);
+          else await copyMermaidSvg(svg as SVGSVGElement);
+          label.textContent = "✓";
+        } catch {
+          label.textContent = "✗";
+        }
+        setTimeout(() => (label.textContent = prev), 1200);
       }
       return;
     }

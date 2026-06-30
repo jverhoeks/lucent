@@ -1,6 +1,7 @@
 import hljsLight from "highlight.js/styles/github.css?inline";
 import hljsDark from "highlight.js/styles/github-dark.css?inline";
 import type { Theme } from "./types";
+import { iconMarkup } from "./icons";
 
 // KaTeX fonts add ~2MB to the bundle when imported from node_modules.
 // Load them from CDN on demand instead.
@@ -137,6 +138,24 @@ function resolveTheme(theme: Theme): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+/**
+ * Add a hover "Copy SVG / Copy PNG" toolbar to a rendered mermaid block. Only
+ * blocks that actually produced an <svg> get a toolbar (a parse error leaves the
+ * mermaid-annotated source instead). Idempotent — re-rendering won't stack bars.
+ * Click handling lives in main.ts's `#content` delegation (`.mermaid-copy`).
+ */
+function decorateMermaid(node: HTMLElement): void {
+  if (!node.querySelector("svg") || node.querySelector(".mermaid-actions")) return;
+  const bar = document.createElement("div");
+  bar.className = "mermaid-actions";
+  bar.innerHTML =
+    `<button class="mermaid-copy" type="button" data-kind="svg" title="Copy as SVG" aria-label="Copy as SVG">` +
+    `${iconMarkup("ic-copy")}<span class="mermaid-copy-label">SVG</span></button>` +
+    `<button class="mermaid-copy" type="button" data-kind="png" title="Copy as PNG" aria-label="Copy as PNG">` +
+    `${iconMarkup("ic-image")}<span class="mermaid-copy-label">PNG</span></button>`;
+  node.appendChild(bar);
+}
+
 export async function runPostRender(container: HTMLElement, theme: Theme): Promise<void> {
   const resolved = resolveTheme(theme);
   const nodes = Array.from(container.querySelectorAll<HTMLElement>("pre.mermaid"));
@@ -149,10 +168,17 @@ export async function runPostRender(container: HTMLElement, theme: Theme): Promi
         startOnLoad: false,
         securityLevel: "strict",
         theme: resolved === "dark" ? "dark" : "default",
+        // Render labels as SVG <text>, not <foreignObject> XHTML. foreignObject
+        // both renders blank when rasterized AND taints the canvas (blocking
+        // toBlob), so PNG export needs pure-SVG labels. Must be TOP-LEVEL — the
+        // `flowchart.htmlLabels` key alone leaves edge labels as foreignObject.
+        htmlLabels: false,
+        flowchart: { htmlLabels: false },
       });
       mermaidConfiguredTheme = resolved;
     }
     await mermaid.run({ nodes });
+    for (const n of nodes) decorateMermaid(n);
   } catch {
     /* mermaid annotates failing blocks inline; also swallows a failed chunk load */
   } finally {

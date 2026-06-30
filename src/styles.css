@@ -1194,3 +1194,62 @@ mark.search-current { background: #f59e0b; }
 #content[data-theme="dark"] .log-line {
   border-bottom-color: rgba(255, 255, 255, 0.04);
 }
+
+/* Rendered mermaid block: anchor the hover copy toolbar to its corner. */
+pre.mermaid {
+  position: relative;
+}
+
+.mermaid-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+pre.mermaid:hover .mermaid-actions,
+.mermaid-actions:focus-within {
+  opacity: 1;
+}
+
+.mermaid-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  box-shadow: var(--btn-shadow);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.mermaid-copy:hover {
+  color: var(--text);
+  background: var(--btn-hover);
+  border-color: var(--accent);
+}
+
+.mermaid-copy .ic {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mermaid-copy-label {
+  min-width: 1.5ch;
+  text-align: center;
+}

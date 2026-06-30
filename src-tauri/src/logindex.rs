@@ -98,6 +98,9 @@ impl LineIndex {
     ///
     /// Delegates to the free function `search_file` so the caller can hold no
     /// lock while the scan runs.  See `log_search` for the pattern.
+    // Production code (the `log_search` command) calls `search_file` directly,
+    // so this convenience wrapper is only exercised by the unit tests below.
+    #[allow(dead_code)]
     pub fn search(&self, query: &str, case_sensitive: bool, regex: bool) -> Vec<usize> {
         search_file(&self.path, query, case_sensitive, regex)
     }
@@ -106,6 +109,9 @@ impl LineIndex {
     ///
     /// After a log file is appended to, call `extend()` to pick up the new
     /// lines without re-reading the whole file.
+    // Reserved for live log tailing (incremental re-index); not yet wired to a
+    // command. Kept and unit-tested so the behavior stays correct until used.
+    #[allow(dead_code)]
     pub fn extend(&mut self) -> Result<(), AppError> {
         let current_len = std::fs::metadata(&self.path)
             .map(|m| m.len())

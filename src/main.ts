@@ -592,6 +592,14 @@ export function initApp(adapter: PlatformAdapter): void {
 
   (async () => {
     refreshToolbar();
+    // Attach the live "open with Lucent" listener BEFORE draining startup
+    // files: getStartupFiles() flips the backend to event delivery, so the
+    // listener must already be live or an open arriving in that window is lost.
+    // openOrActivate dedups by path, so a file delivered via both routes just
+    // focuses its existing tab.
+    await adapter.onOpenFiles((paths) => {
+      if (paths.length > 0) void openMany(paths);
+    });
     const startup = await adapter.getStartupFiles();
     if (startup.length > 0) await openMany(startup);
   })();

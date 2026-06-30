@@ -4,6 +4,7 @@ import type {
   FileChangedCallback,
   FileRemovedCallback,
   DropCallback,
+  OpenFilesCallback,
   OpenDialogOptions,
   SaveDialogOptions,
 } from "./types";
@@ -237,6 +238,9 @@ export const webAdapter: PlatformAdapter = {
       cb({ type: "drop", paths });
     });
   },
+
+  // The browser has no OS-level file associations, so nothing ever fires here.
+  async onOpenFiles(_cb: OpenFilesCallback): Promise<void> {},
 
   async getStartupFiles(): Promise<string[]> {
     return [];

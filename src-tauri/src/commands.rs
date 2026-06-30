@@ -33,6 +33,11 @@ pub fn save_text_file(path: String, contents: String) -> Result<(), AppError> {
     std::fs::write(&path, contents).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))
 }
 
+#[tauri::command]
+pub fn save_binary_file(path: String, contents: Vec<u8>) -> Result<(), AppError> {
+    std::fs::write(&path, contents).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))
+}
+
 /// True if a path has a Markdown-ish extension we render.
 pub fn is_markdown(path: &Path) -> bool {
     matches!(

@@ -1,6 +1,7 @@
 import hljsLight from "highlight.js/styles/github.css?inline";
 import hljsDark from "highlight.js/styles/github-dark.css?inline";
 import type { Theme } from "./types";
+import { iconMarkup } from "./icons";
 
 // KaTeX fonts add ~2MB to the bundle when imported from node_modules.
 // Load them from CDN on demand instead.
@@ -137,6 +138,38 @@ function resolveTheme(theme: Theme): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+/** One action group ("Copy" or "Download") with SVG + PNG buttons. */
+function mermaidActionGroup(act: "copy" | "download", iconId: string, verb: string): string {
+  const btn = (kind: "svg" | "png") =>
+    `<button class="mermaid-btn" type="button" data-act="${act}" data-kind="${kind}" ` +
+    `title="${verb} as ${kind.toUpperCase()}" aria-label="${verb} as ${kind.toUpperCase()}">` +
+    `<span class="mermaid-btn-label">${kind.toUpperCase()}</span></button>`;
+  return (
+    `<div class="mermaid-group" role="group" aria-label="${verb}">` +
+    `<span class="mermaid-group-icon" title="${verb}" aria-hidden="true">${iconMarkup(iconId)}</span>` +
+    btn("svg") +
+    btn("png") +
+    `</div>`
+  );
+}
+
+/**
+ * Add a hover toolbar to a rendered mermaid block: a "Copy" group and a
+ * "Download" group, each offering SVG + PNG. Only blocks that actually produced
+ * an <svg> get a toolbar (a parse error leaves the mermaid-annotated source
+ * instead). Idempotent — re-rendering won't stack bars. Click handling lives in
+ * main.ts's `#content` delegation (`.mermaid-btn`).
+ */
+function decorateMermaid(node: HTMLElement): void {
+  if (!node.querySelector("svg") || node.querySelector(".mermaid-actions")) return;
+  const bar = document.createElement("div");
+  bar.className = "mermaid-actions";
+  bar.innerHTML =
+    mermaidActionGroup("copy", "ic-copy", "Copy") +
+    mermaidActionGroup("download", "ic-download", "Download");
+  node.appendChild(bar);
+}
+
 export async function runPostRender(container: HTMLElement, theme: Theme): Promise<void> {
   const resolved = resolveTheme(theme);
   const nodes = Array.from(container.querySelectorAll<HTMLElement>("pre.mermaid"));
@@ -149,10 +182,17 @@ export async function runPostRender(container: HTMLElement, theme: Theme): Promi
         startOnLoad: false,
         securityLevel: "strict",
         theme: resolved === "dark" ? "dark" : "default",
+        // Render labels as SVG <text>, not <foreignObject> XHTML. foreignObject
+        // both renders blank when rasterized AND taints the canvas (blocking
+        // toBlob), so PNG export needs pure-SVG labels. Must be TOP-LEVEL — the
+        // `flowchart.htmlLabels` key alone leaves edge labels as foreignObject.
+        htmlLabels: false,
+        flowchart: { htmlLabels: false },
       });
       mermaidConfiguredTheme = resolved;
     }
     await mermaid.run({ nodes });
+    for (const n of nodes) decorateMermaid(n);
   } catch {
     /* mermaid annotates failing blocks inline; also swallows a failed chunk load */
   } finally {

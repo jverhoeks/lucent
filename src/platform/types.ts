@@ -23,6 +23,7 @@ export interface DropEvent {
 export type FileChangedCallback = (path: string, content: string) => void;
 export type FileRemovedCallback = (path: string) => void;
 export type DropCallback = (event: DropEvent) => void;
+export type OpenFilesCallback = (paths: string[]) => void;
 
 export interface PlatformAdapter {
   readFile(path: string): Promise<FilePayload>;
@@ -42,6 +43,9 @@ export interface PlatformAdapter {
   onFileChanged(cb: FileChangedCallback): void;
   onFileRemoved(cb: FileRemovedCallback): void;
   onDrop(cb: DropCallback): void;
+  /** OS "open these files with Lucent" (macOS Apple Event while running).
+   *  Returns a promise that resolves once the listener is attached. */
+  onOpenFiles(cb: OpenFilesCallback): Promise<void>;
   getStartupFiles(): Promise<string[]>;
   exportPdf(html: string): Promise<void>;
 

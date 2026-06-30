@@ -43,6 +43,22 @@
   }
 }
 
+/* In-app theme selector (light / sepia / dark) — restored: dropped in the
+   web/app split (f0f9c31), which left the selector inert. */
+#content[data-theme="light"] {
+  background: #ffffff;
+  color: #1a1a1a;
+}
+#content[data-theme="sepia"] {
+  background: #f4ecd8;
+  color: #433422;
+}
+#content[data-theme="dark"] {
+  background: #1e1e1e;
+  color: #e6e6e6;
+}
+
+
 * {
   box-sizing: border-box;
 }
@@ -275,12 +291,13 @@ body {
   gap: 12px;
   min-width: 200px;
   padding: 14px;
-  background: var(--bar-bg);
+  /* Solid surface, not --bar-bg + blur: the popover floats over scrolling
+     content, where WKWebView's backdrop-filter compositing can drop the
+     panel's own background and render it see-through. */
+  background: var(--surface);
   border: 1px solid var(--bar-border);
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   animation: popIn 0.14s ease-out;
 }
 
@@ -1036,4 +1053,144 @@ body.drag-over::after {
 
 .mermaid svg {
   max-width: 100%;
+}
+
+/* ---- Search highlights (restored: dropped in f0f9c31) ---- */
+/* ---- Search highlights ---- */
+mark.search-hit { background: #fde68a; color: inherit; border-radius: 2px; }
+mark.search-current { background: #f59e0b; }
+#content[data-theme="dark"] mark.search-hit { background: #7c5b16; color: #fff; }
+#content[data-theme="dark"] mark.search-current { background: #b8860b; }
+
+/* Log renderer + virtual log view (restored: dropped in f0f9c31; the code in
+   renderers/log.ts + logs/virtual-log-view.ts emits these classes, and
+   .vlog-row's height is required for virtual-scroll math). */
+/* ---- Log renderer ---- */
+.log {
+  font-family: var(--mono);
+  font-size: var(--font-size);
+  line-height: 1.55;
+  text-align: left;
+  width: 100%;
+}
+
+.log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 1px 4px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.06);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-gutter {
+  flex: 0 0 3.5ch;
+  text-align: right;
+  color: #bbb;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-msg {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Level colors — light theme */
+.lvl-error .log-msg { color: #d32f2f; font-weight: 600; }
+.lvl-warn  .log-msg { color: #e67700; }
+.lvl-info  .log-msg { color: inherit; }
+.lvl-debug .log-msg { color: #888; }
+.lvl-none  .log-msg { color: inherit; }
+
+/* JSON toggle button */
+.log-json-toggle {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 11px;
+  font-family: var(--mono);
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  border-radius: 4px;
+  background: transparent;
+  color: #777;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.log-json-toggle:hover {
+  background: rgba(127, 127, 127, 0.12);
+  color: #444;
+}
+.log-json-toggle.open {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Expanded JSON tree panel */
+.log-json {
+  padding: 4px 4px 4px 3.5ch;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.1);
+}
+
+/* ---- Virtual Log View ---- */
+
+/* Scroll container — caller sets a fixed height */
+.vlog {
+  position: relative;
+  overflow: auto;
+  height: 100%;
+}
+
+/* Spacer that gives the scrollbar its full range */
+.vlog-sizer {
+  position: relative;
+}
+
+/* Absolutely-positioned window holding the current rendered rows */
+.vlog-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+/*
+ * Each virtual row has a fixed height matching ROW_H in virtual-log-view.ts.
+ * This overrides .log-line's white-space:pre-wrap with higher specificity so
+ * the fixed-height contract holds. When .wrap is toggled the override is lifted.
+ */
+.vlog-window .vlog-row {
+  height: 20px;
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* Wrap mode: best-effort scroll precision (documented caveat — rows vary in height) */
+.vlog-window.wrap .vlog-row {
+  height: auto;
+  white-space: pre-wrap;
+  overflow: visible;
+}
+
+/* Dark theme overrides */
+#content[data-theme="dark"] .log-gutter {
+  color: #555;
+}
+#content[data-theme="dark"] .lvl-error .log-msg { color: #ff6b6b; }
+#content[data-theme="dark"] .lvl-warn  .log-msg { color: #ffa94d; }
+#content[data-theme="dark"] .lvl-debug .log-msg { color: #999; }
+#content[data-theme="dark"] .log-json-toggle {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #aaa;
+}
+#content[data-theme="dark"] .log-json-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ddd;
+}
+#content[data-theme="dark"] .log-line {
+  border-bottom-color: rgba(255, 255, 255, 0.04);
 }

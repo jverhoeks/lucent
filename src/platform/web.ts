@@ -102,6 +102,17 @@ export const webAdapter: PlatformAdapter = {
     fileStore.set(path, { content: contents, lastModified: Date.now() });
   },
 
+  async saveBinaryFile(path: string, contents: Uint8Array): Promise<void> {
+    // No filesystem on the web: trigger a browser download using the basename.
+    const name = path.split("/").pop() || "download.bin";
+    const url = URL.createObjectURL(new Blob([contents], { type: "application/octet-stream" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
   async fileSize(path: string): Promise<number> {
     const entry = fileStore.get(path);
     if (!entry) throw Object.assign(new Error("File not found"), { kind: "not_found" });

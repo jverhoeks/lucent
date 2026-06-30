@@ -1195,7 +1195,7 @@ mark.search-current { background: #f59e0b; }
   border-bottom-color: rgba(255, 255, 255, 0.04);
 }
 
-/* Rendered mermaid block: anchor the hover copy toolbar to its corner. */
+/* Rendered mermaid block: anchor the hover action toolbar to its corner. */
 pre.mermaid {
   position: relative;
 }
@@ -1205,7 +1205,7 @@ pre.mermaid {
   top: 8px;
   right: 8px;
   display: flex;
-  gap: 4px;
+  gap: 8px;
   opacity: 0;
   transition: opacity 0.12s;
 }
@@ -1215,31 +1215,26 @@ pre.mermaid:hover .mermaid-actions,
   opacity: 1;
 }
 
-.mermaid-copy {
+/* Each group ("Copy" / "Download") is a pill holding an icon + SVG/PNG buttons. */
+.mermaid-group {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--text-muted);
+  gap: 2px;
+  padding: 3px 6px;
   background: var(--surface);
   border: 1px solid var(--btn-border);
-  border-radius: 6px;
+  border-radius: 8px;
   box-shadow: var(--btn-shadow);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
-.mermaid-copy:hover {
-  color: var(--text);
-  background: var(--btn-hover);
-  border-color: var(--accent);
+.mermaid-group-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  margin-right: 2px;
 }
 
-.mermaid-copy .ic {
+.mermaid-group-icon .ic {
   width: 14px;
   height: 14px;
   fill: none;
@@ -1249,7 +1244,27 @@ pre.mermaid:hover .mermaid-actions,
   stroke-linejoin: round;
 }
 
-.mermaid-copy-label {
-  min-width: 1.5ch;
+.mermaid-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  padding: 3px 6px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.mermaid-btn:hover {
+  color: var(--text);
+  background: var(--btn-hover);
+}
+
+.mermaid-btn-label {
+  display: inline-block;
+  min-width: 3ch;
   text-align: center;
 }

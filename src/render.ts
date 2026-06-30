@@ -138,21 +138,35 @@ function resolveTheme(theme: Theme): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+/** One action group ("Copy" or "Download") with SVG + PNG buttons. */
+function mermaidActionGroup(act: "copy" | "download", iconId: string, verb: string): string {
+  const btn = (kind: "svg" | "png") =>
+    `<button class="mermaid-btn" type="button" data-act="${act}" data-kind="${kind}" ` +
+    `title="${verb} as ${kind.toUpperCase()}" aria-label="${verb} as ${kind.toUpperCase()}">` +
+    `<span class="mermaid-btn-label">${kind.toUpperCase()}</span></button>`;
+  return (
+    `<div class="mermaid-group" role="group" aria-label="${verb}">` +
+    `<span class="mermaid-group-icon" title="${verb}" aria-hidden="true">${iconMarkup(iconId)}</span>` +
+    btn("svg") +
+    btn("png") +
+    `</div>`
+  );
+}
+
 /**
- * Add a hover "Copy SVG / Copy PNG" toolbar to a rendered mermaid block. Only
- * blocks that actually produced an <svg> get a toolbar (a parse error leaves the
- * mermaid-annotated source instead). Idempotent — re-rendering won't stack bars.
- * Click handling lives in main.ts's `#content` delegation (`.mermaid-copy`).
+ * Add a hover toolbar to a rendered mermaid block: a "Copy" group and a
+ * "Download" group, each offering SVG + PNG. Only blocks that actually produced
+ * an <svg> get a toolbar (a parse error leaves the mermaid-annotated source
+ * instead). Idempotent — re-rendering won't stack bars. Click handling lives in
+ * main.ts's `#content` delegation (`.mermaid-btn`).
  */
 function decorateMermaid(node: HTMLElement): void {
   if (!node.querySelector("svg") || node.querySelector(".mermaid-actions")) return;
   const bar = document.createElement("div");
   bar.className = "mermaid-actions";
   bar.innerHTML =
-    `<button class="mermaid-copy" type="button" data-kind="svg" title="Copy as SVG" aria-label="Copy as SVG">` +
-    `${iconMarkup("ic-copy")}<span class="mermaid-copy-label">SVG</span></button>` +
-    `<button class="mermaid-copy" type="button" data-kind="png" title="Copy as PNG" aria-label="Copy as PNG">` +
-    `${iconMarkup("ic-image")}<span class="mermaid-copy-label">PNG</span></button>`;
+    mermaidActionGroup("copy", "ic-copy", "Copy") +
+    mermaidActionGroup("download", "ic-download", "Download");
   node.appendChild(bar);
 }
 

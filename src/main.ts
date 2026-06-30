@@ -3,7 +3,12 @@ import { TabManager } from "./tabs";
 import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
-import { copyMermaidSvg, copyMermaidPng } from "./mermaid-export";
+import {
+  copyMermaidSvg,
+  copyMermaidPng,
+  mermaidSvgMarkup,
+  mermaidPngBytes,
+} from "./mermaid-export";
 import { exportHtml, exportPdf } from "./export";
 import { AppError, StyleSettings, Format, DataLang } from "./types";
 import { SearchController } from "./search/controller";
@@ -187,6 +192,54 @@ export function initApp(adapter: PlatformAdapter): void {
 
   function codeSourceOf(block: Element): string {
     return block.getAttribute("data-src") ?? "";
+  }
+
+  /** A filename stem derived from the active document (or "diagram"). */
+  function diagramBaseName(): string {
+    const path = manager.getActivePath();
+    if (!path) return "diagram";
+    return basename(path).replace(/\.[^.]+$/, "") || "diagram";
+  }
+
+  /**
+   * Save a rendered mermaid diagram as a file. On the desktop app a native save
+   * dialog picks the path (text write for SVG, binary write for PNG); on the web
+   * a browser download is triggered. Returns false if the user cancels the
+   * dialog (so the caller skips the "saved ✓" flash).
+   */
+  async function downloadMermaid(svg: SVGSVGElement, kind: "svg" | "png"): Promise<boolean> {
+    const filename = `${diagramBaseName()}.${kind}`;
+    if (kind === "svg") {
+      const markup = mermaidSvgMarkup(svg);
+      if (adapter.platform === "tauri") {
+        const path = await adapter.saveDialog({
+          defaultPath: filename,
+          filters: [{ name: "SVG image", extensions: ["svg"] }],
+        });
+        if (!path) return false;
+        await adapter.saveTextFile(path, markup);
+      } else {
+        downloadFile(markup, filename, "image/svg+xml");
+      }
+    } else {
+      const bytes = await mermaidPngBytes(svg);
+      if (adapter.platform === "tauri") {
+        const path = await adapter.saveDialog({
+          defaultPath: filename,
+          filters: [{ name: "PNG image", extensions: ["png"] }],
+        });
+        if (!path) return false;
+        await adapter.saveBinaryFile(path, bytes);
+      } else {
+        const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    }
+    return true;
   }
 
   async function readPath(path: string): Promise<string | null> {
@@ -476,20 +529,30 @@ export function initApp(adapter: PlatformAdapter): void {
       return;
     }
 
-    const mermaidBtn = target.closest<HTMLElement>(".mermaid-copy");
+    const mermaidBtn = target.closest<HTMLElement>(".mermaid-btn");
     if (mermaidBtn) {
-      const svg = mermaidBtn.closest(".mermaid")?.querySelector("svg");
-      const label = mermaidBtn.querySelector(".mermaid-copy-label");
+      const svg = mermaidBtn.closest(".mermaid")?.querySelector("svg") as SVGSVGElement | null;
+      const label = mermaidBtn.querySelector(".mermaid-btn-label");
       if (svg && label) {
+        const kind = mermaidBtn.dataset.kind === "png" ? "png" : "svg";
         const prev = label.textContent;
         try {
-          if (mermaidBtn.dataset.kind === "png") await copyMermaidPng(svg as SVGSVGElement);
-          else await copyMermaidSvg(svg as SVGSVGElement);
-          label.textContent = "✓";
+          let done = true;
+          if (mermaidBtn.dataset.act === "download") {
+            done = await downloadMermaid(svg, kind);
+          } else if (kind === "png") {
+            await copyMermaidPng(svg);
+          } else {
+            await copyMermaidSvg(svg);
+          }
+          if (done) {
+            label.textContent = "✓";
+            setTimeout(() => (label.textContent = prev), 1200);
+          }
         } catch {
           label.textContent = "✗";
+          setTimeout(() => (label.textContent = prev), 1200);
         }
-        setTimeout(() => (label.textContent = prev), 1200);
       }
       return;
     }

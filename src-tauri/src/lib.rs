@@ -71,6 +71,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
             commands::save_text_file,
+            commands::save_binary_file,
             commands::list_sibling_viewable,
             commands::write_temp_file,
             commands::resolve_sibling,

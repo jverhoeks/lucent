@@ -35,10 +35,15 @@ function serialize(svg: SVGSVGElement, withSize = false): { markup: string; widt
   return { markup: new XMLSerializer().serializeToString(clone), width, height };
 }
 
+/** Standalone SVG markup (XML prolog + namespaced root) — for clipboard text
+ *  or a downloaded .svg file. */
+export function mermaidSvgMarkup(svg: SVGSVGElement): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${serialize(svg).markup}`;
+}
+
 /** Copy the diagram as SVG markup (plain text). */
 export async function copyMermaidSvg(svg: SVGSVGElement): Promise<void> {
-  const { markup } = serialize(svg);
-  await navigator.clipboard.writeText(`<?xml version="1.0" encoding="UTF-8"?>\n${markup}`);
+  await navigator.clipboard.writeText(mermaidSvgMarkup(svg));
 }
 
 /** Rasterize the diagram to a PNG Blob at `scale`× the intrinsic size. */
@@ -75,4 +80,10 @@ function toPngBlob(svg: SVGSVGElement, scale: number): Promise<Blob> {
 export async function copyMermaidPng(svg: SVGSVGElement): Promise<void> {
   const blob = toPngBlob(svg, 2);
   await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+}
+
+/** Rasterized PNG bytes — for writing a downloaded .png file. */
+export async function mermaidPngBytes(svg: SVGSVGElement): Promise<Uint8Array> {
+  const blob = await toPngBlob(svg, 2);
+  return new Uint8Array(await blob.arrayBuffer());
 }

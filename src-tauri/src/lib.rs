@@ -56,6 +56,8 @@ pub fn run() {
             commands::list_sibling_viewable,
             commands::write_temp_file,
             commands::resolve_sibling,
+            commands::probe_is_text,
+            commands::list_viewable_recursive,
             watcher::watch_file,
             watcher::unwatch_file,
             watcher::unwatch_all,

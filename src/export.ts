@@ -1,10 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
 import appCss from "./styles.css?inline";
 import hljsCss from "highlight.js/styles/github.css?inline";
 import { renderMarkdown, renderMath, hasMath, runPostRender, applyCodeTheme } from "./render";
 import type { Theme } from "./types";
+import type { PlatformAdapter } from "./platform/types";
 
 // KaTeX glyph fonts aren't system fonts, so the exported HTML links the
 // CDN-hosted stylesheet (which serves its own fonts) rather than inlining CSS
@@ -62,18 +60,14 @@ ${printScript}
 </html>`;
 }
 
-export async function exportHtml(rawText: string): Promise<void> {
-  const path = await save({
+export async function exportHtml(rawText: string, adapter: PlatformAdapter): Promise<void> {
+  const path = await adapter.saveDialog({
     filters: [{ name: "HTML", extensions: ["html"] }],
   });
   if (!path) return;
   const theme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
   const body = await renderDocumentHtml(rawText, theme);
-  await invoke("save_text_file", { path, contents: buildStandaloneHtml(body) });
-}
-
-function isMac(): boolean {
-  return /Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent);
+  await adapter.saveTextFile(path, buildStandaloneHtml(body));
 }
 
 function nextFrame(): Promise<void> {
@@ -85,14 +79,11 @@ function nextFrame(): Promise<void> {
  * no native PDF API on Windows/Linux webviews yet, so we stage the document as a
  * temp HTML file and open it in the default browser with print auto-triggered.
  */
-async function exportPdfViaBrowser(rawText: string): Promise<void> {
+async function exportPdfViaBrowser(rawText: string, adapter: PlatformAdapter): Promise<void> {
   const theme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
   const body = await renderDocumentHtml(rawText, theme);
-  const path = await invoke<string>("write_temp_file", {
-    filename: "markdown-export.html",
-    contents: buildStandaloneHtml(body, true),
-  });
-  await openPath(path);
+  const path = await adapter.writeTempFile("markdown-export.html", buildStandaloneHtml(body, true));
+  await adapter.openUrl(path);
 }
 
 /**
@@ -102,25 +93,26 @@ async function exportPdfViaBrowser(rawText: string): Promise<void> {
  * `@media print` block does NOT apply and this class is what produces a clean
  * capture. Other platforms fall back to the browser approach.
  */
-export async function exportPdf(rawText: string): Promise<void> {
-  if (!isMac()) {
-    await exportPdfViaBrowser(rawText);
+export async function exportPdf(rawText: string, adapter: PlatformAdapter): Promise<void> {
+  if (adapter.platform !== "tauri") {
+    await exportPdfViaBrowser(rawText, adapter);
     return;
   }
-  const dest = await save({ filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  const dest = await adapter.saveDialog({ filters: [{ name: "PDF", extensions: ["pdf"] }] });
   if (!dest) return;
 
-  // Capture on the white A4 canvas with light code (clean on paper), then restore.
   const currentTheme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
   applyCodeTheme("light");
   document.body.classList.add("exporting");
   try {
     await nextFrame();
     await nextFrame();
+    // Native PDF export uses the Tauri command directly
+    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("export_pdf_native", { dest });
   } catch (e) {
     if (String(e).includes("unsupported_platform")) {
-      await exportPdfViaBrowser(rawText);
+      await exportPdfViaBrowser(rawText, adapter);
       return;
     }
     throw e;

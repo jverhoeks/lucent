@@ -1,0 +1,165 @@
+name: Release
+
+# Version-on-merge: whenever `package.json`'s version (the single source of
+# truth — tauri.conf.json reads it via `"version": "../package.json"`) lands on
+# main without a matching `vX.Y.Z` release, build every platform and ship it.
+# Manual runs via the Actions tab are also supported.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Decide whether this push introduces a new version ──────────────────────
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      should_release: ${{ steps.v.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r .version package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # The tag-existence check is the real guard (not a path filter), so a
+          # bump lands a release no matter which files the merge touched.
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Release v$VERSION already exists — nothing to do."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "New version v$VERSION — will build and release."
+          fi
+
+  # ── Build native bundles on each platform, upload to a DRAFT release ───────
+  release:
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest        # universal → one dmg for Intel + Apple Silicon
+            args: --target universal-apple-darwin
+          - platform: ubuntu-22.04        # .deb / .rpm / .AppImage
+            args: ''
+          - platform: windows-latest      # .msi / NSIS .exe
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Both arches only needed on macOS for the universal binary.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Tag is what the `check` job decided, so the decision and the tag
+          # tauri-action creates are identical by construction.
+          tagName: v${{ needs.check.outputs.version }}
+          releaseName: Lucent v${{ needs.check.outputs.version }}
+          releaseBody: 'Download the asset for your platform below to install Lucent.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  # ── All platforms done → flip the release public ──────────────────────────
+  publish:
+    needs: [check, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "v${{ needs.check.outputs.version }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false --latest
+
+  # ── Stamp + push the Homebrew cask (macOS users: `brew install --cask lucent`)
+  update-cask:
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout lucent (cask template)
+        uses: actions/checkout@v4
+
+      - name: Download the macOS dmg and hash it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "v${{ needs.check.outputs.version }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.dmg' --dir dist-dmg
+          shopt -s nullglob
+          dmgs=(dist-dmg/*.dmg)
+          DMG="${dmgs[0]}"
+          if [ -z "$DMG" ]; then echo "No .dmg in release v${{ needs.check.outputs.version }}" >&2; exit 1; fi
+          echo "DMG_NAME=$(basename "$DMG")" >> "$GITHUB_ENV"
+          echo "DMG_SHA=$(sha256sum "$DMG" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Checkout the Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: jverhoeks/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Render Casks/lucent.rb
+        run: |
+          VERSION="${{ needs.check.outputs.version }}"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DMG_NAME}"
+          mkdir -p tap/Casks
+          sed -e "s|__VERSION__|${VERSION}|g" \
+              -e "s|__SHA256__|${DMG_SHA}|g" \
+              -e "s|__URL__|${URL}|g" \
+              homebrew/lucent.rb > tap/Casks/lucent.rb
+          echo "── rendered cask ──"; cat tap/Casks/lucent.rb
+
+      - name: Commit and push to the tap
+        run: |
+          cd tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/lucent.rb
+          git diff --staged --quiet || git commit -m "lucent ${{ needs.check.outputs.version }}"
+          git push

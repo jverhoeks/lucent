@@ -130,7 +130,10 @@ jobs:
           gh release download "v${{ needs.check.outputs.version }}" \
             --repo "$GITHUB_REPOSITORY" \
             --pattern '*.dmg' --dir dist-dmg
-          DMG=$(ls dist-dmg/*.dmg | head -1)
+          shopt -s nullglob
+          dmgs=(dist-dmg/*.dmg)
+          DMG="${dmgs[0]}"
+          if [ -z "$DMG" ]; then echo "No .dmg in release v${{ needs.check.outputs.version }}" >&2; exit 1; fi
           echo "DMG_NAME=$(basename "$DMG")" >> "$GITHUB_ENV"
           echo "DMG_SHA=$(sha256sum "$DMG" | cut -d' ' -f1)" >> "$GITHUB_ENV"
 

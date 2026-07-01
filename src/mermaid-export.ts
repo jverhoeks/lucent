@@ -10,6 +10,8 @@
  *   - The Image source is a Blob URL, never `btoa(svg)` — base64 throws on the
  *     unicode that turns up in diagram labels. */
 
+import { svgToWhiteboardHtml } from "./mermaid-whiteboard";
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** Intrinsic diagram size, preferring the viewBox (layout-independent) and
@@ -86,4 +88,15 @@ export async function copyMermaidPng(svg: SVGSVGElement): Promise<void> {
 export async function mermaidPngBytes(svg: SVGSVGElement): Promise<Uint8Array> {
   const blob = await toPngBlob(svg, 2);
   return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** Copy the diagram as an Atlassian Whiteboard clipboard payload: native,
+ *  editable shapes/connectors instead of a flat image. Written as `text/html`
+ *  (writable in WKWebView, unlike `image/svg+xml`) — the whiteboard reads its
+ *  `data-canvas-clipboard` attribute on paste. */
+export async function copyMermaidWhiteboard(svg: SVGSVGElement): Promise<void> {
+  const html = svgToWhiteboardHtml(svg);
+  await navigator.clipboard.write([
+    new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }) }),
+  ]);
 }

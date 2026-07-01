@@ -2,8 +2,33 @@ import { describe, it, expect } from "vitest";
 import {
   whiteboardFromGraph,
   encodeWhiteboardClipboard,
+  extractGraph,
   type DiagramGraph,
 } from "../src/mermaid-whiteboard";
+
+/** Parse an SVG string into a live SVGSVGElement (jsdom). */
+function parseSvg(markup: string): SVGSVGElement {
+  const doc = new DOMParser().parseFromString(markup, "image/svg+xml");
+  return doc.documentElement as unknown as SVGSVGElement;
+}
+
+const FLOWCHART_SVG = `
+<svg aria-roledescription="flowchart-v2" class="flowchart" xmlns="http://www.w3.org/2000/svg">
+  <g class="edgePaths">
+    <path id="L_A_B_0" data-id="L_A_B_0" class="edge-thickness-normal" d="M100,50L300,50" marker-end="url(#arrow)"/>
+  </g>
+  <g class="edgeLabels"><g class="edgeLabel"><text>yes</text></g></g>
+  <g class="nodes">
+    <g class="node default" id="mermaid-123-flowchart-A-0" transform="translate(100, 50)">
+      <rect class="basic label-container" x="-50" y="-20" width="100" height="40"/>
+      <g class="label"><text><tspan class="text-inner-tspan">Alpha</tspan></text></g>
+    </g>
+    <g class="node default" id="mermaid-123-flowchart-B-0" transform="translate(300, 50)">
+      <rect class="basic label-container" x="-40" y="-20" width="80" height="40"/>
+      <g class="label"><text><tspan class="text-inner-tspan">Beta</tspan></text></g>
+    </g>
+  </g>
+</svg>`;
 
 /** Decode the base64 out of the clipboard HTML back to the element array. */
 function decodeClipboard(html: string): any[] {
@@ -25,6 +50,36 @@ describe("encodeWhiteboardClipboard", () => {
     expect(html).toContain("data-canvas-clipboard=");
     expect(html).toContain("<meta charset");
     expect(decodeClipboard(html)).toEqual(els);
+  });
+});
+
+describe("extractGraph (flowchart)", () => {
+  it("extracts nodes with id, center, size, and label", () => {
+    const g = extractGraph(parseSvg(FLOWCHART_SVG));
+    expect(g.nodes.map((n) => n.id).sort()).toEqual(["A", "B"]);
+    const a = g.nodes.find((n) => n.id === "A")!;
+    expect(a.x).toBe(100);
+    expect(a.y).toBe(50);
+    expect(a.w).toBe(100);
+    expect(a.h).toBe(40);
+    expect(a.label).toBe("Alpha");
+  });
+
+  it("extracts edges with endpoints from the path id and an arrow cap", () => {
+    const g = extractGraph(parseSvg(FLOWCHART_SVG));
+    expect(g.edges).toHaveLength(1);
+    expect(g.edges[0]).toMatchObject({
+      sourceId: "A",
+      targetId: "B",
+      arrowEnd: true,
+    });
+  });
+
+  it("produces a payload that connects the two shapes end-to-end", () => {
+    const els = whiteboardFromGraph(extractGraph(parseSvg(FLOWCHART_SVG)), seqIds());
+    expect(els.filter((e) => e.type === "shape")).toHaveLength(2);
+    const conn = els.find((e) => e.type === "connector");
+    expect(conn).toMatchObject({ sourceIndex: 0, targetIndex: 1, endCap: 2 });
   });
 });
 

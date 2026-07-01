@@ -138,17 +138,22 @@ function resolveTheme(theme: Theme): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-/** One action group ("Copy" or "Download") with SVG + PNG buttons. */
+/** One action group. "Copy" offers SVG + PNG + Whiteboard; "Download" offers
+ *  SVG + PNG (the whiteboard payload is clipboard-only). */
 function mermaidActionGroup(act: "copy" | "download", iconId: string, verb: string): string {
-  const btn = (kind: "svg" | "png") =>
+  const label = (kind: "svg" | "png" | "wb") => (kind === "wb" ? "WB" : kind.toUpperCase());
+  const title = (kind: "svg" | "png" | "wb") =>
+    kind === "wb" ? `${verb} to Whiteboard` : `${verb} as ${kind.toUpperCase()}`;
+  const btn = (kind: "svg" | "png" | "wb") =>
     `<button class="mermaid-btn" type="button" data-act="${act}" data-kind="${kind}" ` +
-    `title="${verb} as ${kind.toUpperCase()}" aria-label="${verb} as ${kind.toUpperCase()}">` +
-    `<span class="mermaid-btn-label">${kind.toUpperCase()}</span></button>`;
+    `title="${title(kind)}" aria-label="${title(kind)}">` +
+    `<span class="mermaid-btn-label">${label(kind)}</span></button>`;
   return (
     `<div class="mermaid-group" role="group" aria-label="${verb}">` +
     `<span class="mermaid-group-icon" title="${verb}" aria-hidden="true">${iconMarkup(iconId)}</span>` +
     btn("svg") +
     btn("png") +
+    (act === "copy" ? btn("wb") : "") +
     `</div>`
   );
 }

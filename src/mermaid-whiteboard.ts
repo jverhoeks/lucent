@@ -237,6 +237,172 @@ export function whiteboardFromGraph(
   return els;
 }
 
+// ---------------------------------------------------------------------------
+// DOM extraction (browser / jsdom). Reads a mermaid-rendered <svg> into the IR.
+// Flowchart geometry parses from attributes (self-consistent: whiteboardFromGraph
+// re-centers by bbox, so any global transform cancels). Colors need
+// getComputedStyle on the live element (CSS-class-driven), so they resolve only
+// in a real browser; the unit fixture asserts structure, not color.
+// ---------------------------------------------------------------------------
+
+const NODE_ID_RE = /flowchart-(.+)-\d+$/;
+
+/** Parse `translate(x, y)` from an element's transform attribute. */
+function transformTranslate(el: Element): { x: number; y: number } {
+  const m = (el.getAttribute("transform") || "").match(
+    /translate\(\s*([-\d.]+)\s*[ ,]\s*([-\d.]+)\s*\)/,
+  );
+  return { x: m ? parseFloat(m[1]) : 0, y: m ? parseFloat(m[2]) : 0 };
+}
+
+/** `rgb()/rgba()` string → RGB, or null. */
+function parseRgb(v: string | null | undefined): RGB | null {
+  if (!v) return null;
+  const m = v.match(/rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
+  if (!m) return null;
+  return { r: Math.round(+m[1]), g: Math.round(+m[2]), b: Math.round(+m[3]) };
+}
+
+function computedColors(el: Element | null): { fill: RGB | null; stroke: RGB | null } {
+  const g = globalThis as { getComputedStyle?: (e: Element) => CSSStyleDeclaration };
+  if (!el || typeof g.getComputedStyle !== "function") return { fill: null, stroke: null };
+  const cs = g.getComputedStyle(el);
+  const fillRaw = cs.fill || (el as Element).getAttribute("fill") || "";
+  const strokeRaw = cs.stroke || (el as Element).getAttribute("stroke") || "";
+  const noFill = fillRaw === "none" || fillRaw === "transparent" || fillRaw === "";
+  return { fill: noFill ? null : parseRgb(fillRaw), stroke: parseRgb(strokeRaw) };
+}
+
+/** Endpoints from a mermaid edge id like `L_A_B_0` / `L-A-B-0`. */
+function parseEdgeId(raw: string): { src: string; tgt: string } | null {
+  if (!raw) return null;
+  const sep = raw.includes("_") ? "_" : "-";
+  const parts = raw.split(sep);
+  if (parts.length < 4 || parts[0] !== "L") return null;
+  return { src: parts[1], tgt: parts[2] };
+}
+
+/** Absolute (svg-root) box of an element via getBBox + CTM. Browser-only. */
+function elementBox(
+  el: Element,
+): { x: number; y: number; w: number; h: number } | null {
+  const g = el as SVGGraphicsElement;
+  let b: DOMRect | undefined;
+  try {
+    b = g.getBBox?.();
+  } catch {
+    return null;
+  }
+  if (!b || !b.width) return null;
+  const cx = b.x + b.width / 2;
+  const cy = b.y + b.height / 2;
+  const m = g.getCTM?.();
+  if (!m) return { x: cx, y: cy, w: b.width, h: b.height };
+  return {
+    x: m.a * cx + m.c * cy + m.e,
+    y: m.b * cx + m.d * cy + m.f,
+    w: b.width * (m.a || 1),
+    h: b.height * (m.d || 1),
+  };
+}
+
+/** Size + kind of a node's inner shape, from attributes first, bbox as fallback. */
+function nodeShape(
+  el: Element | null,
+): { w: number; h: number; kind: IRNode["shapeKind"] } {
+  if (el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "rect") {
+      const w = parseFloat(el.getAttribute("width") || "0");
+      const h = parseFloat(el.getAttribute("height") || "0");
+      if (w && h) return { w, h, kind: "rect" };
+    } else if (tag === "circle") {
+      const r = parseFloat(el.getAttribute("r") || "0");
+      if (r) return { w: 2 * r, h: 2 * r, kind: "ellipse" };
+    } else if (tag === "ellipse") {
+      const rx = parseFloat(el.getAttribute("rx") || "0");
+      const ry = parseFloat(el.getAttribute("ry") || "0");
+      if (rx && ry) return { w: 2 * rx, h: 2 * ry, kind: "ellipse" };
+    } else if (tag === "polygon") {
+      const box = elementBox(el);
+      if (box) return { w: box.w, h: box.h, kind: "diamond" };
+    }
+    const box = elementBox(el);
+    if (box) return { w: box.w, h: box.h, kind: "rect" };
+  }
+  return { w: 80, h: 40, kind: "rect" };
+}
+
+/** Layer 2: flowchart → semantic nodes + anchored edges. */
+function extractFlowchart(svg: SVGSVGElement): DiagramGraph {
+  const nodes: IRNode[] = [];
+  svg.querySelectorAll("g.node").forEach((gEl) => {
+    const rawId = gEl.getAttribute("id") || "";
+    const m = rawId.match(NODE_ID_RE);
+    const id = (m ? m[1] : gEl.getAttribute("data-id")) || rawId;
+    if (!id) return;
+    const { x, y } = transformTranslate(gEl);
+    const shapeEl =
+      gEl.querySelector("rect.label-container") ||
+      gEl.querySelector("rect, polygon, circle, ellipse, path");
+    const { w, h, kind } = nodeShape(shapeEl);
+    const label =
+      (gEl.querySelector(".label text") || gEl.querySelector("text"))?.textContent?.trim() ||
+      "";
+    const { fill, stroke } = computedColors(shapeEl);
+    nodes.push({ id, x, y, w, h, label, fill, stroke, shapeKind: kind });
+  });
+
+  const edges: IREdge[] = [];
+  svg.querySelectorAll("g.edgePaths path, path.flowchart-link").forEach((p) => {
+    const parsed = parseEdgeId(p.getAttribute("id") || p.getAttribute("data-id") || "");
+    if (!parsed) return;
+    const style = p.getAttribute("style") || "";
+    const cls = p.getAttribute("class") || "";
+    edges.push({
+      sourceId: parsed.src,
+      targetId: parsed.tgt,
+      arrowEnd: !!p.getAttribute("marker-end"),
+      arrowStart: !!p.getAttribute("marker-start"),
+      dashed: style.includes("dasharray") || cls.includes("dashed") || !!p.getAttribute("stroke-dasharray"),
+      stroke: computedColors(p).stroke,
+    });
+  });
+
+  return { nodes, edges };
+}
+
+/** Layer 1: any diagram → editable geometry (shapes + loose text). Browser-only
+ *  (needs getBBox); non-graph types land here as individually editable pieces. */
+function extractGeometry(svg: SVGSVGElement): DiagramGraph {
+  const nodes: IRNode[] = [];
+  svg.querySelectorAll("rect, circle, ellipse, polygon").forEach((el) => {
+    const box = elementBox(el);
+    if (!box) return;
+    const tag = el.tagName.toLowerCase();
+    const kind: IRNode["shapeKind"] =
+      tag === "circle" || tag === "ellipse" ? "ellipse" : tag === "polygon" ? "diamond" : "rect";
+    const { fill, stroke } = computedColors(el);
+    nodes.push({ id: `g${nodes.length}`, ...box, label: "", fill, stroke, shapeKind: kind });
+  });
+  const texts: IRText[] = [];
+  svg.querySelectorAll("text").forEach((t) => {
+    const s = t.textContent?.trim();
+    const box = elementBox(t);
+    if (!s || !box) return;
+    texts.push({ ...box, text: s, color: computedColors(t).fill });
+  });
+  return { nodes, edges: [], texts };
+}
+
+/** Read a mermaid-rendered <svg> into the IR. Flowcharts get semantic
+ *  reconstruction; everything else degrades to editable geometry. */
+export function extractGraph(svg: SVGSVGElement): DiagramGraph {
+  const role = `${svg.getAttribute("aria-roledescription") || ""} ${svg.getAttribute("class") || ""}`;
+  if (/flowchart/.test(role)) return extractFlowchart(svg);
+  return extractGeometry(svg);
+}
+
 /** UTF-8 → base64 (btoa throws on unicode, so go via bytes). */
 function bytesToBase64(s: string): string {
   const bytes = new TextEncoder().encode(s);
@@ -249,4 +415,9 @@ function bytesToBase64(s: string): string {
 export function encodeWhiteboardClipboard(els: WhiteboardElement[]): string {
   const b64 = bytesToBase64(JSON.stringify(els));
   return `<meta charset='utf-8'><div id="canvas-clipboard" data-canvas-clipboard="${b64}"></div>`;
+}
+
+/** End-to-end: a rendered mermaid <svg> → whiteboard clipboard HTML. */
+export function svgToWhiteboardHtml(svg: SVGSVGElement, idGen?: () => string): string {
+  return encodeWhiteboardClipboard(whiteboardFromGraph(extractGraph(svg), idGen));
 }

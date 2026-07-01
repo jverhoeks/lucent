@@ -104,18 +104,16 @@ const DEFAULT_STROKE: RGB = { r: 51, g: 51, b: 51 };
 const DEFAULT_FILL: RGB = { r: 255, g: 255, b: 255 };
 const DEFAULT_CONNECTOR: RGB = { r: 117, g: 129, b: 149 };
 const PATH_LABEL_COLOR: RGB = { r: 23, g: 43, b: 77 }; // Atlaskit default text (readable on canvas)
-// A pasted section's fill comes from a CONSTRAINED palette — an off-palette RGB
-// falls back to a dark default (black on a dark board). White is an observed
-// palette entry (from a real section copy), so it renders light everywhere.
+// A pasted section's fill comes from a CONSTRAINED palette — any off-palette RGB
+// falls back to a dark default (black on a dark board). We can't map an arbitrary
+// cluster fill onto that palette, so every section uses white: an observed palette
+// entry (from a real section copy) that renders light everywhere. The cluster's
+// own fill is intentionally ignored (sections are readable regions, not faithful
+// color reproductions). Contrast with shapes, which accept any RGB.
 const SECTION_FILL: RGB = { r: 255, g: 255, b: 255 };
 
-/** A section always carries a visible fill (it's a region, not a shape), so the
- *  dark→empty rule doesn't apply. Use a light cluster fill when mermaid gives
- *  one, else white. NB: an arbitrary light cluster fill may also be off-palette
- *  and fall back to the dark default — revisit if a light-theme diagram shows
- *  that; white is the only value proven safe so far. */
-function sectionColor(fill?: RGB | null): RGB {
-  return fill && !isDarkFill(fill) ? fill : SECTION_FILL;
+function sectionColor(_fill?: RGB | null): RGB {
+  return SECTION_FILL;
 }
 
 /** Mermaid node shape → whiteboard `shape` enum, verified from real whiteboard

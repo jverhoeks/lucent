@@ -335,6 +335,16 @@ describe("whiteboardFromGraph (sections)", () => {
     expect(s.color).toMatchObject({ x: 255, y: 255, z: 255 });
   });
 
+  it("also snaps a light cluster fill to white (an arbitrary light RGB is still off-palette)", () => {
+    const g: DiagramGraph = {
+      nodes: [],
+      edges: [],
+      groups: [{ id: "G", label: "G", x: 0, y: 0, w: 300, h: 200, fill: { r: 236, g: 236, b: 255 } }],
+    };
+    const s = whiteboardFromGraph(g, seqIds()).find((e) => e.type === "section")!;
+    expect(s.color).toMatchObject({ x: 255, y: 255, z: 255 });
+  });
+
   it("keeps connector source/target indices correct when sections precede shapes", () => {
     const g: DiagramGraph = {
       nodes: [

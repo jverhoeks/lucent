@@ -68,6 +68,33 @@ describe("drawioFromGraph", () => {
     expect(textCell.getAttribute("style")).toContain("text;");
   });
 
+  it("nests groups and member nodes as containers with immediate-parent-relative geometry", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 160, y: 160, w: 20, h: 20, label: "A", groupId: "inner" }],
+      edges: [],
+      groups: [
+        { id: "outer", label: "Outer", x: 250, y: 250, w: 300, h: 300 }, // abs top-left (100,100)
+        { id: "inner", label: "Inner", x: 200, y: 200, w: 100, h: 100, parentId: "outer" }, // abs (150,150)
+      ],
+    };
+    const doc = parse(drawioFromGraph(g));
+    const cell = (value: string) =>
+      Array.from(doc.querySelectorAll("mxCell")).find((c) => c.getAttribute("value") === value)!;
+    const outer = cell("Outer"), inner = cell("Inner"), node = cell("A");
+    const geo = (c: Element) => c.querySelector("mxGeometry")!;
+
+    expect(outer.getAttribute("style")).toContain("container=1");
+    expect(outer.getAttribute("parent")).toBe("1");
+    expect(geo(outer).getAttribute("x")).toBe("100"); // absolute, parent is the layer
+
+    expect(inner.getAttribute("parent")).toBe(outer.getAttribute("id"));
+    expect(geo(inner).getAttribute("x")).toBe("50"); // 150 - 100 (relative to outer only)
+
+    expect(node.getAttribute("parent")).toBe(inner.getAttribute("id"));
+    expect(geo(node).getAttribute("x")).toBe("0"); // 150 - 150
+    expect(geo(node).getAttribute("y")).toBe("0");
+  });
+
   it("XML-escapes the label into the value attribute", () => {
     const doc = parse(drawioFromGraph(GRAPH));
     const a = doc.querySelector('mxCell[vertex="1"]')!;

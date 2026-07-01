@@ -253,15 +253,26 @@ describe("payload conformance to the real whiteboard format", () => {
 });
 
 describe("whiteboardFromGraph", () => {
-  it("lightens dark fills so the default dark label text stays readable", () => {
+  it("leaves dark fills empty so the whiteboard's dark label text stays readable", () => {
     const g: DiagramGraph = {
       nodes: [{ id: "A", x: 0, y: 0, w: 100, h: 40, label: "Written", fill: { r: 31, g: 32, b: 32 } }],
       edges: [],
     };
     const s = whiteboardFromGraph(g, seqIds())[0];
-    expect((s.color as any).x).toBeGreaterThan(200); // near-black fill lightened
+    // a dark fill would be unreadable behind the fixed dark label text → no fill
+    expect(s.fillEnabled).toBe(false);
     // no textColor mark (relies on the whiteboard's default dark text)
     expect(JSON.parse(s.text as string).content[0].content[0].marks).toBeUndefined();
+  });
+
+  it("keeps a light fill as-is, without fabricating a color", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 0, y: 0, w: 100, h: 40, label: "Alpha", fill: { r: 236, g: 236, b: 255 } }],
+      edges: [],
+    };
+    const s = whiteboardFromGraph(g, seqIds())[0];
+    expect(s.fillEnabled).toBe(true);
+    expect(s.color).toMatchObject({ x: 236, y: 236, z: 255 });
   });
 
   it("emits one centered shape for a single node", () => {

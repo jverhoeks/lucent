@@ -120,14 +120,6 @@ export function contrastText(fill: RGB): RGB {
   return isDarkFill(fill) ? { r: 255, g: 255, b: 255 } : { r: 33, g: 33, b: 33 };
 }
 
-/** Lighten a dark fill toward white (leaving light fills untouched) so the
- *  whiteboard's fixed dark label text stays readable. */
-export function lightenForCanvas(fill: RGB): RGB {
-  if (!isDarkFill(fill)) return fill;
-  const up = (n: number) => Math.round(n + (255 - n) * 0.85);
-  return { r: up(fill.r), g: up(fill.g), b: up(fill.b) };
-}
-
 /** Stringified ProseMirror doc for a shape/text label. When `color` is given,
  *  the text carries an Atlaskit `textColor` mark (lenient — stripped if the
  *  target doesn't support it, never rejects the paste). */
@@ -224,20 +216,22 @@ export function whiteboardFromGraph(
     nodeIndex.set(n.id, els.length);
     const pos = vec2(n.x - cx, n.y - cy);
     const size = vec2(n.w, n.h);
+    // The whiteboard renders shape label text in a fixed dark color (it ignores
+    // our textColor mark). A dark fill would be unreadable behind that text, so
+    // we only fill when mermaid gives a light color — dark (or absent) fills are
+    // left empty and the light canvas shows through. We never fabricate a fill.
+    const fillable = !!n.fill && !isDarkFill(n.fill);
     els.push({
       type: "shape",
       source: 1,
       position: pos,
       size,
-      // The whiteboard renders shape label text in a fixed dark color (it ignores
-      // our textColor mark), so a dark fill would be unreadable. Lighten dark
-      // fills toward white so the default dark text shows.
-      color: vec3(lightenForCanvas(n.fill ?? DEFAULT_FILL)),
+      color: vec3(n.fill ?? DEFAULT_FILL),
       strokeColor: vec3(n.stroke ?? DEFAULT_STROKE),
       strokeStyle: 1,
       text: proseDoc(n.label),
       shape: SHAPE_ENUM[n.shapeKind ?? "rect"],
-      fillEnabled: !!n.fill,
+      fillEnabled: fillable,
       fontScale: 1,
       basisSize: size,
       basisPosition: pos,

@@ -125,6 +125,37 @@ const POLYGON_SVG = `
   </g>
 </svg>`;
 
+const STATE_SVG = `
+<svg aria-roledescription="stateDiagram" class="statediagram" xmlns="http://www.w3.org/2000/svg">
+  <g class="edgePaths">
+    <path id="mermaid-1-edge0" data-id="edge0" class="transition" d="M100,67 C100,90 100,110 100,133" marker-end="url(#arrow)"/>
+  </g>
+  <g class="nodes">
+    <g class="node" id="mermaid-1-state-Written-0" transform="translate(100, 50)">
+      <rect class="basic label-container" x="-35" y="-17" width="70" height="35"/>
+      <g class="label"><text>Written</text></g>
+    </g>
+    <g class="node" id="mermaid-1-state-Forgotten-1" transform="translate(100, 150)">
+      <rect class="basic label-container" x="-43" y="-17" width="86" height="35"/>
+      <g class="label"><text>Forgotten</text></g>
+    </g>
+  </g>
+</svg>`;
+
+describe("extractGraph (state diagram: g.node without flowchart ids)", () => {
+  it("labels state boxes and links transitions geometrically", () => {
+    const g = extractGraph(parseSvg(STATE_SVG));
+    expect(g.nodes.map((n) => n.label).sort()).toEqual(["Forgotten", "Written"]);
+    expect(g.edges).toHaveLength(1);
+    const e = g.edges[0];
+    const src = g.nodes.find((n) => n.id === e.sourceId)!;
+    const tgt = g.nodes.find((n) => n.id === e.targetId)!;
+    expect(src.label).toBe("Written"); // path starts near Written
+    expect(tgt.label).toBe("Forgotten"); // ends near Forgotten
+    expect(e.arrowEnd).toBe(true);
+  });
+});
+
 describe("extractGraph (polygon node shapes)", () => {
   it("classifies triangles, diamonds and parallelograms from polygon points", () => {
     const g = extractGraph(parseSvg(POLYGON_SVG));

@@ -64,8 +64,14 @@ Two layers:
    So "every diagram type" means "every type that maps to shapes/lines/text";
    pie is out. Tell the user this rather than implying full coverage.
 
-2. **Layer 2 — semantic reconstruction (graph types: flowchart, and later
-   state/ER/class).** Mermaid stamps structure into the SVG we read back:
+2. **Layer 2 — semantic reconstruction (any `g.node` diagram: flowchart,
+   stateDiagram, class, ER).** Dispatch is on **`g.node` presence**, not the
+   `flowchart` role (stateDiagram is `aria-roledescription="stateDiagram"`).
+   Node ids are generalized (`flowchart-A-0`, `state-Written-0`, …). Edges link
+   by their `L_src_tgt` id when present (flowchart); otherwise by **matching
+   each path endpoint to the nearest node** (stateDiagram edges are `edge0`,
+   carrying no endpoints). Edge **labels** are not yet emitted (deferred).
+   Mermaid stamps structure into the SVG we read back:
    - nodes: `g.node` with id `flowchart-<id>-<n>` and/or `data-id`
    - edges: `path` id `L_<src>_<tgt>_<n>` (encodes endpoints) + marker refs +
      `stroke-dasharray`

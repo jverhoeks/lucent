@@ -4,7 +4,7 @@
  *  edges → `mxCell` edges referencing vertex ids; free lines → edges with
  *  explicit source/target points. */
 
-import { extractGraph, type DiagramGraph, type IRNode, type RGB } from "./mermaid-whiteboard";
+import { extractGraph, contrastText, type DiagramGraph, type IRNode, type RGB } from "./mermaid-whiteboard";
 
 function hex(c: RGB): string {
   const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
@@ -43,6 +43,7 @@ export function drawioFromGraph(g: DiagramGraph): string {
     let style = STYLE[n.shapeKind ?? "rect"];
     style += n.fill ? `fillColor=${hex(n.fill)};` : "fillColor=none;";
     if (n.stroke) style += `strokeColor=${hex(n.stroke)};`;
+    if (n.label && n.fill) style += `fontColor=${hex(contrastText(n.fill))};`;
     const x = n.x - n.w / 2;
     const y = n.y - n.h / 2;
     cells.push(
@@ -78,6 +79,17 @@ export function drawioFromGraph(g: DiagramGraph): string {
         `<mxPoint x="${sx}" y="${sy}" as="sourcePoint"/>` +
         `<mxPoint x="${ex}" y="${ey}" as="targetPoint"/>` +
         `</mxGeometry></mxCell>`,
+    );
+  });
+
+  (g.texts ?? []).forEach((t, i) => {
+    const w = t.w || 40;
+    const h = t.h || 20;
+    let style = "text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;";
+    if (t.color) style += `fontColor=${hex(t.color)};`;
+    cells.push(
+      `<mxCell id="t${i}" value="${xmlEscape(t.text)}" style="${style}" vertex="1" parent="1">` +
+        `<mxGeometry x="${t.x - w / 2}" y="${t.y - h / 2}" width="${w}" height="${h}" as="geometry"/></mxCell>`,
     );
   });
 

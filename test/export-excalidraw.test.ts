@@ -30,6 +30,14 @@ describe("excalidrawFromGraph", () => {
     expect(shapes[0].boundElements.some((b: any) => b.type === "text")).toBe(true);
   });
 
+  it("emits loose texts (edge labels) as standalone text elements", () => {
+    const g: DiagramGraph = { nodes: [], edges: [], texts: [{ x: 100, y: 50, w: 48, h: 20, text: "ship it" }] };
+    const data = JSON.parse(excalidrawFromGraph(g, seqIds()));
+    const t = data.elements.find((e: any) => e.type === "text" && e.text === "ship it");
+    expect(t).toBeTruthy();
+    expect(t.containerId).toBeNull();
+  });
+
   it("maps colors to hex and binds label text to its container", () => {
     const data = JSON.parse(excalidrawFromGraph(GRAPH, seqIds()));
     const a = data.elements.find((e: any) => e.type === "rectangle");

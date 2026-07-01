@@ -5,7 +5,7 @@
  *  text (containerId + the container's boundElements). Edges → arrows bound to
  *  shapes via startBinding/endBinding (reusing our per-element ids). */
 
-import { extractGraph, type DiagramGraph, type IRNode, type RGB } from "./mermaid-whiteboard";
+import { extractGraph, contrastText, type DiagramGraph, type IRNode, type RGB } from "./mermaid-whiteboard";
 
 function hex(c: RGB): string {
   const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
@@ -85,7 +85,7 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
         y: n.y - 10,
         width: n.w,
         height: 20,
-        strokeColor: "#1e1e1e",
+        strokeColor: n.fill ? hex(contrastText(n.fill)) : "#1e1e1e",
         backgroundColor: "transparent",
         fillStyle: "solid",
         strokeStyle: "solid",
@@ -133,6 +133,32 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
       endBinding: { elementId: t, focus: 0, gap: 4 },
       startArrowhead: e.arrowStart ? "arrow" : null,
       endArrowhead: e.arrowEnd ? "arrow" : null,
+    });
+  }
+
+  for (const t of g.texts ?? []) {
+    const w = t.w || 40;
+    elements.push({
+      ...base(idGen()),
+      type: "text",
+      x: t.x - w / 2,
+      y: t.y - 10,
+      width: w,
+      height: t.h || 20,
+      strokeColor: t.color ? hex(t.color) : "#1e1e1e",
+      backgroundColor: "transparent",
+      fillStyle: "solid",
+      strokeStyle: "solid",
+      roundness: null,
+      boundElements: null,
+      text: t.text,
+      fontSize: 16,
+      fontFamily: 1,
+      textAlign: "center",
+      verticalAlign: "middle",
+      containerId: null,
+      originalText: t.text,
+      lineHeight: 1.25,
     });
   }
 

@@ -103,11 +103,29 @@ const SHAPE_ENUM: Record<NonNullable<IRNode["shapeKind"]>, number> = {
 const vec2 = (x: number, y: number) => ({ x, y, type: "Vector2" as const });
 const vec3 = (c: RGB) => ({ x: c.r, y: c.g, z: c.b, type: "Vector3" as const });
 
-/** Stringified ProseMirror doc for a shape/text label. */
-function proseDoc(text: string): string {
-  const content = text
-    ? [{ type: "text", text }]
-    : ([] as Array<Record<string, unknown>>);
+/** Perceived luminance (0–255). */
+function luminance(c: RGB): number {
+  return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+}
+
+export function isDarkFill(c: RGB): boolean {
+  return luminance(c) < 140;
+}
+
+/** A readable label color for a given fill — white on dark, near-black on light.
+ *  Prevents black-on-black when a dark-theme diagram is pasted. */
+export function contrastText(fill: RGB): RGB {
+  return isDarkFill(fill) ? { r: 255, g: 255, b: 255 } : { r: 33, g: 33, b: 33 };
+}
+
+/** Stringified ProseMirror doc for a shape/text label. When `color` is given,
+ *  the text carries an Atlaskit `textColor` mark (lenient — stripped if the
+ *  target doesn't support it, never rejects the paste). */
+function proseDoc(text: string, color?: string): string {
+  const marks = color ? [{ type: "textColor", attrs: { color } }] : undefined;
+  const textNode: Record<string, unknown> = { type: "text", text };
+  if (marks) textNode.marks = marks;
+  const content = text ? [textNode] : ([] as Array<Record<string, unknown>>);
   return JSON.stringify({
     version: 1,
     type: "doc",
@@ -204,7 +222,8 @@ export function whiteboardFromGraph(
       color: vec3(n.fill ?? DEFAULT_FILL),
       strokeColor: vec3(n.stroke ?? DEFAULT_STROKE),
       strokeStyle: 1,
-      text: proseDoc(n.label),
+      // White label text on dark fills; otherwise default (keeps light shapes plain).
+      text: proseDoc(n.label, n.fill && isDarkFill(n.fill) ? "#ffffff" : undefined),
       shape: SHAPE_ENUM[n.shapeKind ?? "rect"],
       fillEnabled: !!n.fill,
       fontScale: 1,
@@ -522,7 +541,25 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
     });
   });
 
-  return { nodes, edges };
+  // Edge/transition labels → positioned text (mermaid already places them at the
+  // edge midpoint via the edgeLabel group's transform, in graph coords).
+  const texts: IRText[] = [];
+  svg.querySelectorAll("g.edgeLabels g.edgeLabel, g.edgeLabel").forEach((el) => {
+    const t = el.textContent?.trim();
+    if (!t) return;
+    const { x, y } = transformTranslate(el);
+    if (x === 0 && y === 0) return; // unpositioned (empty label placeholder)
+    texts.push({
+      x,
+      y,
+      w: Math.max(t.length * 8, 20),
+      h: 20,
+      text: t,
+      color: computedColors(el.querySelector("text")).fill,
+    });
+  });
+
+  return { nodes, edges, texts };
 }
 
 /** Points of a straight (M/L only) SVG path in `d`. Returns null for anything

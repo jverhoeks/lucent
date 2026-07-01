@@ -45,6 +45,16 @@ describe("drawioFromGraph", () => {
     expect(b.getAttribute("style")).toContain("rhombus");
   });
 
+  it("emits loose texts (edge labels) as text vertices", () => {
+    const g: DiagramGraph = { nodes: [], edges: [], texts: [{ x: 100, y: 50, w: 48, h: 20, text: "ship it" }] };
+    const doc = parse(drawioFromGraph(g));
+    const textCell = Array.from(doc.querySelectorAll('mxCell[vertex="1"]')).find(
+      (c) => c.getAttribute("value") === "ship it",
+    )!;
+    expect(textCell).toBeTruthy();
+    expect(textCell.getAttribute("style")).toContain("text;");
+  });
+
   it("XML-escapes the label into the value attribute", () => {
     const doc = parse(drawioFromGraph(GRAPH));
     const a = doc.querySelector('mxCell[vertex="1"]')!;

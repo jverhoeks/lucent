@@ -130,6 +130,9 @@ const STATE_SVG = `
   <g class="edgePaths">
     <path id="mermaid-1-edge0" data-id="edge0" class="transition" d="M100,67 C100,90 100,110 100,133" marker-end="url(#arrow)"/>
   </g>
+  <g class="edgeLabels">
+    <g class="edgeLabel" transform="translate(100, 100)"><g class="label"><text>ship it</text></g></g>
+  </g>
   <g class="nodes">
     <g class="node" id="mermaid-1-state-Written-0" transform="translate(100, 50)">
       <rect class="basic label-container" x="-35" y="-17" width="70" height="35"/>
@@ -153,6 +156,14 @@ describe("extractGraph (state diagram: g.node without flowchart ids)", () => {
     expect(src.label).toBe("Written"); // path starts near Written
     expect(tgt.label).toBe("Forgotten"); // ends near Forgotten
     expect(e.arrowEnd).toBe(true);
+  });
+
+  it("extracts transition labels as positioned text", () => {
+    const g = extractGraph(parseSvg(STATE_SVG));
+    const t = (g.texts ?? []).find((x) => x.text === "ship it");
+    expect(t).toBeTruthy();
+    expect(t!.x).toBe(100);
+    expect(t!.y).toBe(100);
   });
 });
 

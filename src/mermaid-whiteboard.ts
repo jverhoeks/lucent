@@ -264,21 +264,22 @@ export function whiteboardFromGraph(
     const pos = vec2(n.x - cx, n.y - cy);
     const size = vec2(n.w, n.h);
     // The whiteboard renders shape label text in a fixed dark color (it ignores
-    // our textColor mark). A dark fill would be unreadable behind that text, so
-    // we only fill when mermaid gives a light color — dark (or absent) fills are
-    // left empty and the light canvas shows through. We never fabricate a fill.
+    // our textColor mark) AND ignores fillEnabled:false on a pasted shape — it
+    // paints `color` regardless. So a dark fill renders black-on-black. Keep a
+    // light mermaid fill as-is; for a dark or absent fill paint white — a light
+    // box with the fixed dark label, the "empty/light-canvas" look we wanted.
     const fillable = !!n.fill && !isDarkFill(n.fill);
     els.push({
       type: "shape",
       source: 1,
       position: pos,
       size,
-      color: vec3(n.fill ?? DEFAULT_FILL),
+      color: vec3(fillable ? n.fill! : DEFAULT_FILL),
       strokeColor: vec3(n.stroke ?? DEFAULT_STROKE),
       strokeStyle: 1,
       text: proseDoc(n.label),
       shape: SHAPE_ENUM[n.shapeKind ?? "rect"],
-      fillEnabled: fillable,
+      fillEnabled: true,
       fontScale: 1,
       basisSize: size,
       basisPosition: pos,

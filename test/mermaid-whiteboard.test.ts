@@ -1,0 +1,127 @@
+import { describe, it, expect } from "vitest";
+import {
+  whiteboardFromGraph,
+  encodeWhiteboardClipboard,
+  type DiagramGraph,
+} from "../src/mermaid-whiteboard";
+
+/** Decode the base64 out of the clipboard HTML back to the element array. */
+function decodeClipboard(html: string): any[] {
+  const m = html.match(/data-canvas-clipboard="([^"]*)"/);
+  if (!m) throw new Error("no canvas-clipboard attribute");
+  const bytes = Uint8Array.from(atob(m[1]), (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+const seqIds = () => {
+  let n = 0;
+  return () => `id${n++}`;
+};
+
+describe("encodeWhiteboardClipboard", () => {
+  it("wraps elements as base64 in a canvas-clipboard div and round-trips", () => {
+    const els = [{ type: "shape", text: "café ☕" }];
+    const html = encodeWhiteboardClipboard(els);
+    expect(html).toContain("data-canvas-clipboard=");
+    expect(html).toContain("<meta charset");
+    expect(decodeClipboard(html)).toEqual(els);
+  });
+});
+
+describe("whiteboardFromGraph", () => {
+  it("emits one centered shape for a single node", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 100, y: 50, w: 160, h: 80, label: "hello" }],
+      edges: [],
+    };
+    const els = whiteboardFromGraph(g, seqIds());
+    expect(els).toHaveLength(1);
+    const s = els[0];
+    expect(s.type).toBe("shape");
+    // single node → its center becomes the origin
+    expect(s.position).toEqual({ x: 0, y: 0, type: "Vector2" });
+    expect(s.size).toEqual({ x: 160, y: 80, type: "Vector2" });
+    expect(s.shape).toBe(1);
+    expect(JSON.parse(s.text)).toEqual({
+      version: 1,
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "hello" }] },
+      ],
+    });
+  });
+
+  it("emits an empty ProseMirror doc for a blank label", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 0, y: 0, w: 10, h: 10, label: "" }],
+      edges: [],
+    };
+    const s = whiteboardFromGraph(g, seqIds())[0];
+    expect(JSON.parse(s.text)).toEqual({
+      version: 1,
+      type: "doc",
+      content: [{ type: "paragraph", content: [] }],
+    });
+  });
+
+  it("recenters the diagram bounding box to the origin", () => {
+    const g: DiagramGraph = {
+      nodes: [
+        { id: "A", x: 0, y: 0, w: 100, h: 100, label: "A" },
+        { id: "B", x: 200, y: 0, w: 100, h: 100, label: "B" },
+      ],
+      edges: [],
+    };
+    const els = whiteboardFromGraph(g, seqIds());
+    // bbox center is x=100 → shifts to -100 and +100
+    expect(els[0].position.x).toBe(-100);
+    expect(els[1].position.x).toBe(100);
+  });
+
+  it("links an edge to its shapes by array index with an arrow cap", () => {
+    const g: DiagramGraph = {
+      nodes: [
+        { id: "A", x: 0, y: 0, w: 100, h: 100, label: "A" },
+        { id: "B", x: 300, y: 0, w: 100, h: 100, label: "B" },
+      ],
+      edges: [{ sourceId: "A", targetId: "B", arrowEnd: true }],
+    };
+    const els = whiteboardFromGraph(g, seqIds());
+    const conn = els.find((e) => e.type === "connector");
+    expect(conn).toBeTruthy();
+    expect(conn.sourceIndex).toBe(0);
+    expect(conn.targetIndex).toBe(1);
+    // ids minted for the shapes are referenced by the connector
+    expect(conn.sourceElement).toBe("id0");
+    expect(conn.targetElement).toBe("id1");
+    // A is left of B → source right anchor, target left anchor
+    expect(conn.sourceAnchor).toEqual({ left: 1, top: 0.5 });
+    expect(conn.targetAnchor).toEqual({ left: 0, top: 0.5 });
+    expect(conn.endCap).toBe(2);
+    expect(conn.startCap).toBe(1);
+  });
+
+  it("maps fill/stroke to Vector3 and disables fill when absent", () => {
+    const g: DiagramGraph = {
+      nodes: [
+        {
+          id: "A",
+          x: 0,
+          y: 0,
+          w: 10,
+          h: 10,
+          label: "A",
+          fill: { r: 255, g: 239, b: 174 },
+          stroke: { r: 174, g: 42, b: 25 },
+        },
+        { id: "B", x: 50, y: 0, w: 10, h: 10, label: "B" },
+      ],
+      edges: [],
+    };
+    const [a, b] = whiteboardFromGraph(g, seqIds());
+    expect(a.color).toEqual({ x: 255, y: 239, z: 174, type: "Vector3" });
+    expect(a.strokeColor).toEqual({ x: 174, y: 42, z: 25, type: "Vector3" });
+    expect(a.fillEnabled).toBe(true);
+    expect(b.fillEnabled).toBe(false);
+  });
+});

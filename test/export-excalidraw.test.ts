@@ -54,6 +54,23 @@ describe("excalidrawFromGraph", () => {
     expect(t.containerId).toBeNull();
   });
 
+  it("emits a frame per subgraph and assigns member shapes' frameId", () => {
+    const g: DiagramGraph = {
+      nodes: [
+        { id: "A", x: 0, y: 0, w: 80, h: 40, label: "A", groupId: "G" },
+        { id: "B", x: 0, y: 300, w: 80, h: 40, label: "B" },
+      ],
+      edges: [],
+      groups: [{ id: "G", label: "Cluster", x: 0, y: 0, w: 200, h: 120 }],
+    };
+    const data = JSON.parse(excalidrawFromGraph(g, seqIds()));
+    const frame = data.elements.find((e: any) => e.type === "frame");
+    expect(frame).toMatchObject({ name: "Cluster", width: 200, height: 120, x: -100, y: -60 });
+    const rects = data.elements.filter((e: any) => e.type === "rectangle");
+    expect(rects[0].frameId).toBe(frame.id); // A is inside G
+    expect(rects[1].frameId).toBeNull(); // B is outside every group
+  });
+
   it("maps colors to hex and binds label text to its container", () => {
     const data = JSON.parse(excalidrawFromGraph(GRAPH, seqIds()));
     const a = data.elements.find((e: any) => e.type === "rectangle");

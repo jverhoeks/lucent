@@ -294,7 +294,9 @@ export function whiteboardFromGraph(
 // in a real browser; the unit fixture asserts structure, not color.
 // ---------------------------------------------------------------------------
 
-const NODE_ID_RE = /flowchart-(.+)-\d+$/;
+// Node group ids across diagram types: flowchart-A-0, state-Written-0,
+// classId-Foo-1, entity-Bar-2, er-Baz-3.
+const NODE_ID_RE = /(?:flowchart|statediagram|state|classId|class|entity|er)-(.+)-\d+$/;
 
 /** Parse `translate(x, y)` from an element's transform attribute. */
 function transformTranslate(el: Element): { x: number; y: number } {
@@ -441,14 +443,47 @@ function nodeShape(
   return { w: 80, h: 40, kind: "rect" };
 }
 
-/** Layer 2: flowchart → semantic nodes + anchored edges. */
-function extractFlowchart(svg: SVGSVGElement): DiagramGraph {
+/** First and last coordinate pair of a path's `d` (works through curves). */
+function pathEndpoints(
+  d: string,
+): { start: [number, number]; end: [number, number] } | null {
+  const nums = (d.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number);
+  if (nums.length < 4) return null;
+  return {
+    start: [nums[0], nums[1]],
+    end: [nums[nums.length - 2], nums[nums.length - 1]],
+  };
+}
+
+/** Id of the node whose center is nearest a point (edge-endpoint matching). */
+function nearestNodeId(nodes: IRNode[], pt: [number, number]): string | null {
+  let best: string | null = null;
+  let bestD = Infinity;
+  for (const n of nodes) {
+    const dx = n.x - pt[0];
+    const dy = n.y - pt[1];
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = n.id;
+    }
+  }
+  return best;
+}
+
+/** Layer 2: any `g.node`-based diagram (flowchart, state, class, ER) → semantic
+ *  nodes + edges. Edges link by their `L_src_tgt` id when present (flowchart),
+ *  otherwise by matching each path endpoint to the nearest node (state/class,
+ *  whose edge ids like `edge0` carry no endpoints). */
+function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
   const nodes: IRNode[] = [];
-  svg.querySelectorAll("g.node").forEach((gEl) => {
+  const byId = new Set<string>();
+  svg.querySelectorAll("g.node").forEach((gEl, i) => {
     const rawId = gEl.getAttribute("id") || "";
     const m = rawId.match(NODE_ID_RE);
-    const id = (m ? m[1] : gEl.getAttribute("data-id")) || rawId;
-    if (!id) return;
+    let id = (m ? m[1] : gEl.getAttribute("data-id")) || `n${i}`;
+    if (byId.has(id)) id = `${id}#${i}`; // keep ids unique for edge references
+    byId.add(id);
     const { x, y } = transformTranslate(gEl);
     const shapeEl =
       gEl.querySelector("rect.label-container") ||
@@ -462,17 +497,27 @@ function extractFlowchart(svg: SVGSVGElement): DiagramGraph {
   });
 
   const edges: IREdge[] = [];
-  svg.querySelectorAll("g.edgePaths path, path.flowchart-link").forEach((p) => {
+  svg.querySelectorAll("g.edgePaths path, path.flowchart-link, .edgePaths path").forEach((p) => {
     const parsed = parseEdgeId(p.getAttribute("data-id") || p.getAttribute("id") || "");
-    if (!parsed) return;
-    const style = p.getAttribute("style") || "";
-    const cls = p.getAttribute("class") || "";
+    let src: string | null = null;
+    let tgt: string | null = null;
+    if (parsed && byId.has(parsed.src) && byId.has(parsed.tgt)) {
+      src = parsed.src;
+      tgt = parsed.tgt;
+    } else {
+      const ep = pathEndpoints(p.getAttribute("d") || "");
+      if (ep) {
+        src = nearestNodeId(nodes, ep.start);
+        tgt = nearestNodeId(nodes, ep.end);
+      }
+    }
+    if (!src || !tgt || src === tgt) return;
     edges.push({
-      sourceId: parsed.src,
-      targetId: parsed.tgt,
+      sourceId: src,
+      targetId: tgt,
       arrowEnd: !!p.getAttribute("marker-end"),
       arrowStart: !!p.getAttribute("marker-start"),
-      dashed: style.includes("dasharray") || cls.includes("dashed") || !!p.getAttribute("stroke-dasharray"),
+      dashed: isDashed(p),
       stroke: computedColors(p).stroke,
     });
   });
@@ -553,11 +598,11 @@ function extractGeometry(svg: SVGSVGElement): DiagramGraph {
   return { nodes, edges: [], texts, lines };
 }
 
-/** Read a mermaid-rendered <svg> into the IR. Flowcharts get semantic
- *  reconstruction; everything else degrades to editable geometry. */
+/** Read a mermaid-rendered <svg> into the IR. Any diagram that uses `g.node`
+ *  (flowchart, stateDiagram, class, ER) gets semantic reconstruction; the rest
+ *  (sequence, gantt, pie) degrade to editable geometry. */
 export function extractGraph(svg: SVGSVGElement): DiagramGraph {
-  const role = `${svg.getAttribute("aria-roledescription") || ""} ${svg.getAttribute("class") || ""}`;
-  if (/flowchart/.test(role)) return extractFlowchart(svg);
+  if (svg.querySelector("g.node")) return extractNodeGraph(svg);
   return extractGeometry(svg);
 }
 

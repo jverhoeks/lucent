@@ -4,7 +4,10 @@ import {
   encodeWhiteboardClipboard,
   svgToWhiteboardClipboard,
   extractGraph,
+  assignContainment,
   type DiagramGraph,
+  type IRGroup,
+  type IRNode,
 } from "../src/mermaid-whiteboard";
 
 /** Parse an SVG string into a live SVGSVGElement (jsdom). */
@@ -92,6 +95,33 @@ describe("extractGraph (flowchart)", () => {
     expect(els.filter((e) => e.type === "shape")).toHaveLength(2);
     const conn = els.find((e) => e.type === "connector");
     expect(conn).toMatchObject({ sourceIndex: 0, targetIndex: 1, endCap: 2 });
+  });
+});
+
+const SUBGRAPH_SVG = `
+<svg aria-roledescription="flowchart-v2" class="flowchart" xmlns="http://www.w3.org/2000/svg">
+  <g class="edgePaths"><path data-id="L_A_B_0" d="M100,50L300,50" marker-end="url(#arrow)"/></g>
+  <g class="edgeLabels"></g>
+  <g class="clusters">
+    <g class="cluster" id="g-Outer"><rect x="40" y="10" width="320" height="80"/><g class="cluster-label"><text>Customer AWS Account</text></g></g>
+    <g class="cluster" id="g-Inner"><rect x="45" y="25" width="110" height="50"/><g class="cluster-label"><text>Per-Workspace</text></g></g>
+  </g>
+  <g class="nodes">
+    <g class="node default" id="mermaid-123-flowchart-A-0" transform="translate(100, 50)"><rect class="basic label-container" x="-50" y="-20" width="100" height="40"/><g class="label"><text>Alpha</text></g></g>
+    <g class="node default" id="mermaid-123-flowchart-B-0" transform="translate(300, 50)"><rect class="basic label-container" x="-40" y="-20" width="80" height="40"/><g class="label"><text>Beta</text></g></g>
+  </g>
+</svg>`;
+
+describe("extractGraph (subgraph clusters)", () => {
+  it("extracts nested groups (center-based) and assigns node membership", () => {
+    const g = extractGraph(parseSvg(SUBGRAPH_SVG));
+    expect(g.groups?.map((x) => x.label).sort()).toEqual(["Customer AWS Account", "Per-Workspace"]);
+    const outer = g.groups!.find((x) => x.label === "Customer AWS Account")!;
+    const inner = g.groups!.find((x) => x.label === "Per-Workspace")!;
+    expect(outer).toMatchObject({ x: 200, y: 50, w: 320, h: 80 });
+    expect(inner.parentId).toBe(outer.id);
+    expect(g.nodes.find((n) => n.id === "A")!.groupId).toBe(inner.id);
+    expect(g.nodes.find((n) => n.id === "B")!.groupId).toBe(outer.id);
   });
 });
 
@@ -249,6 +279,63 @@ describe("payload conformance to the real whiteboard format", () => {
     // Vector tagging must match the format exactly.
     expect((shape.position as any).type).toBe("Vector2");
     expect((shape.color as any).type).toBe("Vector3");
+  });
+});
+
+describe("assignContainment", () => {
+  it("nests groups and assigns each node to its innermost group", () => {
+    const groups: IRGroup[] = [
+      { id: "outer", label: "O", x: 0, y: 0, w: 400, h: 400 },
+      { id: "inner", label: "I", x: 0, y: 0, w: 100, h: 100 },
+    ];
+    const nodes: IRNode[] = [
+      { id: "a", x: 0, y: 0, w: 20, h: 20, label: "a" }, // inside inner (and outer)
+      { id: "b", x: 150, y: 150, w: 20, h: 20, label: "b" }, // inside outer only
+      { id: "c", x: 999, y: 999, w: 20, h: 20, label: "c" }, // outside all
+    ];
+    assignContainment(groups, nodes);
+    expect(groups.find((g) => g.id === "inner")!.parentId).toBe("outer");
+    expect(groups.find((g) => g.id === "outer")!.parentId).toBeUndefined();
+    expect(nodes.find((n) => n.id === "a")!.groupId).toBe("inner");
+    expect(nodes.find((n) => n.id === "b")!.groupId).toBe("outer");
+    expect(nodes.find((n) => n.id === "c")!.groupId).toBeUndefined();
+  });
+});
+
+describe("whiteboardFromGraph (sections)", () => {
+  it("emits a section behind the shapes for a subgraph, outermost first", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 0, y: 0, w: 100, h: 40, label: "A", groupId: "inner" }],
+      edges: [],
+      groups: [
+        { id: "outer", label: "Outer", x: 0, y: 0, w: 400, h: 300 },
+        { id: "inner", label: "Inner", x: 0, y: 0, w: 200, h: 120, parentId: "outer" },
+      ],
+    };
+    const els = whiteboardFromGraph(g, seqIds());
+    const secs = els.filter((e) => e.type === "section");
+    expect(secs.map((s) => s.title)).toEqual(["Outer", "Inner"]); // largest painted first
+    expect(secs[1].size).toMatchObject({ x: 200, y: 120 });
+    // sections precede shapes so they render behind, and connector indices are unaffected
+    const firstShape = els.findIndex((e) => e.type === "shape");
+    expect(els.indexOf(secs[0])).toBeLessThan(firstShape);
+  });
+
+  it("keeps connector source/target indices correct when sections precede shapes", () => {
+    const g: DiagramGraph = {
+      nodes: [
+        { id: "A", x: 0, y: 0, w: 80, h: 40, label: "A" },
+        { id: "B", x: 200, y: 0, w: 80, h: 40, label: "B" },
+      ],
+      edges: [{ sourceId: "A", targetId: "B", arrowEnd: true }],
+      groups: [{ id: "G", label: "G", x: 100, y: 0, w: 400, h: 200 }],
+    };
+    const els = whiteboardFromGraph(g, seqIds());
+    const conn = els.find((e) => e.type === "connector")!;
+    const shapes = els.filter((e) => e.type === "shape");
+    // one section shifts both shapes to indices 1 and 2; the connector must track that
+    expect(conn.sourceIndex).toBe(els.indexOf(shapes[0]));
+    expect(conn.targetIndex).toBe(els.indexOf(shapes[1]));
   });
 });
 

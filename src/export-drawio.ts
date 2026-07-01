@@ -37,6 +37,45 @@ export function drawioFromGraph(g: DiagramGraph): string {
   const cells: string[] = [];
   const cellId = new Map<string, string>();
 
+  // Subgraphs → container cells. A child's geometry is relative to its IMMEDIATE
+  // parent's absolute top-left (never the summed chain — draw.io re-sums it), so
+  // we compute each box's absolute top-left once and subtract only the parent's.
+  const groups = g.groups ?? [];
+  const groupById = new Map(groups.map((gr) => [gr.id, gr]));
+  const groupCell = new Map<string, string>();
+  groups.forEach((gr, i) => groupCell.set(gr.id, `g${i}`));
+  const absTL = (gr: { x: number; y: number; w: number; h: number }) => ({
+    x: gr.x - gr.w / 2,
+    y: gr.y - gr.h / 2,
+  });
+  // The (cell id, absolute top-left) of an element's immediate parent group.
+  const parentOf = (groupId?: string) => {
+    const p = groupId ? groupById.get(groupId) : undefined;
+    return p ? { cell: groupCell.get(p.id)!, tl: absTL(p) } : { cell: "1", tl: { x: 0, y: 0 } };
+  };
+  const depth = (gr: (typeof groups)[number]): number => {
+    let d = 0;
+    let cur: (typeof groups)[number] | undefined = gr;
+    while (cur?.parentId && groupById.has(cur.parentId)) {
+      d++;
+      cur = groupById.get(cur.parentId);
+    }
+    return d;
+  };
+  // Outermost first so parent cells precede their children.
+  [...groups]
+    .sort((a, b) => depth(a) - depth(b))
+    .forEach((gr) => {
+      const { cell: parent, tl } = parentOf(gr.parentId);
+      const g0 = absTL(gr);
+      const style =
+        "rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;container=1;collapsible=0;fillColor=none;";
+      cells.push(
+        `<mxCell id="${groupCell.get(gr.id)}" value="${xmlEscape(gr.label)}" style="${style}" vertex="1" parent="${parent}">` +
+          `<mxGeometry x="${g0.x - tl.x}" y="${g0.y - tl.y}" width="${gr.w}" height="${gr.h}" as="geometry"/></mxCell>`,
+      );
+    });
+
   g.nodes.forEach((n, i) => {
     const id = `n${i}`;
     cellId.set(n.id, id);
@@ -44,10 +83,11 @@ export function drawioFromGraph(g: DiagramGraph): string {
     style += n.fill ? `fillColor=${hex(n.fill)};` : "fillColor=none;";
     if (n.stroke) style += `strokeColor=${hex(n.stroke)};`;
     if (n.label && n.fill) style += `fontColor=${hex(contrastText(n.fill))};`;
-    const x = n.x - n.w / 2;
-    const y = n.y - n.h / 2;
+    const { cell: parent, tl } = parentOf(n.groupId);
+    const x = n.x - n.w / 2 - tl.x;
+    const y = n.y - n.h / 2 - tl.y;
     cells.push(
-      `<mxCell id="${id}" value="${xmlEscape(n.label)}" style="${style}" vertex="1" parent="1">` +
+      `<mxCell id="${id}" value="${xmlEscape(n.label)}" style="${style}" vertex="1" parent="${parent}">` +
         `<mxGeometry x="${x}" y="${y}" width="${n.w}" height="${n.h}" as="geometry"/></mxCell>`,
     );
   });

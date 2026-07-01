@@ -364,14 +364,17 @@ describe("whiteboardFromGraph (sections)", () => {
 });
 
 describe("whiteboardFromGraph", () => {
-  it("leaves dark fills empty so the whiteboard's dark label text stays readable", () => {
+  it("paints a dark fill white so the whiteboard's fixed dark label text stays readable", () => {
     const g: DiagramGraph = {
       nodes: [{ id: "A", x: 0, y: 0, w: 100, h: 40, label: "Written", fill: { r: 31, g: 32, b: 32 } }],
       edges: [],
     };
     const s = whiteboardFromGraph(g, seqIds())[0];
-    // a dark fill would be unreadable behind the fixed dark label text → no fill
-    expect(s.fillEnabled).toBe(false);
+    // The whiteboard ignores fillEnabled:false on a pasted shape and paints `color`
+    // anyway, so a dark fill renders black-on-black. Paint white instead — a light
+    // box with the fixed dark label text, the "empty/light-canvas" look we wanted.
+    expect(s.fillEnabled).toBe(true);
+    expect(s.color).toMatchObject({ x: 255, y: 255, z: 255 });
     // no textColor mark (relies on the whiteboard's default dark text)
     expect(JSON.parse(s.text as string).content[0].content[0].marks).toBeUndefined();
   });
@@ -486,7 +489,7 @@ describe("whiteboardFromGraph", () => {
     expect(whiteboardFromGraph(g, seqIds()).map((e) => e.shape)).toEqual([5, 6, 7, 8]);
   });
 
-  it("maps fill/stroke to Vector3 and disables fill when absent", () => {
+  it("maps fill/stroke to Vector3 and paints white when the fill is absent", () => {
     const g: DiagramGraph = {
       nodes: [
         {
@@ -507,6 +510,8 @@ describe("whiteboardFromGraph", () => {
     expect(a.color).toEqual({ x: 255, y: 239, z: 174, type: "Vector3" });
     expect(a.strokeColor).toEqual({ x: 174, y: 42, z: 25, type: "Vector3" });
     expect(a.fillEnabled).toBe(true);
-    expect(b.fillEnabled).toBe(false);
+    // absent fill → white (whiteboard ignores fillEnabled:false and paints color)
+    expect(b.fillEnabled).toBe(true);
+    expect(b.color).toEqual({ x: 255, y: 255, z: 255, type: "Vector3" });
   });
 });

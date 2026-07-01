@@ -55,12 +55,41 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
     locked: false,
   });
 
+  // Subgraphs → frames (true containers). Membership is by `frameId`, so we
+  // assign each element to its innermost group's frame. Excalidraw frames don't
+  // nest, so a node in a nested subgraph belongs to that inner frame and the
+  // outer frame owns only the nodes directly inside it. Frames are emitted
+  // first so they render behind their members.
+  const frameId = new Map<string, string>();
+  for (const grp of g.groups ?? []) {
+    const fid = idGen();
+    frameId.set(grp.id, fid);
+    elements.push({
+      ...base(fid),
+      type: "frame",
+      x: grp.x - grp.w / 2,
+      y: grp.y - grp.h / 2,
+      width: grp.w,
+      height: grp.h,
+      strokeColor: "#bbbbbb",
+      backgroundColor: "transparent",
+      fillStyle: "solid",
+      strokeStyle: "solid",
+      roundness: null,
+      boundElements: null,
+      name: grp.label || null,
+    });
+  }
+  const frameOf = (groupId?: string): string | null =>
+    (groupId && frameId.get(groupId)) || null;
+
   for (const n of g.nodes) {
     const sid = idGen();
     shapeId.set(n.id, sid);
     const bound: Array<{ id: string; type: string }> = [];
     boundOf.set(sid, bound);
     const kind = n.shapeKind ?? "rect";
+    const fid = frameOf(n.groupId);
     elements.push({
       ...base(sid),
       type: TYPE[kind],
@@ -74,6 +103,7 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
       strokeStyle: "solid",
       roundness: kind === "rounded" ? { type: 3 } : null,
       boundElements: bound,
+      frameId: fid,
     });
     if (n.label) {
       const tid = idGen();
@@ -99,6 +129,7 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
         containerId: sid,
         originalText: n.label,
         lineHeight: 1.25,
+        frameId: fid,
       });
     }
   }
@@ -114,6 +145,8 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
     boundOf.get(t)?.push({ id: aid, type: "arrow" });
     const dx = tgt.x - src.x;
     const dy = tgt.y - src.y;
+    // An arrow belongs to a frame only when both endpoints sit in the same group.
+    const edgeFrame = src.groupId && src.groupId === tgt.groupId ? frameOf(src.groupId) : null;
     // Bind the edge label to the arrow (moves with it), like a container label.
     const arrowBound: Array<{ id: string; type: string }> = [];
     let labelTextId: string | null = null;
@@ -140,6 +173,7 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
       endBinding: { elementId: t, focus: 0, gap: 4 },
       startArrowhead: e.arrowStart ? "arrow" : null,
       endArrowhead: e.arrowEnd ? "arrow" : null,
+      frameId: edgeFrame,
     });
     if (labelTextId && e.label) {
       const [lx, ly] = e.labelPos ?? [src.x + dx / 2, src.y + dy / 2];
@@ -164,6 +198,7 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
         containerId: aid,
         originalText: e.label,
         lineHeight: 1.25,
+        frameId: edgeFrame,
       });
     }
   }

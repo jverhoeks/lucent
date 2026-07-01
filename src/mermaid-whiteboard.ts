@@ -30,6 +30,8 @@ export type IRNode = {
   label: string;
   fill?: RGB | null;
   stroke?: RGB | null;
+  /** id of the innermost group (subgraph) that contains this node, if any. */
+  groupId?: string;
   shapeKind?:
     | "rect"
     | "rounded"
@@ -39,6 +41,20 @@ export type IRNode = {
     | "triangleDown"
     | "parallelogram"
     | "parallelogramAlt";
+};
+
+/** A subgraph / cluster container. `x,y` is the CENTER (graph coords), same
+ *  convention as IRNode, so every emitter reuses the node top-left conversion.
+ *  `parentId` is the innermost enclosing group (nesting), if any. */
+export type IRGroup = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  fill?: RGB | null;
+  parentId?: string;
 };
 
 export type IREdge = {
@@ -75,6 +91,7 @@ export type IRLine = {
 export type DiagramGraph = {
   nodes: IRNode[];
   edges: IREdge[];
+  groups?: IRGroup[];
   texts?: IRText[];
   lines?: IRLine[];
 };
@@ -87,6 +104,14 @@ const DEFAULT_STROKE: RGB = { r: 51, g: 51, b: 51 };
 const DEFAULT_FILL: RGB = { r: 255, g: 255, b: 255 };
 const DEFAULT_CONNECTOR: RGB = { r: 117, g: 129, b: 149 };
 const PATH_LABEL_COLOR: RGB = { r: 23, g: 43, b: 77 }; // Atlaskit default text (readable on canvas)
+const SECTION_FILL: RGB = { r: 244, g: 245, b: 247 }; // faint neutral so sections read as regions
+
+/** A section always carries a visible fill (it's a region, not a shape), so the
+ *  dark→empty rule doesn't apply. Use a light cluster fill when mermaid gives
+ *  one, else a faint neutral — never a fabricated dark tint. */
+function sectionColor(fill?: RGB | null): RGB {
+  return fill && !isDarkFill(fill) ? fill : SECTION_FILL;
+}
 
 /** Mermaid node shape → whiteboard `shape` enum, verified from real whiteboard
  *  copies (1=rect, 2=ellipse, 3=rounded-rect, 4=diamond; 5/6=triangles,
@@ -209,6 +234,25 @@ export function whiteboardFromGraph(
   const nodeIds = new Map<string, string>();
   const nodeIndex = new Map<string, number>();
   const els: WhiteboardElement[] = [];
+
+  // Subgraphs become `section` regions. Sections are containers by spatial
+  // containment (no child ids), so they just need to sit behind the shapes.
+  // Emit largest-area first → nested sections and shapes paint on top. These
+  // precede the shapes, so the node/connector index bookkeeping below (which
+  // reads the live els.length) stays correct.
+  for (const grp of [...(g.groups ?? [])].sort((a, b) => b.w * b.h - a.w * a.h)) {
+    els.push({
+      type: "section",
+      source: 1,
+      position: vec2(grp.x - cx, grp.y - cy),
+      size: vec2(grp.w, grp.h),
+      color: vec3(sectionColor(grp.fill)),
+      title: grp.label,
+      titleWidth: 140,
+      hasDropShadow: false,
+      rotation: 0,
+    });
+  }
 
   for (const n of g.nodes) {
     const id = idGen();
@@ -522,6 +566,55 @@ function nearestNodeId(nodes: IRNode[], pt: [number, number]): string | null {
  *  nodes + edges. Edges link by their `L_src_tgt` id when present (flowchart),
  *  otherwise by matching each path endpoint to the nearest node (state/class,
  *  whose edge ids like `edge0` carry no endpoints). */
+/** True when a group's box (center + half-extent) covers the point. */
+function groupCovers(g: IRGroup, px: number, py: number): boolean {
+  return Math.abs(px - g.x) <= g.w / 2 && Math.abs(py - g.y) <= g.h / 2;
+}
+
+/** Resolve nesting: each group's `parentId` becomes the smallest strictly-larger
+ *  group that covers its center, and each node's `groupId` becomes the smallest
+ *  group covering the node's center. Pure — operates on center-based boxes. */
+export function assignContainment(groups: IRGroup[], nodes: IRNode[]): void {
+  const innermost = (px: number, py: number, excludeId?: string): IRGroup | undefined => {
+    let best: IRGroup | undefined;
+    for (const g of groups) {
+      if (g.id === excludeId || !groupCovers(g, px, py)) continue;
+      if (!best || g.w * g.h < best.w * best.h) best = g;
+    }
+    return best;
+  };
+  for (const g of groups) {
+    const p = innermost(g.x, g.y, g.id);
+    if (p && p.w * p.h > g.w * g.h) g.parentId = p.id;
+  }
+  for (const n of nodes) {
+    const g = innermost(n.x, n.y);
+    if (g) n.groupId = g.id;
+  }
+}
+
+/** Read mermaid subgraph clusters (`g.cluster`) into center-based groups. */
+function extractGroups(svg: SVGSVGElement): IRGroup[] {
+  const groups: IRGroup[] = [];
+  svg.querySelectorAll("g.cluster").forEach((c, i) => {
+    const rect = c.querySelector("rect");
+    if (!rect) return;
+    const x = num(rect, "x"), y = num(rect, "y"), w = num(rect, "width"), h = num(rect, "height");
+    if (x == null || y == null || w == null || h == null) return;
+    const label = (c.querySelector(".cluster-label") || c.querySelector("text"))?.textContent?.trim() || "";
+    groups.push({
+      id: c.getAttribute("id") || `sg${i}`,
+      label,
+      x: x + w / 2,
+      y: y + h / 2,
+      w,
+      h,
+      fill: computedColors(rect).fill,
+    });
+  });
+  return groups;
+}
+
 function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
   const nodes: IRNode[] = [];
   const byId = new Set<string>();
@@ -578,7 +671,9 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
     });
   });
 
-  return { nodes, edges };
+  const groups = extractGroups(svg);
+  if (groups.length) assignContainment(groups, nodes);
+  return groups.length ? { nodes, edges, groups } : { nodes, edges };
 }
 
 /** Points of a straight (M/L only) SVG path in `d`. Returns null for anything

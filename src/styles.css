@@ -813,6 +813,88 @@ body.exporting .doc .code-header {
   color: var(--text);
 }
 
+/* ---- Split-screen edit mode (side-by-side editor + live preview) ----
+   Restored: the split-editor CSS was dropped in the web/app split (f0f9c31)
+   and #159's restore didn't cover it, so `.split-view` had no `display: flex`
+   and the panes stacked vertically. */
+.split-view {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.split-pane {
+  overflow: auto;
+  height: 100%;
+}
+.split-editor {
+  width: 50%;
+  min-width: 20%;
+  border-right: 1px solid var(--bar-border);
+  display: flex;
+  flex-direction: column;
+}
+/* Textarea shown instantly (textarea-first split) */
+.split-textarea {
+  flex: 1;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 16px;
+  background: #fff;
+  color: #1a1a1a;
+}
+.split-editor .cm-editor {
+  height: 100%;
+  flex: 1;
+}
+.split-editor .cm-scroller {
+  font-family: var(--mono);
+  font-size: 14px;
+}
+.split-preview {
+  flex: 1;
+  padding: 32px 24px;
+  overflow: auto;
+}
+.split-preview .doc {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  font-size: var(--font-size);
+  line-height: 1.6;
+}
+.split-divider {
+  width: 6px;
+  cursor: col-resize;
+  background: var(--bar-bg);
+  border-left: 1px solid var(--bar-border);
+  border-right: 1px solid var(--bar-border);
+  flex: 0 0 auto;
+  transition: background 0.12s ease;
+}
+.split-divider:hover {
+  background: var(--accent);
+}
+/* Dark theme overrides for split editor */
+body:has(#content[data-theme="dark"]) .split-editor {
+  border-right-color: rgba(255, 255, 255, 0.1);
+}
+body:has(#content[data-theme="dark"]) .split-textarea {
+  background: #1e1e1e;
+  color: #e6e6e6;
+}
+body:has(#content[data-theme="dark"]) .split-divider {
+  background: #2a2a2a;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+body:has(#content[data-theme="dark"]) .split-divider:hover {
+  background: #4a9eff;
+}
+
 /* ---- Preview toolbar ---- */
 .preview-toolbar {
   display: flex;
@@ -929,52 +1011,136 @@ body.drag-over::after {
   color: var(--text);
 }
 
-/* ---- Tree editing ---- */
-.tree-editor {
-  flex: 1;
-  overflow: auto;
-  padding: 24px;
+/* ---- Structured-data tree (JSON / YAML / TOML / INI) ---- */
+.tree {
   font-family: var(--mono);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.7;
+  /* Syntax palette for light/sepia; dark is overridden below via active theme. */
+  --tree-key: #7c3aed;
+  --tree-string: #0a7d33;
+  --tree-number: #1d4ed8;
+  --tree-boolean: #c2410c;
+}
+
+#content[data-theme="dark"] .tree {
+  --tree-key: #c4b5fd;
+  --tree-string: #6ee7a8;
+  --tree-number: #7ab2ff;
+  --tree-boolean: #fdba74;
+}
+
+/* Expand-all / collapse-all toolbar above the tree */
+.tree-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tree-action {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.tree-action:hover {
+  background: var(--btn-hover);
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 0;
+  gap: 6px;
+  padding: 1px 4px;
+  border-radius: 4px;
 }
 
-.tree-indent {
-  display: inline-block;
+.tree-row:hover {
+  background: var(--surface);
 }
 
-.tree-bracket {
+/* Nesting: indent + a faint guide line. (The windowed/virtualized render
+   indents rows via inline padding-left; this styles the common nested tree.) */
+.tree-children {
+  margin-left: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--bar-border);
+}
+
+/* Expander button (+ / −) */
+.tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: none;
   color: var(--text-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.tree-toggle:hover {
+  background: var(--btn-hover);
+  color: var(--text);
 }
 
 .tree-key {
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--tree-key);
 }
 
-.tree-eq {
+/* Child-count badge: [n] for arrays, {n} for objects */
+.tree-meta {
   color: var(--text-muted);
-  margin: 0 4px;
+  font-size: 12px;
+  opacity: 0.75;
 }
 
-.tree-val {
-  cursor: pointer;
+/* Scalar value, colored by type */
+.tree-value {
+  cursor: text;
   border-radius: 3px;
   padding: 0 3px;
   transition: background 0.1s;
 }
 
-.tree-val:hover {
-  background: var(--surface);
+.tree-value:hover {
+  background: var(--btn-hover);
 }
 
-.tree-val.edit-input {
+.type-string {
+  color: var(--tree-string);
+}
+
+.type-number {
+  color: var(--tree-number);
+}
+
+.type-boolean {
+  color: var(--tree-boolean);
+  font-weight: 600;
+}
+
+.type-null {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tree-edit-input {
   font-family: var(--mono);
   font-size: 13px;
   border: 1px solid var(--accent);
@@ -985,28 +1151,7 @@ body.drag-over::after {
   outline: none;
 }
 
-.tree-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-muted);
-  padding: 0 3px;
-  line-height: 1;
-  border-radius: 3px;
-  transition: background 0.1s, color 0.1s;
-  opacity: 0;
-}
-
-.tree-row:hover .tree-btn {
-  opacity: 1;
-}
-
-.tree-btn:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-
+/* Add / delete affordances (edit mode) */
 .tree-add-btn {
   font-size: 11px;
   color: var(--accent);
@@ -1016,11 +1161,11 @@ body.drag-over::after {
   cursor: pointer;
   padding: 1px 6px;
   border-radius: 4px;
-  transition: opacity 0.1s;
+  transition: opacity 0.1s, background 0.1s;
 }
 
 .tree-add-btn:hover {
-  background: var(--surface);
+  background: var(--btn-hover);
 }
 
 .tree-section:hover .tree-add-btn {
@@ -1028,11 +1173,23 @@ body.drag-over::after {
 }
 
 .tree-del-btn {
-  color: #ef4444;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0;
+  padding: 0 3px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: opacity 0.1s, color 0.1s;
+}
+
+.tree-row:hover .tree-del-btn {
+  opacity: 1;
 }
 
 .tree-del-btn:hover {
-  color: #dc2626;
+  color: #ef4444;
 }
 
 /* ---- Code mirror overrides ---- */

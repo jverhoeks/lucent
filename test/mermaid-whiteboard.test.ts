@@ -228,6 +228,20 @@ describe("whiteboardFromGraph", () => {
     expect(conn.startCap).toBe(1);
   });
 
+  it("maps node shape kinds to the real whiteboard shape enum", () => {
+    const g: DiagramGraph = {
+      nodes: [
+        { id: "r", x: 0, y: 0, w: 10, h: 10, label: "", shapeKind: "rect" },
+        { id: "e", x: 20, y: 0, w: 10, h: 10, label: "", shapeKind: "ellipse" },
+        { id: "d", x: 40, y: 0, w: 10, h: 10, label: "", shapeKind: "diamond" },
+        { id: "o", x: 60, y: 0, w: 10, h: 10, label: "", shapeKind: "rounded" },
+      ],
+      edges: [],
+    };
+    const els = whiteboardFromGraph(g, seqIds());
+    expect(els.map((e) => e.shape)).toEqual([1, 2, 4, 3]);
+  });
+
   it("maps fill/stroke to Vector3 and disables fill when absent", () => {
     const g: DiagramGraph = {
       nodes: [

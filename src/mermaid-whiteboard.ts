@@ -30,7 +30,7 @@ export type IRNode = {
   label: string;
   fill?: RGB | null;
   stroke?: RGB | null;
-  shapeKind?: "rect" | "ellipse" | "diamond";
+  shapeKind?: "rect" | "rounded" | "ellipse" | "diamond";
 };
 
 export type IREdge = {
@@ -78,12 +78,14 @@ const DEFAULT_STROKE: RGB = { r: 51, g: 51, b: 51 };
 const DEFAULT_FILL: RGB = { r: 255, g: 255, b: 255 };
 const DEFAULT_CONNECTOR: RGB = { r: 117, g: 129, b: 149 };
 
-/** Mermaid node shape → whiteboard `shape` enum. Only rect (1) is verified from
- *  a real copy; other kinds fall back to rect until sample copies pin them down. */
+/** Mermaid node shape → whiteboard `shape` enum, verified from real whiteboard
+ *  copies (1=rect, 2=ellipse, 3=rounded-rect, 4=diamond; 5/6=triangles,
+ *  7/8=parallelograms exist but mermaid nodes don't map to them here). */
 const SHAPE_ENUM: Record<NonNullable<IRNode["shapeKind"]>, number> = {
   rect: 1,
-  ellipse: 1,
-  diamond: 1,
+  ellipse: 2,
+  rounded: 3,
+  diamond: 4,
 };
 
 const vec2 = (x: number, y: number) => ({ x, y, type: "Vector2" as const });
@@ -353,7 +355,8 @@ function nodeShape(
     if (tag === "rect") {
       const w = parseFloat(el.getAttribute("width") || "0");
       const h = parseFloat(el.getAttribute("height") || "0");
-      if (w && h) return { w, h, kind: "rect" };
+      const rx = parseFloat(el.getAttribute("rx") || "0");
+      if (w && h) return { w, h, kind: rx > 0 ? "rounded" : "rect" };
     } else if (tag === "circle") {
       const r = parseFloat(el.getAttribute("r") || "0");
       if (r) return { w: 2 * r, h: 2 * r, kind: "ellipse" };

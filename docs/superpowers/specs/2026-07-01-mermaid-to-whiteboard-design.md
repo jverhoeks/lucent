@@ -120,6 +120,10 @@ mermaid copy fns) that builds the html and writes it via a ClipboardItem
   its center is `(0,0)`.
 - **Shape size/position:** node center = its `g.node` translate; size = inner
   shape bbox. `basisPosition`/`basisSize` = same as position/size at scale 1.
+- **Shape enum** (verified from real whiteboard copies): `1=rect, 2=ellipse,
+  3=rounded-rect, 4=diamond` (also `5/6=triangle/inverted`, `7/8=parallelogram`,
+  unused by mermaid mapping). Extractor detects rect→`rect` (or `rounded` when
+  the rect has `rx>0`), circle/ellipse→`ellipse`, polygon→`diamond`.
 - **Colors:** resolve computed `fill`/`stroke` (handles theme). Parse to RGB
   `Vector3`. `none`/transparent fill → `fillEnabled:false`.
 - **Anchors:** infer from relative node centers (source-right→target-left, etc.)

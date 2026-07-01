@@ -164,11 +164,14 @@ describe("extractGraph (state diagram: g.node without flowchart ids)", () => {
     expect(g.edges[0].labelPos).toEqual([100, 100]);
   });
 
-  it("emits the edge label as positioned text in the whiteboard payload", () => {
+  it("binds the edge label as a pathLabel on its connector (by array index)", () => {
     const els = whiteboardFromGraph(extractGraph(parseSvg(STATE_SVG)), seqIds());
-    const t = els.find((e) => e.type === "text");
-    expect(t).toBeTruthy();
-    expect(JSON.parse(t!.text as string).content[0].content[0].text).toBe("ship it");
+    const connIndex = els.findIndex((e) => e.type === "connector");
+    const pl = els.find((e) => e.type === "pathLabel");
+    expect(pl).toBeTruthy();
+    expect(pl!.sourcePathIndex).toBe(connIndex);
+    expect(pl!.proportion).toBe(0.5);
+    expect(JSON.parse(pl!.text as string).content[0].content[0].text).toBe("ship it");
   });
 });
 

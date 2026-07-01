@@ -86,6 +86,7 @@ type Anchor = { left: number; top: number };
 const DEFAULT_STROKE: RGB = { r: 51, g: 51, b: 51 };
 const DEFAULT_FILL: RGB = { r: 255, g: 255, b: 255 };
 const DEFAULT_CONNECTOR: RGB = { r: 117, g: 129, b: 149 };
+const PATH_LABEL_COLOR: RGB = { r: 23, g: 43, b: 77 }; // Atlaskit default text (readable on canvas)
 
 /** Mermaid node shape → whiteboard `shape` enum, verified from real whiteboard
  *  copies (1=rect, 2=ellipse, 3=rounded-rect, 4=diamond; 5/6=triangles,
@@ -255,11 +256,14 @@ export function whiteboardFromGraph(
     });
   }
 
+  const pathLabels: Array<{ index: number; id: string; label: string }> = [];
   for (const e of g.edges) {
     const s = g.nodes.find((n) => n.id === e.sourceId);
     const t = g.nodes.find((n) => n.id === e.targetId);
     if (!s || !t) continue;
     const { source, target } = anchorsFor(t.x - s.x, t.y - s.y);
+    const connIndex = els.length;
+    const connId = idGen();
     els.push({
       type: "connector",
       source: 1,
@@ -281,6 +285,7 @@ export function whiteboardFromGraph(
       sourceIndex: nodeIndex.get(e.sourceId),
       targetIndex: nodeIndex.get(e.targetId),
     });
+    if (e.label) pathLabels.push({ index: connIndex, id: connId, label: e.label });
   }
 
   for (const ln of lines) {
@@ -303,26 +308,21 @@ export function whiteboardFromGraph(
     });
   }
 
-  // Edge labels: connectors have no known label field, so emit positioned text.
-  // Force dark text — it sits on the (light) canvas, not on a shape.
-  for (const e of g.edges) {
-    if (!e.label || !e.labelPos) continue;
-    const w = Math.max(e.label.length * 8, 20);
-    const pos = vec2(e.labelPos[0] - cx, e.labelPos[1] - cy);
-    const size = vec2(w, 20);
+  // Edge labels: a `pathLabel` bound to its connector by array index (relinked
+  // on paste like sourceIndex), positioned at the path midpoint (proportion 0.5).
+  for (const pl of pathLabels) {
     els.push({
-      type: "text",
+      type: "pathLabel",
       source: 1,
-      position: pos,
-      size,
-      text: proseDoc(e.label),
-      allowFlexibleWidth: true,
-      color: vec3(DEFAULT_STROKE),
+      sourcePathId: pl.id,
+      proportion: 0.5,
+      position: vec2(0, 0),
+      size: vec2(0, 0),
+      color: vec3(PATH_LABEL_COLOR),
+      text: proseDoc(pl.label),
       fontScale: 1,
-      basisSize: size,
-      basisPosition: pos,
-      alignment: "left",
-      rotation: 0,
+      pathOffsetPosition: 0,
+      sourcePathIndex: pl.index,
     });
   }
 

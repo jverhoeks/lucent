@@ -71,9 +71,9 @@ Two layers:
    by their `L_src_tgt` id when present (flowchart); otherwise by **matching
    each path endpoint to the nearest node** (stateDiagram edges are `edge0`,
    carrying no endpoints). Edge **labels** attach to the edge (index-parallel to
-   the paths) and **bind** to the connector where possible — draw.io edge
-   `value`, Excalidraw arrow-bound text; the whiteboard gets positioned dark
-   text (no known connector-label field). **Label text color** is
+   the paths) and **bind** to the connector in every target — draw.io edge
+   `value`, Excalidraw arrow-bound text, whiteboard **`pathLabel`** element
+   (`sourcePathIndex` → connector, `proportion:0.5`). **Label text color** is
    luminance-based (`contrastText`): white on dark fills → no black-on-black.
    Mermaid stamps structure into the SVG we read back:
    - nodes: `g.node` with id `flowchart-<id>-<n>` and/or `data-id`
@@ -211,6 +211,5 @@ how open each target's **clipboard** format is.
   (`export-drawio.ts`, mxGraph XML via plain text) and **Excalidraw**
   (`export-excalidraw.ts`, `excalidraw/clipboard` JSON via plain text). Toolbar
   copy group: SVG / PNG / WB / DIO / EX.
-- **Out (deferred):** tldraw / Lucid emitters (seam + plan ready); whiteboard
-  edge-label binding (needs a real connector-with-label sample); whiteboard→
+- **Out (deferred):** tldraw / Lucid emitters (seam + plan ready); whiteboard→
   markdown import; pie & curved/filled paths; edge labels / waypoints / groups.

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   whiteboardFromGraph,
   encodeWhiteboardClipboard,
+  svgToWhiteboardClipboard,
   extractGraph,
   type DiagramGraph,
 } from "../src/mermaid-whiteboard";
@@ -50,6 +51,17 @@ describe("encodeWhiteboardClipboard", () => {
     expect(html).toContain("data-canvas-clipboard=");
     expect(html).toContain("<meta charset");
     expect(decodeClipboard(html)).toEqual(els);
+  });
+
+  it("appends visible label paragraphs after the payload div (WebKit keeps the html flavor)", () => {
+    const { html } = svgToWhiteboardClipboard(parseSvg(FLOWCHART_SVG));
+    expect(html).toContain("data-canvas-clipboard=");
+    expect(html).toContain("<p>Alpha</p>");
+    expect(html).toContain("<p>Beta</p>");
+    // the visible content must come AFTER the payload div, not replace it
+    expect(html.indexOf("<p>Alpha</p>")).toBeGreaterThan(html.indexOf("</div>"));
+    // and the base64 payload still round-trips
+    expect(decodeClipboard(html).filter((e: any) => e.type === "shape")).toHaveLength(2);
   });
 });
 

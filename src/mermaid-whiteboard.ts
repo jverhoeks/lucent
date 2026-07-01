@@ -569,10 +569,24 @@ function bytesToBase64(s: string): string {
   return btoa(bin);
 }
 
-/** Pure: element array → the `text/html` clipboard string a whiteboard reads. */
-export function encodeWhiteboardClipboard(els: WhiteboardElement[]): string {
+function htmlEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Pure: element array → the `text/html` clipboard string a whiteboard reads.
+ *  `visibleHtml` is appended after the payload div: WebKit's clipboard sanitizer
+ *  DROPS the whole text/html flavor if it has no visible content, so an
+ *  attribute-only div would never reach the pasteboard as `public.html`. The
+ *  real whiteboard copy carries trailing `<p>` content for exactly this reason. */
+export function encodeWhiteboardClipboard(
+  els: WhiteboardElement[],
+  visibleHtml = "",
+): string {
   const b64 = bytesToBase64(JSON.stringify(els));
-  return `<meta charset='utf-8'><div id="canvas-clipboard" data-canvas-clipboard="${b64}"></div>`;
+  return `<meta charset='utf-8'><div id="canvas-clipboard" data-canvas-clipboard="${b64}"></div>${visibleHtml}`;
 }
 
 /** End-to-end: a rendered mermaid <svg> → whiteboard clipboard HTML. */
@@ -592,8 +606,9 @@ export function svgToWhiteboardClipboard(
     ...g.nodes.map((n) => n.label),
     ...(g.texts ?? []).map((t) => t.text),
   ].filter(Boolean);
+  const visible = labels.map((l) => `<p>${htmlEscape(l)}</p>`).join("");
   return {
-    html: encodeWhiteboardClipboard(whiteboardFromGraph(g, idGen)),
+    html: encodeWhiteboardClipboard(whiteboardFromGraph(g, idGen), visible),
     text: labels.join("\n"),
   };
 }

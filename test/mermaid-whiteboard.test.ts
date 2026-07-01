@@ -321,6 +321,20 @@ describe("whiteboardFromGraph (sections)", () => {
     expect(els.indexOf(secs[0])).toBeLessThan(firstShape);
   });
 
+  it("colors a dark cluster's section with an observed-valid palette color, not an invented one", () => {
+    // The whiteboard renders a pasted section's fill from a constrained palette;
+    // an off-palette RGB (our old invented {244,245,247}) falls back to a dark
+    // default → black on a dark board. White {255,255,255} is a real, copied
+    // section color, so it renders light.
+    const g: DiagramGraph = {
+      nodes: [],
+      edges: [],
+      groups: [{ id: "G", label: "G", x: 0, y: 0, w: 300, h: 200, fill: { r: 71, g: 73, b: 73 } }],
+    };
+    const s = whiteboardFromGraph(g, seqIds()).find((e) => e.type === "section")!;
+    expect(s.color).toMatchObject({ x: 255, y: 255, z: 255 });
+  });
+
   it("keeps connector source/target indices correct when sections precede shapes", () => {
     const g: DiagramGraph = {
       nodes: [

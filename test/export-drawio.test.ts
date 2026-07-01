@@ -45,6 +45,29 @@ describe("drawioFromGraph", () => {
     expect(b.getAttribute("style")).toContain("rhombus");
   });
 
+  it("binds an edge label to the edge cell's value", () => {
+    const g: DiagramGraph = {
+      nodes: [
+        { id: "A", x: 0, y: 0, w: 80, h: 40, label: "A" },
+        { id: "B", x: 0, y: 200, w: 80, h: 40, label: "B" },
+      ],
+      edges: [{ sourceId: "A", targetId: "B", arrowEnd: true, label: "ship it", labelPos: [0, 100] }],
+    };
+    const doc = parse(drawioFromGraph(g));
+    const edge = doc.querySelector('mxCell[edge="1"]')!;
+    expect(edge.getAttribute("value")).toBe("ship it");
+  });
+
+  it("emits loose texts as text vertices", () => {
+    const g: DiagramGraph = { nodes: [], edges: [], texts: [{ x: 100, y: 50, w: 48, h: 20, text: "ship it" }] };
+    const doc = parse(drawioFromGraph(g));
+    const textCell = Array.from(doc.querySelectorAll('mxCell[vertex="1"]')).find(
+      (c) => c.getAttribute("value") === "ship it",
+    )!;
+    expect(textCell).toBeTruthy();
+    expect(textCell.getAttribute("style")).toContain("text;");
+  });
+
   it("XML-escapes the label into the value attribute", () => {
     const doc = parse(drawioFromGraph(GRAPH));
     const a = doc.querySelector('mxCell[vertex="1"]')!;

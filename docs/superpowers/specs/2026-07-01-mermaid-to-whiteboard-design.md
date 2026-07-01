@@ -70,7 +70,11 @@ Two layers:
    Node ids are generalized (`flowchart-A-0`, `state-Written-0`, …). Edges link
    by their `L_src_tgt` id when present (flowchart); otherwise by **matching
    each path endpoint to the nearest node** (stateDiagram edges are `edge0`,
-   carrying no endpoints). Edge **labels** are not yet emitted (deferred).
+   carrying no endpoints). Edge **labels** attach to the edge (index-parallel to
+   the paths) and **bind** to the connector in every target — draw.io edge
+   `value`, Excalidraw arrow-bound text, whiteboard **`pathLabel`** element
+   (`sourcePathIndex` → connector, `proportion:0.5`). **Label text color** is
+   luminance-based (`contrastText`): white on dark fills → no black-on-black.
    Mermaid stamps structure into the SVG we read back:
    - nodes: `g.node` with id `flowchart-<id>-<n>` and/or `data-id`
    - edges: `path` id `L_<src>_<tgt>_<n>` (encodes endpoints) + marker refs +

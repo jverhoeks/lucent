@@ -45,6 +45,7 @@ export type IREdge = {
   sourceId: string;
   targetId: string;
   label?: string;
+  labelPos?: [number, number];
   dashed?: boolean;
   arrowStart?: boolean;
   arrowEnd?: boolean;
@@ -85,6 +86,7 @@ type Anchor = { left: number; top: number };
 const DEFAULT_STROKE: RGB = { r: 51, g: 51, b: 51 };
 const DEFAULT_FILL: RGB = { r: 255, g: 255, b: 255 };
 const DEFAULT_CONNECTOR: RGB = { r: 117, g: 129, b: 149 };
+const PATH_LABEL_COLOR: RGB = { r: 23, g: 43, b: 77 }; // Atlaskit default text (readable on canvas)
 
 /** Mermaid node shape → whiteboard `shape` enum, verified from real whiteboard
  *  copies (1=rect, 2=ellipse, 3=rounded-rect, 4=diamond; 5/6=triangles,
@@ -103,11 +105,29 @@ const SHAPE_ENUM: Record<NonNullable<IRNode["shapeKind"]>, number> = {
 const vec2 = (x: number, y: number) => ({ x, y, type: "Vector2" as const });
 const vec3 = (c: RGB) => ({ x: c.r, y: c.g, z: c.b, type: "Vector3" as const });
 
-/** Stringified ProseMirror doc for a shape/text label. */
-function proseDoc(text: string): string {
-  const content = text
-    ? [{ type: "text", text }]
-    : ([] as Array<Record<string, unknown>>);
+/** Perceived luminance (0–255). */
+function luminance(c: RGB): number {
+  return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+}
+
+export function isDarkFill(c: RGB): boolean {
+  return luminance(c) < 140;
+}
+
+/** A readable label color for a given fill — white on dark, near-black on light.
+ *  Prevents black-on-black when a dark-theme diagram is pasted. */
+export function contrastText(fill: RGB): RGB {
+  return isDarkFill(fill) ? { r: 255, g: 255, b: 255 } : { r: 33, g: 33, b: 33 };
+}
+
+/** Stringified ProseMirror doc for a shape/text label. When `color` is given,
+ *  the text carries an Atlaskit `textColor` mark (lenient — stripped if the
+ *  target doesn't support it, never rejects the paste). */
+function proseDoc(text: string, color?: string): string {
+  const marks = color ? [{ type: "textColor", attrs: { color } }] : undefined;
+  const textNode: Record<string, unknown> = { type: "text", text };
+  if (marks) textNode.marks = marks;
+  const content = text ? [textNode] : ([] as Array<Record<string, unknown>>);
   return JSON.stringify({
     version: 1,
     type: "doc",
@@ -204,7 +224,8 @@ export function whiteboardFromGraph(
       color: vec3(n.fill ?? DEFAULT_FILL),
       strokeColor: vec3(n.stroke ?? DEFAULT_STROKE),
       strokeStyle: 1,
-      text: proseDoc(n.label),
+      // White label text on dark fills; otherwise default (keeps light shapes plain).
+      text: proseDoc(n.label, n.fill && isDarkFill(n.fill) ? "#ffffff" : undefined),
       shape: SHAPE_ENUM[n.shapeKind ?? "rect"],
       fillEnabled: !!n.fill,
       fontScale: 1,
@@ -235,11 +256,14 @@ export function whiteboardFromGraph(
     });
   }
 
+  const pathLabels: Array<{ index: number; id: string; label: string }> = [];
   for (const e of g.edges) {
     const s = g.nodes.find((n) => n.id === e.sourceId);
     const t = g.nodes.find((n) => n.id === e.targetId);
     if (!s || !t) continue;
     const { source, target } = anchorsFor(t.x - s.x, t.y - s.y);
+    const connIndex = els.length;
+    const connId = idGen();
     els.push({
       type: "connector",
       source: 1,
@@ -261,6 +285,7 @@ export function whiteboardFromGraph(
       sourceIndex: nodeIndex.get(e.sourceId),
       targetIndex: nodeIndex.get(e.targetId),
     });
+    if (e.label) pathLabels.push({ index: connIndex, id: connId, label: e.label });
   }
 
   for (const ln of lines) {
@@ -280,6 +305,24 @@ export function whiteboardFromGraph(
       color: vec3(ln.stroke ?? DEFAULT_CONNECTOR),
       stroke: 1,
       strokeStyle: ln.dashed ? 2 : 1,
+    });
+  }
+
+  // Edge labels: a `pathLabel` bound to its connector by array index (relinked
+  // on paste like sourceIndex), positioned at the path midpoint (proportion 0.5).
+  for (const pl of pathLabels) {
+    els.push({
+      type: "pathLabel",
+      source: 1,
+      sourcePathId: pl.id,
+      proportion: 0.5,
+      position: vec2(0, 0),
+      size: vec2(0, 0),
+      color: vec3(PATH_LABEL_COLOR),
+      text: proseDoc(pl.label),
+      fontScale: 1,
+      pathOffsetPosition: 0,
+      sourcePathIndex: pl.index,
     });
   }
 
@@ -496,8 +539,12 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
     nodes.push({ id, x, y, w, h, label, fill, stroke, shapeKind: kind });
   });
 
+  // Edge labels are emitted index-parallel to the edge paths (an empty
+  // placeholder group for unlabeled edges), so the k-th label belongs to the
+  // k-th path. Mermaid positions each at the edge midpoint (graph coords).
+  const edgeLabels = Array.from(svg.querySelectorAll("g.edgeLabels g.edgeLabel"));
   const edges: IREdge[] = [];
-  svg.querySelectorAll("g.edgePaths path, path.flowchart-link, .edgePaths path").forEach((p) => {
+  svg.querySelectorAll("g.edgePaths path").forEach((p, i) => {
     const parsed = parseEdgeId(p.getAttribute("data-id") || p.getAttribute("id") || "");
     let src: string | null = null;
     let tgt: string | null = null;
@@ -512,6 +559,9 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
       }
     }
     if (!src || !tgt || src === tgt) return;
+    const labelEl = edgeLabels[i];
+    const label = labelEl?.textContent?.trim() || undefined;
+    const lp = labelEl ? transformTranslate(labelEl) : { x: 0, y: 0 };
     edges.push({
       sourceId: src,
       targetId: tgt,
@@ -519,6 +569,8 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
       arrowStart: !!p.getAttribute("marker-start"),
       dashed: isDashed(p),
       stroke: computedColors(p).stroke,
+      label,
+      labelPos: label && !(lp.x === 0 && lp.y === 0) ? [lp.x, lp.y] : undefined,
     });
   });
 

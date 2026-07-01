@@ -130,6 +130,9 @@ const STATE_SVG = `
   <g class="edgePaths">
     <path id="mermaid-1-edge0" data-id="edge0" class="transition" d="M100,67 C100,90 100,110 100,133" marker-end="url(#arrow)"/>
   </g>
+  <g class="edgeLabels">
+    <g class="edgeLabel" transform="translate(100, 100)"><g class="label"><text>ship it</text></g></g>
+  </g>
   <g class="nodes">
     <g class="node" id="mermaid-1-state-Written-0" transform="translate(100, 50)">
       <rect class="basic label-container" x="-35" y="-17" width="70" height="35"/>
@@ -153,6 +156,22 @@ describe("extractGraph (state diagram: g.node without flowchart ids)", () => {
     expect(src.label).toBe("Written"); // path starts near Written
     expect(tgt.label).toBe("Forgotten"); // ends near Forgotten
     expect(e.arrowEnd).toBe(true);
+  });
+
+  it("attaches the transition label to its edge (index-parallel)", () => {
+    const g = extractGraph(parseSvg(STATE_SVG));
+    expect(g.edges[0].label).toBe("ship it");
+    expect(g.edges[0].labelPos).toEqual([100, 100]);
+  });
+
+  it("binds the edge label as a pathLabel on its connector (by array index)", () => {
+    const els = whiteboardFromGraph(extractGraph(parseSvg(STATE_SVG)), seqIds());
+    const connIndex = els.findIndex((e) => e.type === "connector");
+    const pl = els.find((e) => e.type === "pathLabel");
+    expect(pl).toBeTruthy();
+    expect(pl!.sourcePathIndex).toBe(connIndex);
+    expect(pl!.proportion).toBe(0.5);
+    expect(JSON.parse(pl!.text as string).content[0].content[0].text).toBe("ship it");
   });
 });
 

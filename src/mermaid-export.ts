@@ -10,7 +10,7 @@
  *   - The Image source is a Blob URL, never `btoa(svg)` — base64 throws on the
  *     unicode that turns up in diagram labels. */
 
-import { svgToWhiteboardHtml } from "./mermaid-whiteboard";
+import { svgToWhiteboardClipboard } from "./mermaid-whiteboard";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -95,8 +95,11 @@ export async function mermaidPngBytes(svg: SVGSVGElement): Promise<Uint8Array> {
  *  (writable in WKWebView, unlike `image/svg+xml`) — the whiteboard reads its
  *  `data-canvas-clipboard` attribute on paste. */
 export async function copyMermaidWhiteboard(svg: SVGSVGElement): Promise<void> {
-  const html = svgToWhiteboardHtml(svg);
+  const { html, text } = svgToWhiteboardClipboard(svg);
   await navigator.clipboard.write([
-    new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }) }),
+    new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" }),
+      "text/plain": new Blob([text], { type: "text/plain" }),
+    }),
   ]);
 }

@@ -424,3 +424,21 @@ export function encodeWhiteboardClipboard(els: WhiteboardElement[]): string {
 export function svgToWhiteboardHtml(svg: SVGSVGElement, idGen?: () => string): string {
   return encodeWhiteboardClipboard(whiteboardFromGraph(extractGraph(svg), idGen));
 }
+
+/** End-to-end producing both clipboard flavors: `html` is the payload the
+ *  whiteboard reads; `text` is the diagram's labels, so a paste into a plain
+ *  editor is not empty (matching the real copy, which carries a text/plain). */
+export function svgToWhiteboardClipboard(
+  svg: SVGSVGElement,
+  idGen?: () => string,
+): { html: string; text: string } {
+  const g = extractGraph(svg);
+  const labels = [
+    ...g.nodes.map((n) => n.label),
+    ...(g.texts ?? []).map((t) => t.text),
+  ].filter(Boolean);
+  return {
+    html: encodeWhiteboardClipboard(whiteboardFromGraph(g, idGen)),
+    text: labels.join("\n"),
+  };
+}

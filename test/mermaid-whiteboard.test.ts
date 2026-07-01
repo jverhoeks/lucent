@@ -83,6 +83,39 @@ describe("extractGraph (flowchart)", () => {
   });
 });
 
+describe("payload conformance to the real whiteboard format", () => {
+  // Field shape frozen from a genuine Atlassian Whiteboard clipboard copy.
+  const SHAPE_KEYS = [
+    "type", "source", "position", "size", "color", "strokeColor", "strokeStyle",
+    "text", "shape", "fillEnabled", "fontScale", "basisSize", "basisPosition",
+    "alignment", "verticalAlignment", "rotation",
+  ].sort();
+  const CONNECTOR_KEYS = [
+    "type", "source", "presentation", "segments", "start", "end", "position",
+    "size", "sourceElement", "targetElement", "sourceAnchor", "targetAnchor",
+    "startCap", "endCap", "color", "stroke", "strokeStyle", "sourceIndex",
+    "targetIndex",
+  ].sort();
+
+  it("emits shapes and connectors with exactly the real field set", () => {
+    const g: DiagramGraph = {
+      nodes: [
+        { id: "A", x: 0, y: 0, w: 100, h: 100, label: "A" },
+        { id: "B", x: 300, y: 0, w: 100, h: 100, label: "B" },
+      ],
+      edges: [{ sourceId: "A", targetId: "B", arrowEnd: true }],
+    };
+    const els = whiteboardFromGraph(g, seqIds());
+    const shape = els.find((e) => e.type === "shape")!;
+    const conn = els.find((e) => e.type === "connector")!;
+    expect(Object.keys(shape).sort()).toEqual(SHAPE_KEYS);
+    expect(Object.keys(conn).sort()).toEqual(CONNECTOR_KEYS);
+    // Vector tagging must match the format exactly.
+    expect((shape.position as any).type).toBe("Vector2");
+    expect((shape.color as any).type).toBe("Vector3");
+  });
+});
+
 describe("whiteboardFromGraph", () => {
   it("emits one centered shape for a single node", () => {
     const g: DiagramGraph = {

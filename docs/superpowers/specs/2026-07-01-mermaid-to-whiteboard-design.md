@@ -52,12 +52,16 @@ We reuse the SVG mermaid already renders (mermaid **11.15.0**,
 
 Two layers:
 
-1. **Layer 1 — generic geometry (ALL diagram types).** Walk the SVG:
-   `<rect>`→rect shape, `<circle>`/`<ellipse>`→ellipse, `<polygon>`→diamond/
-   closest, `<text>`/`<tspan>`→text node, `<path>`/`<line>`→connector line,
-   computed `fill`/`stroke`→`Vector3`. Everything becomes editable, positioned
-   as mermaid drew it. Non-graph diagrams (sequence/gantt/pie) land here as
-   editable primitives ("looks-like", individually editable but not semantic).
+1. **Layer 1 — generic geometry.** Walk the SVG: `<rect>`→rect shape,
+   `<circle>`/`<ellipse>`→ellipse, `<polygon>`→diamond/closest,
+   `<text>`/`<tspan>`→text node, computed `fill`/`stroke`→`Vector3`.
+   **v1 limitation (honest scope):** Layer 1 maps box + text primitives only.
+   It does **not** yet map `<path>`/`<line>`, which are the primary primitives
+   of pie/sequence/gantt — so those diagram types currently produce near-empty
+   output (a few boxes + floating labels, no slices/lifelines/messages). "Every
+   diagram type" is therefore aspirational: **flowchart is first-class; other
+   types are best-effort and effectively unsupported until path/line handling
+   lands.** Tell the user this rather than implying full coverage.
 
 2. **Layer 2 — semantic reconstruction (graph types: flowchart, and later
    state/ER/class).** Mermaid stamps structure into the SVG we read back:

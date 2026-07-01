@@ -15,7 +15,7 @@ function parseSvg(markup: string): SVGSVGElement {
 const FLOWCHART_SVG = `
 <svg aria-roledescription="flowchart-v2" class="flowchart" xmlns="http://www.w3.org/2000/svg">
   <g class="edgePaths">
-    <path id="L_A_B_0" data-id="L_A_B_0" class="edge-thickness-normal" d="M100,50L300,50" marker-end="url(#arrow)"/>
+    <path id="mermaid-123-L_A_B_0" data-id="L_A_B_0" class="edge-thickness-normal edge-pattern-solid flowchart-link" d="M100,50L300,50" marker-end="url(#arrow)"/>
   </g>
   <g class="edgeLabels"><g class="edgeLabel"><text>yes</text></g></g>
   <g class="nodes">

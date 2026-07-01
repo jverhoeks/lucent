@@ -273,11 +273,14 @@ function computedColors(el: Element | null): { fill: RGB | null; stroke: RGB | n
   return { fill: noFill ? null : parseRgb(fillRaw), stroke: parseRgb(strokeRaw) };
 }
 
-/** Endpoints from a mermaid edge id like `L_A_B_0` / `L-A-B-0`. */
+/** Endpoints from a mermaid edge id like `L_A_B_0` / `L-A-B-0`, tolerating a
+ *  `mermaid-<epoch>-` prefix on the `id` attribute (the `data-id` is clean). */
 function parseEdgeId(raw: string): { src: string; tgt: string } | null {
   if (!raw) return null;
-  const sep = raw.includes("_") ? "_" : "-";
-  const parts = raw.split(sep);
+  const m = raw.match(/L[_-].*$/); // strip any leading prefix down to the L marker
+  const s = m ? m[0] : raw;
+  const sep = s.includes("_") ? "_" : "-";
+  const parts = s.split(sep);
   if (parts.length < 4 || parts[0] !== "L") return null;
   return { src: parts[1], tgt: parts[2] };
 }
@@ -355,7 +358,7 @@ function extractFlowchart(svg: SVGSVGElement): DiagramGraph {
 
   const edges: IREdge[] = [];
   svg.querySelectorAll("g.edgePaths path, path.flowchart-link").forEach((p) => {
-    const parsed = parseEdgeId(p.getAttribute("id") || p.getAttribute("data-id") || "");
+    const parsed = parseEdgeId(p.getAttribute("data-id") || p.getAttribute("id") || "");
     if (!parsed) return;
     const style = p.getAttribute("style") || "";
     const cls = p.getAttribute("class") || "";

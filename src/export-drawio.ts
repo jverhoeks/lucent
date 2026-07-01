@@ -61,7 +61,7 @@ export function drawioFromGraph(g: DiagramGraph): string {
     if (e.dashed) style += "dashed=1;";
     if (e.stroke) style += `strokeColor=${hex(e.stroke)};`;
     cells.push(
-      `<mxCell id="e${i}" style="${style}" edge="1" parent="1" source="${s}" target="${t}">` +
+      `<mxCell id="e${i}" value="${xmlEscape(e.label || "")}" style="${style}" edge="1" parent="1" source="${s}" target="${t}">` +
         `<mxGeometry relative="1" as="geometry"/></mxCell>`,
     );
   });

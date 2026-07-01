@@ -158,12 +158,17 @@ describe("extractGraph (state diagram: g.node without flowchart ids)", () => {
     expect(e.arrowEnd).toBe(true);
   });
 
-  it("extracts transition labels as positioned text", () => {
+  it("attaches the transition label to its edge (index-parallel)", () => {
     const g = extractGraph(parseSvg(STATE_SVG));
-    const t = (g.texts ?? []).find((x) => x.text === "ship it");
+    expect(g.edges[0].label).toBe("ship it");
+    expect(g.edges[0].labelPos).toEqual([100, 100]);
+  });
+
+  it("emits the edge label as positioned text in the whiteboard payload", () => {
+    const els = whiteboardFromGraph(extractGraph(parseSvg(STATE_SVG)), seqIds());
+    const t = els.find((e) => e.type === "text");
     expect(t).toBeTruthy();
-    expect(t!.x).toBe(100);
-    expect(t!.y).toBe(100);
+    expect(JSON.parse(t!.text as string).content[0].content[0].text).toBe("ship it");
   });
 });
 

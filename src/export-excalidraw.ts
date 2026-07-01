@@ -114,6 +114,13 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
     boundOf.get(t)?.push({ id: aid, type: "arrow" });
     const dx = tgt.x - src.x;
     const dy = tgt.y - src.y;
+    // Bind the edge label to the arrow (moves with it), like a container label.
+    const arrowBound: Array<{ id: string; type: string }> = [];
+    let labelTextId: string | null = null;
+    if (e.label) {
+      labelTextId = idGen();
+      arrowBound.push({ id: labelTextId, type: "text" });
+    }
     elements.push({
       ...base(aid),
       type: "arrow",
@@ -126,7 +133,7 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
       fillStyle: "solid",
       strokeStyle: e.dashed ? "dashed" : "solid",
       roundness: { type: 2 },
-      boundElements: null,
+      boundElements: arrowBound.length ? arrowBound : null,
       points: [[0, 0], [dx, dy]],
       lastCommittedPoint: null,
       startBinding: { elementId: s, focus: 0, gap: 4 },
@@ -134,6 +141,31 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
       startArrowhead: e.arrowStart ? "arrow" : null,
       endArrowhead: e.arrowEnd ? "arrow" : null,
     });
+    if (labelTextId && e.label) {
+      const [lx, ly] = e.labelPos ?? [src.x + dx / 2, src.y + dy / 2];
+      elements.push({
+        ...base(labelTextId),
+        type: "text",
+        x: lx - (e.label.length * 8) / 2,
+        y: ly - 10,
+        width: e.label.length * 8,
+        height: 20,
+        strokeColor: "#1e1e1e",
+        backgroundColor: "transparent",
+        fillStyle: "solid",
+        strokeStyle: "solid",
+        roundness: null,
+        boundElements: null,
+        text: e.label,
+        fontSize: 16,
+        fontFamily: 1,
+        textAlign: "center",
+        verticalAlign: "middle",
+        containerId: aid,
+        originalText: e.label,
+        lineHeight: 1.25,
+      });
+    }
   }
 
   for (const t of g.texts ?? []) {

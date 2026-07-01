@@ -45,6 +45,7 @@ export type IREdge = {
   sourceId: string;
   targetId: string;
   label?: string;
+  labelPos?: [number, number];
   dashed?: boolean;
   arrowStart?: boolean;
   arrowEnd?: boolean;
@@ -302,6 +303,29 @@ export function whiteboardFromGraph(
     });
   }
 
+  // Edge labels: connectors have no known label field, so emit positioned text.
+  // Force dark text — it sits on the (light) canvas, not on a shape.
+  for (const e of g.edges) {
+    if (!e.label || !e.labelPos) continue;
+    const w = Math.max(e.label.length * 8, 20);
+    const pos = vec2(e.labelPos[0] - cx, e.labelPos[1] - cy);
+    const size = vec2(w, 20);
+    els.push({
+      type: "text",
+      source: 1,
+      position: pos,
+      size,
+      text: proseDoc(e.label),
+      allowFlexibleWidth: true,
+      color: vec3(DEFAULT_STROKE),
+      fontScale: 1,
+      basisSize: size,
+      basisPosition: pos,
+      alignment: "left",
+      rotation: 0,
+    });
+  }
+
   return els;
 }
 
@@ -515,8 +539,12 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
     nodes.push({ id, x, y, w, h, label, fill, stroke, shapeKind: kind });
   });
 
+  // Edge labels are emitted index-parallel to the edge paths (an empty
+  // placeholder group for unlabeled edges), so the k-th label belongs to the
+  // k-th path. Mermaid positions each at the edge midpoint (graph coords).
+  const edgeLabels = Array.from(svg.querySelectorAll("g.edgeLabels g.edgeLabel"));
   const edges: IREdge[] = [];
-  svg.querySelectorAll("g.edgePaths path, path.flowchart-link, .edgePaths path").forEach((p) => {
+  svg.querySelectorAll("g.edgePaths path").forEach((p, i) => {
     const parsed = parseEdgeId(p.getAttribute("data-id") || p.getAttribute("id") || "");
     let src: string | null = null;
     let tgt: string | null = null;
@@ -531,6 +559,9 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
       }
     }
     if (!src || !tgt || src === tgt) return;
+    const labelEl = edgeLabels[i];
+    const label = labelEl?.textContent?.trim() || undefined;
+    const lp = labelEl ? transformTranslate(labelEl) : { x: 0, y: 0 };
     edges.push({
       sourceId: src,
       targetId: tgt,
@@ -538,28 +569,12 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
       arrowStart: !!p.getAttribute("marker-start"),
       dashed: isDashed(p),
       stroke: computedColors(p).stroke,
+      label,
+      labelPos: label && !(lp.x === 0 && lp.y === 0) ? [lp.x, lp.y] : undefined,
     });
   });
 
-  // Edge/transition labels → positioned text (mermaid already places them at the
-  // edge midpoint via the edgeLabel group's transform, in graph coords).
-  const texts: IRText[] = [];
-  svg.querySelectorAll("g.edgeLabels g.edgeLabel, g.edgeLabel").forEach((el) => {
-    const t = el.textContent?.trim();
-    if (!t) return;
-    const { x, y } = transformTranslate(el);
-    if (x === 0 && y === 0) return; // unpositioned (empty label placeholder)
-    texts.push({
-      x,
-      y,
-      w: Math.max(t.length * 8, 20),
-      h: 20,
-      text: t,
-      color: computedColors(el.querySelector("text")).fill,
-    });
-  });
-
-  return { nodes, edges, texts };
+  return { nodes, edges };
 }
 
 /** Points of a straight (M/L only) SVG path in `d`. Returns null for anything

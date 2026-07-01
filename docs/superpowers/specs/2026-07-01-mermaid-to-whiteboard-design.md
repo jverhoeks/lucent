@@ -54,14 +54,15 @@ Two layers:
 
 1. **Layer 1 — generic geometry.** Walk the SVG: `<rect>`→rect shape,
    `<circle>`/`<ellipse>`→ellipse, `<polygon>`→diamond/closest,
-   `<text>`/`<tspan>`→text node, computed `fill`/`stroke`→`Vector3`.
-   **v1 limitation (honest scope):** Layer 1 maps box + text primitives only.
-   It does **not** yet map `<path>`/`<line>`, which are the primary primitives
-   of pie/sequence/gantt — so those diagram types currently produce near-empty
-   output (a few boxes + floating labels, no slices/lifelines/messages). "Every
-   diagram type" is therefore aspirational: **flowchart is first-class; other
-   types are best-effort and effectively unsupported until path/line handling
-   lands.** Tell the user this rather than implying full coverage.
+   `<text>`/`<tspan>`→text node, `<line>` + straight (M/L-only) `<path>`→free
+   connectors, computed `fill`/`stroke`→`Vector3`.
+   **Honest scope:** **flowchart is first-class** (semantic Layer 2).
+   **Sequence / gantt** are usable via boxes + text + lines (lifelines,
+   messages, bars, axes). **Pie** and any **curved/filled `<path>`** are
+   **dropped** — a filled arc wedge has no editable whiteboard primitive, and
+   we don't approximate it (curved/relative paths are skipped, not mangled).
+   So "every diagram type" means "every type that maps to shapes/lines/text";
+   pie is out. Tell the user this rather than implying full coverage.
 
 2. **Layer 2 — semantic reconstruction (graph types: flowchart, and later
    state/ER/class).** Mermaid stamps structure into the SVG we read back:

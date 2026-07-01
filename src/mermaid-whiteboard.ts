@@ -53,10 +53,21 @@ export type IRText = {
   color?: RGB | null;
 };
 
+/** A free line/polyline not anchored to nodes (sequence lifelines/messages,
+ *  gantt axes, etc.). Points are in the SVG's coordinate space. */
+export type IRLine = {
+  points: Array<[number, number]>;
+  arrowStart?: boolean;
+  arrowEnd?: boolean;
+  dashed?: boolean;
+  stroke?: RGB | null;
+};
+
 export type DiagramGraph = {
   nodes: IRNode[];
   edges: IREdge[];
   texts?: IRText[];
+  lines?: IRLine[];
 };
 
 export type WhiteboardElement = Record<string, unknown>;
@@ -155,7 +166,11 @@ export function whiteboardFromGraph(
   idGen: () => string = defaultIdGen,
 ): WhiteboardElement[] {
   const texts = g.texts ?? [];
-  const { cx, cy } = bboxCenter([...g.nodes, ...texts]);
+  const lines = g.lines ?? [];
+  const linePointBoxes = lines.flatMap((l) =>
+    l.points.map(([x, y]) => ({ x, y, w: 0, h: 0 })),
+  );
+  const { cx, cy } = bboxCenter([...g.nodes, ...texts, ...linePointBoxes]);
 
   const nodeIds = new Map<string, string>();
   const nodeIndex = new Map<string, number>();
@@ -231,6 +246,26 @@ export function whiteboardFromGraph(
       strokeStyle: e.dashed ? 2 : 1,
       sourceIndex: nodeIndex.get(e.sourceId),
       targetIndex: nodeIndex.get(e.targetId),
+    });
+  }
+
+  for (const ln of lines) {
+    if (ln.points.length < 2) continue;
+    const pts = ln.points.map(([x, y]) => [x - cx, y - cy] as [number, number]);
+    els.push({
+      type: "connector",
+      source: 1,
+      presentation: 2,
+      segments: [],
+      start: pts[0],
+      end: pts[pts.length - 1],
+      position: vec2(0, 0),
+      size: vec2(0, 0),
+      startCap: ln.arrowStart ? 2 : 1,
+      endCap: ln.arrowEnd ? 2 : 1,
+      color: vec3(ln.stroke ?? DEFAULT_CONNECTOR),
+      stroke: 1,
+      strokeStyle: ln.dashed ? 2 : 1,
     });
   }
 
@@ -375,8 +410,33 @@ function extractFlowchart(svg: SVGSVGElement): DiagramGraph {
   return { nodes, edges };
 }
 
-/** Layer 1: any diagram → editable geometry (shapes + loose text). Browser-only
- *  (needs getBBox); non-graph types land here as individually editable pieces. */
+/** Points of a straight (M/L only) SVG path in `d`. Returns null for anything
+ *  with curves/arcs or relative commands — we don't approximate those. */
+function parsePathPoints(d: string): Array<[number, number]> | null {
+  if (!d || /[^MLZ0-9eE.,\s+-]/.test(d)) return null; // reject curves, arcs, relative
+  const nums = d.match(/-?\d*\.?\d+(?:e-?\d+)?/gi);
+  if (!nums || nums.length < 4 || nums.length % 2 !== 0) return null;
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < nums.length; i += 2) pts.push([parseFloat(nums[i]), parseFloat(nums[i + 1])]);
+  return pts;
+}
+
+function num(el: Element, attr: string): number | null {
+  const v = el.getAttribute(attr);
+  return v == null || v === "" ? null : parseFloat(v);
+}
+
+function isDashed(el: Element): boolean {
+  return (
+    !!el.getAttribute("stroke-dasharray") ||
+    (el.getAttribute("style") || "").includes("dasharray") ||
+    (el.getAttribute("class") || "").includes("dashed")
+  );
+}
+
+/** Layer 1: any diagram → editable geometry (shapes, loose text, free lines).
+ *  Boxes/text need getBBox (browser-only); lines come from attributes/`d` so
+ *  line-based diagrams (sequence, gantt) get usable output. */
 function extractGeometry(svg: SVGSVGElement): DiagramGraph {
   const nodes: IRNode[] = [];
   svg.querySelectorAll("rect, circle, ellipse, polygon").forEach((el) => {
@@ -395,7 +455,32 @@ function extractGeometry(svg: SVGSVGElement): DiagramGraph {
     if (!s || !box) return;
     texts.push({ ...box, text: s, color: computedColors(t).fill });
   });
-  return { nodes, edges: [], texts };
+
+  const lines: IRLine[] = [];
+  svg.querySelectorAll("line").forEach((el) => {
+    const x1 = num(el, "x1"), y1 = num(el, "y1"), x2 = num(el, "x2"), y2 = num(el, "y2");
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return;
+    lines.push({
+      points: [[x1, y1], [x2, y2]],
+      arrowStart: !!el.getAttribute("marker-start"),
+      arrowEnd: !!el.getAttribute("marker-end"),
+      dashed: isDashed(el),
+      stroke: computedColors(el).stroke,
+    });
+  });
+  svg.querySelectorAll("path").forEach((el) => {
+    const pts = parsePathPoints(el.getAttribute("d") || "");
+    if (!pts) return;
+    lines.push({
+      points: pts,
+      arrowStart: !!el.getAttribute("marker-start"),
+      arrowEnd: !!el.getAttribute("marker-end"),
+      dashed: isDashed(el),
+      stroke: computedColors(el).stroke,
+    });
+  });
+
+  return { nodes, edges: [], texts, lines };
 }
 
 /** Read a mermaid-rendered <svg> into the IR. Flowcharts get semantic

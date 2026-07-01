@@ -83,6 +83,45 @@ describe("extractGraph (flowchart)", () => {
   });
 });
 
+const SEQUENCE_SVG = `
+<svg aria-roledescription="sequence" class="sequence" xmlns="http://www.w3.org/2000/svg">
+  <line x1="10" y1="0" x2="10" y2="100" class="actor-line"/>
+  <path d="M20 20 L120 20 L120 40" marker-end="url(#arrow)"/>
+  <path d="M0 0 C10 10 20 20 30 30"/>
+  <text x="0" y="0">Alice</text>
+</svg>`;
+
+describe("extractGraph (non-flowchart geometry: lines & polylines)", () => {
+  it("extracts <line> and straight <path> as free lines, skipping curves", () => {
+    const g = extractGraph(parseSvg(SEQUENCE_SVG));
+    expect(g.lines).toHaveLength(2); // the line + the M/L path; the C curve is skipped
+    const straightLine = g.lines!.find((l) => l.points.length === 2)!;
+    expect(straightLine.points).toEqual([
+      [10, 0],
+      [10, 100],
+    ]);
+    const poly = g.lines!.find((l) => l.points.length === 3)!;
+    expect(poly.points[0]).toEqual([20, 20]);
+    expect(poly.arrowEnd).toBe(true);
+  });
+
+  it("emits free connectors (no anchors) for lines, recentered", () => {
+    const g: DiagramGraph = {
+      nodes: [],
+      edges: [],
+      lines: [{ points: [[0, 0], [100, 0]], arrowEnd: true }],
+    };
+    const els = whiteboardFromGraph(g, seqIds());
+    expect(els).toHaveLength(1);
+    const c = els[0];
+    expect(c.type).toBe("connector");
+    expect(c.start).toEqual([-50, 0]);
+    expect(c.end).toEqual([50, 0]);
+    expect(c.endCap).toBe(2);
+    expect(c.sourceElement).toBeUndefined(); // free line, not anchored to a shape
+  });
+});
+
 describe("payload conformance to the real whiteboard format", () => {
   // Field shape frozen from a genuine Atlassian Whiteboard clipboard copy.
   const SHAPE_KEYS = [

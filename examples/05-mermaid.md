@@ -3,6 +3,11 @@
 Diagrams render to SVG and follow the app theme (try switching to **Dark**).
 Back to the [index](README.md).
 
+> **Hover any diagram** for its toolbar: copy or download it as **SVG / PNG**, or
+> copy it as **editable shapes** into **Atlassian Whiteboard**, **draw.io**, or
+> **Excalidraw** — then paste and keep editing. See
+> [Copy & export](../docs/copy-and-export.md).
+
 ## Flowchart — Should you deploy on Friday?
 
 ```mermaid

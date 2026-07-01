@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lucent — screenshot harness</title>
+    <!-- Dev-only entry point used to capture documentation screenshots via a
+         headless browser. NOT part of the shipped app; not in vite build inputs. -->
+    <script type="module" src="/src/main-screenshot.ts" defer></script>
+  </head>
+
+  <body>
+    <header id="toolbar">
+      <div class="group">
+        <button id="btn-open" class="primary" aria-label="Open" data-tip="Open file(s)"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-folder"></use></svg></button>
+        <button id="btn-next" aria-label="Next" data-tip="Next file in folder"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-skip"></use></svg></button>
+      </div>
+
+      <div class="group">
+        <button id="btn-edit" aria-label="Edit" data-tip="Edit"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-pencil"></use></svg></button>
+        <button id="btn-save" aria-label="Save" data-tip="Save (Cmd/Ctrl+S)" hidden><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-save"></use></svg></button>
+        <button id="btn-toggle" aria-label="Rendered" data-tip="Toggle rendered / raw" aria-pressed="false"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-eye"></use></svg></button>
+        <button id="btn-tail" aria-label="Tail" data-tip="Tail / follow new lines" aria-pressed="false"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-tail"></use></svg></button>
+        <button id="btn-search" aria-label="Find" data-tip="Find (Cmd/Ctrl+F)"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-search"></use></svg></button>
+      </div>
+
+      <div class="group">
+        <select id="sel-viewas" title="View as" aria-label="View as">
+          <option value="">View as…</option>
+          <option value="markdown">Markdown</option>
+          <option value="text">Plain text</option>
+          <option value="data:json">JSON</option>
+          <option value="data:yaml">YAML</option>
+          <option value="data:toml">TOML</option>
+          <option value="data:ini">INI</option>
+        </select>
+        <div class="popover-host">
+          <button id="btn-appearance" aria-label="Appearance" data-tip="Appearance" aria-haspopup="true" aria-expanded="false"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-type"></use></svg></button>
+          <div id="appearance-panel" class="popover" role="dialog" aria-label="Appearance" hidden>
+            <label class="popover-row">Font
+              <select id="sel-font" aria-label="Font family">
+                <option value="sans">Sans</option>
+                <option value="serif">Serif</option>
+                <option value="mono">Mono</option>
+              </select>
+            </label>
+            <label class="popover-row">Size
+              <input id="inp-size" type="range" min="14" max="22" aria-label="Font size" />
+            </label>
+            <label class="popover-row">Theme
+              <select id="sel-theme" aria-label="Theme">
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="sepia">Sepia</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="group">
+        <button id="btn-copy-md" aria-label="Copy as Markdown" data-tip="Copy as Markdown"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-copy"></use></svg></button>
+        <button id="btn-copy-rich" aria-label="Copy as rich text" data-tip="Copy as rich text"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-richtext"></use></svg></button>
+        <button id="btn-export-html" aria-label="Export HTML" data-tip="Export standalone HTML"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-filecode"></use></svg></button>
+        <button id="btn-export-pdf" aria-label="Export PDF" data-tip="Export PDF"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-printer"></use></svg></button>
+      </div>
+    </header>
+
+    <div id="tabstrip" hidden>
+      <nav id="tabbar"></nav>
+      <button id="btn-close-all" title="Close all tabs" aria-label="Close all tabs">✕</button>
+    </div>
+
+    <div id="searchbar" hidden role="search">
+      <input id="search-input" type="text" placeholder="Find" aria-label="Find" />
+      <button id="search-case" class="toggle" title="Match case" aria-pressed="false">Aa</button>
+      <button id="search-regex" class="toggle" title="Regular expression" aria-pressed="false">.*</button>
+      <span id="search-count" class="count">0/0</span>
+      <button id="search-prev" title="Previous (Shift+Enter)" aria-label="Previous">▲</button>
+      <button id="search-next" title="Next (Enter)" aria-label="Next">▼</button>
+      <button id="search-close" title="Close (Esc)" aria-label="Close">✕</button>
+    </div>
+    <main id="content" data-font="sans"></main>
+    <div id="banner" hidden></div>
+  </body>
+</html>

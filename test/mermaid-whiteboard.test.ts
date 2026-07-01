@@ -91,6 +91,41 @@ const SEQUENCE_SVG = `
   <text x="0" y="0">Alice</text>
 </svg>`;
 
+const POLYGON_SVG = `
+<svg aria-roledescription="flowchart-v2" class="flowchart" xmlns="http://www.w3.org/2000/svg">
+  <g class="nodes">
+    <g class="node default" id="mermaid-1-flowchart-T-0" transform="translate(50, 50)">
+      <polygon points="50,0 0,100 100,100"/>
+      <g class="label"><text>tri</text></g>
+    </g>
+    <g class="node default" id="mermaid-1-flowchart-V-1" transform="translate(250, 50)">
+      <polygon points="0,0 100,0 50,100"/>
+      <g class="label"><text>down</text></g>
+    </g>
+    <g class="node default" id="mermaid-1-flowchart-D-2" transform="translate(450, 50)">
+      <polygon points="50,0 100,50 50,100 0,50"/>
+      <g class="label"><text>dec</text></g>
+    </g>
+    <g class="node default" id="mermaid-1-flowchart-P-3" transform="translate(650, 50)">
+      <polygon points="20,0 120,0 100,100 0,100"/>
+      <g class="label"><text>para</text></g>
+    </g>
+  </g>
+</svg>`;
+
+describe("extractGraph (polygon node shapes)", () => {
+  it("classifies triangles, diamonds and parallelograms from polygon points", () => {
+    const g = extractGraph(parseSvg(POLYGON_SVG));
+    const kind = (id: string) => g.nodes.find((n) => n.id === id)!.shapeKind;
+    expect(kind("T")).toBe("triangle");
+    expect(kind("V")).toBe("triangleDown");
+    expect(kind("D")).toBe("diamond");
+    expect(kind("P")).toBe("parallelogram");
+    // size comes from the polygon's point extent, not getBBox
+    expect(g.nodes.find((n) => n.id === "T")!.h).toBe(100);
+  });
+});
+
 describe("extractGraph (non-flowchart geometry: lines & polylines)", () => {
   it("extracts <line> and straight <path> as free lines, skipping curves", () => {
     const g = extractGraph(parseSvg(SEQUENCE_SVG));
@@ -240,6 +275,20 @@ describe("whiteboardFromGraph", () => {
     };
     const els = whiteboardFromGraph(g, seqIds());
     expect(els.map((e) => e.shape)).toEqual([1, 2, 4, 3]);
+  });
+
+  it("maps triangles and parallelograms to the real enum (5/6/7/8)", () => {
+    const mk = (id: string, shapeKind: any) => ({ id, x: 0, y: 0, w: 10, h: 10, label: "", shapeKind });
+    const g: DiagramGraph = {
+      nodes: [
+        mk("t", "triangle"),
+        mk("v", "triangleDown"),
+        mk("p", "parallelogram"),
+        mk("q", "parallelogramAlt"),
+      ],
+      edges: [],
+    };
+    expect(whiteboardFromGraph(g, seqIds()).map((e) => e.shape)).toEqual([5, 6, 7, 8]);
   });
 
   it("maps fill/stroke to Vector3 and disables fill when absent", () => {

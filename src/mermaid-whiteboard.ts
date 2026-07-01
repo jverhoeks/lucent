@@ -30,7 +30,15 @@ export type IRNode = {
   label: string;
   fill?: RGB | null;
   stroke?: RGB | null;
-  shapeKind?: "rect" | "rounded" | "ellipse" | "diamond";
+  shapeKind?:
+    | "rect"
+    | "rounded"
+    | "ellipse"
+    | "diamond"
+    | "triangle"
+    | "triangleDown"
+    | "parallelogram"
+    | "parallelogramAlt";
 };
 
 export type IREdge = {
@@ -86,6 +94,10 @@ const SHAPE_ENUM: Record<NonNullable<IRNode["shapeKind"]>, number> = {
   ellipse: 2,
   rounded: 3,
   diamond: 4,
+  triangle: 5,
+  triangleDown: 6,
+  parallelogram: 7,
+  parallelogramAlt: 8,
 };
 
 const vec2 = (x: number, y: number) => ({ x, y, type: "Vector2" as const });
@@ -346,6 +358,51 @@ function elementBox(
   };
 }
 
+/** Parse an SVG `points` list into [x,y] pairs, dropping a closing duplicate. */
+function parsePolygonPoints(s: string): Array<[number, number]> | null {
+  const nums = (s.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number);
+  if (nums.length < 6 || nums.length % 2 !== 0) return null;
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < nums.length; i += 2) pts.push([nums[i], nums[i + 1]]);
+  const a = pts[0];
+  const z = pts[pts.length - 1];
+  if (pts.length > 3 && a[0] === z[0] && a[1] === z[1]) pts.pop();
+  return pts;
+}
+
+/** Classify a polygon by its vertices into a whiteboard-mappable shape kind. */
+function classifyPolygon(pts: Array<[number, number]>): NonNullable<IRNode["shapeKind"]> {
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const w = maxX - minX || 1, h = maxY - minY || 1;
+  const eps = Math.max(w, h) * 0.15;
+  const near = (a: number, b: number) => Math.abs(a - b) <= eps;
+
+  if (pts.length === 3) {
+    const top = pts.filter((p) => near(p[1], minY)).length;
+    const bot = pts.filter((p) => near(p[1], maxY)).length;
+    return top <= bot ? "triangle" : "triangleDown"; // apex up vs apex down
+  }
+  if (pts.length === 4) {
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const isDiamond = pts.every(
+      (p) =>
+        (near(p[0], cx) && (near(p[1], minY) || near(p[1], maxY))) ||
+        (near(p[1], cy) && (near(p[0], minX) || near(p[0], maxX))),
+    );
+    if (isDiamond) return "diamond";
+    const top = pts.filter((p) => near(p[1], minY)).sort((a, b) => a[0] - b[0]);
+    const bot = pts.filter((p) => near(p[1], maxY)).sort((a, b) => a[0] - b[0]);
+    if (top.length === 2 && bot.length === 2) {
+      return top[0][0] > bot[0][0] ? "parallelogram" : "parallelogramAlt";
+    }
+    return "diamond";
+  }
+  return "rect"; // hexagon etc. → safe fallback
+}
+
 /** Size + kind of a node's inner shape, from attributes first, bbox as fallback. */
 function nodeShape(
   el: Element | null,
@@ -365,6 +422,16 @@ function nodeShape(
       const ry = parseFloat(el.getAttribute("ry") || "0");
       if (rx && ry) return { w: 2 * rx, h: 2 * ry, kind: "ellipse" };
     } else if (tag === "polygon") {
+      const pts = parsePolygonPoints(el.getAttribute("points") || "");
+      if (pts && pts.length >= 3) {
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        return {
+          w: Math.max(...xs) - Math.min(...xs),
+          h: Math.max(...ys) - Math.min(...ys),
+          kind: classifyPolygon(pts),
+        };
+      }
       const box = elementBox(el);
       if (box) return { w: box.w, h: box.h, kind: "diamond" };
     }

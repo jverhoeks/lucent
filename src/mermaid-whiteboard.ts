@@ -120,6 +120,14 @@ export function contrastText(fill: RGB): RGB {
   return isDarkFill(fill) ? { r: 255, g: 255, b: 255 } : { r: 33, g: 33, b: 33 };
 }
 
+/** Lighten a dark fill toward white (leaving light fills untouched) so the
+ *  whiteboard's fixed dark label text stays readable. */
+export function lightenForCanvas(fill: RGB): RGB {
+  if (!isDarkFill(fill)) return fill;
+  const up = (n: number) => Math.round(n + (255 - n) * 0.85);
+  return { r: up(fill.r), g: up(fill.g), b: up(fill.b) };
+}
+
 /** Stringified ProseMirror doc for a shape/text label. When `color` is given,
  *  the text carries an Atlaskit `textColor` mark (lenient — stripped if the
  *  target doesn't support it, never rejects the paste). */
@@ -221,11 +229,13 @@ export function whiteboardFromGraph(
       source: 1,
       position: pos,
       size,
-      color: vec3(n.fill ?? DEFAULT_FILL),
+      // The whiteboard renders shape label text in a fixed dark color (it ignores
+      // our textColor mark), so a dark fill would be unreadable. Lighten dark
+      // fills toward white so the default dark text shows.
+      color: vec3(lightenForCanvas(n.fill ?? DEFAULT_FILL)),
       strokeColor: vec3(n.stroke ?? DEFAULT_STROKE),
       strokeStyle: 1,
-      // White label text on dark fills; otherwise default (keeps light shapes plain).
-      text: proseDoc(n.label, n.fill && isDarkFill(n.fill) ? "#ffffff" : undefined),
+      text: proseDoc(n.label),
       shape: SHAPE_ENUM[n.shapeKind ?? "rect"],
       fillEnabled: !!n.fill,
       fontScale: 1,

@@ -73,8 +73,12 @@ Two layers:
    carrying no endpoints). Edge **labels** attach to the edge (index-parallel to
    the paths) and **bind** to the connector in every target — draw.io edge
    `value`, Excalidraw arrow-bound text, whiteboard **`pathLabel`** element
-   (`sourcePathIndex` → connector, `proportion:0.5`). **Label text color** is
-   luminance-based (`contrastText`): white on dark fills → no black-on-black.
+   (`sourcePathIndex` → connector, `proportion:0.5`). **Readable labels:**
+   draw.io/Excalidraw let us set label text color, so dark fills keep white text
+   (`contrastText`). The **whiteboard ignores our text-color mark** on shape
+   labels (fixed dark text), so instead we **lighten dark fills**
+   (`lightenForCanvas`) there — dark-theme boxes become light with readable dark
+   text. Either way: no black-on-black.
    Mermaid stamps structure into the SVG we read back:
    - nodes: `g.node` with id `flowchart-<id>-<n>` and/or `data-id`
    - edges: `path` id `L_<src>_<tgt>_<n>` (encodes endpoints) + marker refs +

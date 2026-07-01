@@ -96,8 +96,8 @@ New file **`src/mermaid-whiteboard.ts`**, split for testability:
   base64 → wrap in the `<meta><div data-canvas-clipboard>` HTML. Pure, testable.
 - `svgToWhiteboardHtml(svg): string` — composition of the three above.
 
-The IR boundary keeps future emitters (Excalidraw/tldraw) as new
-`xFromGraph()` functions — out of scope for v1, but the seam is free.
+The IR boundary keeps future emitters as new `xFromGraph()` + `encodeX()`
+functions sharing the same `extractGraph` — see **Future export targets**.
 
 Clipboard: reuse the existing `text/html` path. Add
 `copyMermaidWhiteboard(svg)` to `src/mermaid-export.ts` (sits with the other
@@ -154,10 +154,49 @@ mermaid copy fns) that builds the html and writes it via a ClipboardItem
   This is the criterion that proves "usable," since our synthesized ids/coords
   must be accepted exactly as the whiteboard's own copies are.
 
+## Future export targets (planned; not in v1)
+
+The `DiagramGraph` IR → emitter seam makes each new target additive: shared
+`extractGraph`, a new `xFromGraph()` + `encodeX()` pair, and a new toolbar entry
+(Copy → Whiteboard / draw.io / Excalidraw / tldraw / …). Feasibility is gated by
+how open each target's **clipboard** format is.
+
+- **draw.io (diagrams.net) — high.** Clipboard is **mxGraph XML**
+  (`<mxGraphModel><root><mxCell…/></root></mxGraphModel>`), open + documented.
+  Node → `mxCell vertex` with a **style string** (`rounded=1;ellipse;rhombus;
+  triangle;parallelogram;fillColor=#…;strokeColor=#…`) + `mxGeometry`; edge →
+  `mxCell edge` with `source`/`target` + `endArrow`/`edgeStyle`. Uses **top-left
+  x,y** (not center) and hex colors; edge waypoints via `<Array as="points">`.
+- **Excalidraw — high.** Clipboard JSON `{type:"excalidraw/clipboard",
+  elements:[…]}`. Elements: `rectangle`/`ellipse`/`diamond` + `arrow`/`line`;
+  arrows bind to shapes via `startBinding`/`endBinding` + shapes' `boundElements`
+  (maps cleanly to our anchored connectors, reusing our minted ids). Text is a
+  bound `text` element. No triangle/parallelogram primitive → degrade. Extra
+  props: `roughness`/`seed`/`fillStyle` (hand-drawn look), hex colors.
+- **tldraw — high.** Clipboard JSON (`application/tldraw` records). `geo` shapes
+  (`rectangle`/`ellipse`/`diamond`/`triangle`) with `props.color`/`props.dash`;
+  `arrow` shapes with start/end **bindings**; groups via `parentId`. Colors are a
+  **fixed named palette** (not hex) → need a nearest-color mapper.
+- **Lucid (Lucidchart) — lower.** Clipboard is proprietary → reverse-engineer
+  from a real copy (same capture dance as Atlassian). Alternatively target the
+  documented **Lucid Standard Import** JSON as a *file* export, not clipboard.
+
+**IR growth these targets motivate** (do just-in-time per target, TDD'd):
+- **Edge labels** — extract mermaid `.edgeLabels`; add `IREdge.label` (all four
+  targets render them). Currently unextracted.
+- **Edge waypoints/routing** — `IREdge.points?` (draw.io points, tldraw/Atlassian
+  segments) for non-straight edges.
+- **Groups / subgraphs** — mermaid `g.cluster` → `IRGroup` (draw.io group,
+  Excalidraw frame, tldraw group).
+- **Richer node shapes** — hexagon/stadium/cylinder/parallelogram/trapezoid
+  (mermaid v11 has these); map per target, degrade where unsupported.
+- **Color mapping** — hex (draw.io/Excalidraw) vs enum/named-palette
+  (Atlassian/tldraw) → a shared nearest-color helper.
+
 ## Scope / YAGNI
 
-- **In:** flowchart full semantic (Layer 2); all other types via Layer 1
-  geometry; Atlassian target only; copy-only (no download).
-- **Out (v1):** other targets (Excalidraw/tldraw) — IR seam left open;
-  whiteboard→markdown import; hand-tuned semantic mapping for
-  sequence/gantt/pie (they degrade to editable geometry by design).
+- **In (this PR):** flowchart full semantic (Layer 2); sequence/gantt via Layer 1
+  geometry incl. lines; Atlassian target; verified shape enum; copy-only.
+- **Out (deferred):** draw.io / Excalidraw / tldraw / Lucid emitters (seam +
+  plan above ready); whiteboard→markdown import; pie & curved/filled paths;
+  edge labels / waypoints / groups (IR growth listed above).

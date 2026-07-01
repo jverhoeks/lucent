@@ -11,6 +11,8 @@
  *     unicode that turns up in diagram labels. */
 
 import { svgToWhiteboardClipboard } from "./mermaid-whiteboard";
+import { svgToDrawioXml } from "./export-drawio";
+import { svgToExcalidrawJson } from "./export-excalidraw";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -102,4 +104,17 @@ export async function copyMermaidWhiteboard(svg: SVGSVGElement): Promise<void> {
       "text/plain": new Blob([text], { type: "text/plain" }),
     }),
   ]);
+}
+
+/** Copy the diagram as draw.io (diagrams.net) mxGraph XML. draw.io detects the
+ *  XML on paste from plain text, so a plain-text write is enough (and sidesteps
+ *  WebKit's html sanitizer). */
+export async function copyMermaidDrawio(svg: SVGSVGElement): Promise<void> {
+  await navigator.clipboard.writeText(svgToDrawioXml(svg));
+}
+
+/** Copy the diagram as an Excalidraw clipboard payload (JSON on plain text,
+ *  which is how Excalidraw reads its own `excalidraw/clipboard` blob). */
+export async function copyMermaidExcalidraw(svg: SVGSVGElement): Promise<void> {
+  await navigator.clipboard.writeText(svgToExcalidrawJson(svg));
 }

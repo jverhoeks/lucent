@@ -196,7 +196,10 @@ how open each target's **clipboard** format is.
 ## Scope / YAGNI
 
 - **In (this PR):** flowchart full semantic (Layer 2); sequence/gantt via Layer 1
-  geometry incl. lines; Atlassian target; verified shape enum; copy-only.
-- **Out (deferred):** draw.io / Excalidraw / tldraw / Lucid emitters (seam +
-  plan above ready); whiteboard→markdown import; pie & curved/filled paths;
-  edge labels / waypoints / groups (IR growth listed above).
+  geometry incl. lines; verified shape enum; copy-only. **Three targets:**
+  Atlassian Whiteboard (`export`… in `mermaid-whiteboard.ts`), **draw.io**
+  (`export-drawio.ts`, mxGraph XML via plain text) and **Excalidraw**
+  (`export-excalidraw.ts`, `excalidraw/clipboard` JSON via plain text). Toolbar
+  copy group: SVG / PNG / WB / DIO / EX.
+- **Out (deferred):** tldraw / Lucid emitters (seam + plan ready); whiteboard→
+  markdown import; pie & curved/filled paths; edge labels / waypoints / groups.

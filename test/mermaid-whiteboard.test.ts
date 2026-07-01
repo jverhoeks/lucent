@@ -253,6 +253,17 @@ describe("payload conformance to the real whiteboard format", () => {
 });
 
 describe("whiteboardFromGraph", () => {
+  it("lightens dark fills so the default dark label text stays readable", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 0, y: 0, w: 100, h: 40, label: "Written", fill: { r: 31, g: 32, b: 32 } }],
+      edges: [],
+    };
+    const s = whiteboardFromGraph(g, seqIds())[0];
+    expect((s.color as any).x).toBeGreaterThan(200); // near-black fill lightened
+    // no textColor mark (relies on the whiteboard's default dark text)
+    expect(JSON.parse(s.text as string).content[0].content[0].marks).toBeUndefined();
+  });
+
   it("emits one centered shape for a single node", () => {
     const g: DiagramGraph = {
       nodes: [{ id: "A", x: 100, y: 50, w: 160, h: 80, label: "hello" }],

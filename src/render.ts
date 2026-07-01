@@ -138,17 +138,31 @@ function resolveTheme(theme: Theme): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-/** One action group ("Copy" or "Download") with SVG + PNG buttons. */
+type MermaidKind = "svg" | "png" | "wb" | "dio" | "exc";
+
+/** One action group. "Copy" offers SVG + PNG + Whiteboard + draw.io +
+ *  Excalidraw; "Download" offers SVG + PNG (the editable payloads are
+ *  clipboard-only). */
 function mermaidActionGroup(act: "copy" | "download", iconId: string, verb: string): string {
-  const btn = (kind: "svg" | "png") =>
+  const LABEL: Record<MermaidKind, string> = { svg: "SVG", png: "PNG", wb: "WB", dio: "DIO", exc: "EX" };
+  const TITLE: Record<MermaidKind, string> = {
+    svg: `${verb} as SVG`,
+    png: `${verb} as PNG`,
+    wb: `${verb} to Whiteboard`,
+    dio: `${verb} to draw.io`,
+    exc: `${verb} to Excalidraw`,
+  };
+  const btn = (kind: MermaidKind) =>
     `<button class="mermaid-btn" type="button" data-act="${act}" data-kind="${kind}" ` +
-    `title="${verb} as ${kind.toUpperCase()}" aria-label="${verb} as ${kind.toUpperCase()}">` +
-    `<span class="mermaid-btn-label">${kind.toUpperCase()}</span></button>`;
+    `title="${TITLE[kind]}" aria-label="${TITLE[kind]}">` +
+    `<span class="mermaid-btn-label">${LABEL[kind]}</span></button>`;
+  const extra = act === "copy" ? btn("wb") + btn("dio") + btn("exc") : "";
   return (
     `<div class="mermaid-group" role="group" aria-label="${verb}">` +
     `<span class="mermaid-group-icon" title="${verb}" aria-hidden="true">${iconMarkup(iconId)}</span>` +
     btn("svg") +
     btn("png") +
+    extra +
     `</div>`
   );
 }

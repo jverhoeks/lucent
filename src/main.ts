@@ -6,6 +6,9 @@ import { copyAsMarkdown, copyAsRichText } from "./clipboard";
 import {
   copyMermaidSvg,
   copyMermaidPng,
+  copyMermaidWhiteboard,
+  copyMermaidDrawio,
+  copyMermaidExcalidraw,
   mermaidSvgMarkup,
   mermaidPngBytes,
 } from "./mermaid-export";
@@ -534,12 +537,18 @@ export function initApp(adapter: PlatformAdapter): void {
       const svg = mermaidBtn.closest(".mermaid")?.querySelector("svg") as SVGSVGElement | null;
       const label = mermaidBtn.querySelector(".mermaid-btn-label");
       if (svg && label) {
-        const kind = mermaidBtn.dataset.kind === "png" ? "png" : "svg";
+        const kind = mermaidBtn.dataset.kind;
         const prev = label.textContent;
         try {
           let done = true;
           if (mermaidBtn.dataset.act === "download") {
-            done = await downloadMermaid(svg, kind);
+            done = await downloadMermaid(svg, kind === "png" ? "png" : "svg");
+          } else if (kind === "wb") {
+            await copyMermaidWhiteboard(svg);
+          } else if (kind === "dio") {
+            await copyMermaidDrawio(svg);
+          } else if (kind === "exc") {
+            await copyMermaidExcalidraw(svg);
           } else if (kind === "png") {
             await copyMermaidPng(svg);
           } else {

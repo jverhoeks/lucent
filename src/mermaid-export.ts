@@ -10,6 +10,10 @@
  *   - The Image source is a Blob URL, never `btoa(svg)` — base64 throws on the
  *     unicode that turns up in diagram labels. */
 
+import { svgToWhiteboardClipboard } from "./mermaid-whiteboard";
+import { svgToDrawioXml } from "./export-drawio";
+import { svgToExcalidrawJson } from "./export-excalidraw";
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** Intrinsic diagram size, preferring the viewBox (layout-independent) and
@@ -86,4 +90,31 @@ export async function copyMermaidPng(svg: SVGSVGElement): Promise<void> {
 export async function mermaidPngBytes(svg: SVGSVGElement): Promise<Uint8Array> {
   const blob = await toPngBlob(svg, 2);
   return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** Copy the diagram as an Atlassian Whiteboard clipboard payload: native,
+ *  editable shapes/connectors instead of a flat image. Written as `text/html`
+ *  (writable in WKWebView, unlike `image/svg+xml`) — the whiteboard reads its
+ *  `data-canvas-clipboard` attribute on paste. */
+export async function copyMermaidWhiteboard(svg: SVGSVGElement): Promise<void> {
+  const { html, text } = svgToWhiteboardClipboard(svg);
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" }),
+      "text/plain": new Blob([text], { type: "text/plain" }),
+    }),
+  ]);
+}
+
+/** Copy the diagram as draw.io (diagrams.net) mxGraph XML. draw.io detects the
+ *  XML on paste from plain text, so a plain-text write is enough (and sidesteps
+ *  WebKit's html sanitizer). */
+export async function copyMermaidDrawio(svg: SVGSVGElement): Promise<void> {
+  await navigator.clipboard.writeText(svgToDrawioXml(svg));
+}
+
+/** Copy the diagram as an Excalidraw clipboard payload (JSON on plain text,
+ *  which is how Excalidraw reads its own `excalidraw/clipboard` blob). */
+export async function copyMermaidExcalidraw(svg: SVGSVGElement): Promise<void> {
+  await navigator.clipboard.writeText(svgToExcalidrawJson(svg));
 }

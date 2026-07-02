@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseData } from "../src/data/parse";
+import { parseData, serializeData } from "../src/data/parse";
 
 describe("parseData", () => {
   it("parses JSON into the value model", () => {
@@ -41,6 +41,15 @@ describe("parseData", () => {
     const r = parseData("a=1\n[sec]\nb=2", "ini");
     expect(r.ok).toBe(true);
     expect(r.value?.kind).toBe("object");
+  });
+
+  it("round-trips YAML through parse and serialize, preserving scalar types", () => {
+    const src = "title: hi\nowner:\n  name: me\ntags:\n  - a\n  - b\nn: 3.14\nok: false\nempty: null\n";
+    const parsed = parseData(src, "yaml");
+    expect(parsed.ok).toBe(true);
+    const out = serializeData(parsed.value!, "yaml");
+    // Re-parsing the serialized output yields the same value model.
+    expect(parseData(out, "yaml")).toEqual(parsed);
   });
 
   it("returns an error result on invalid JSON (no throw)", () => {

@@ -88,14 +88,14 @@ async function convertData(source: string, from: string, to: string): Promise<st
   let parsed: unknown;
   switch (from) {
     case "json": parsed = JSON.parse(source); break;
-    case "yaml": { const { load } = await import("js-yaml"); parsed = load(source); break; }
+    case "yaml": { const { parse } = await import("yaml"); parsed = parse(source); break; }
     case "toml": { const { parse } = await import("smol-toml"); parsed = parse(source); break; }
     case "ini": { const { parse } = await import("ini"); parsed = parse(source); break; }
     default: throw new Error(`Unsupported source format: ${from}`);
   }
   switch (to) {
     case "json": return JSON.stringify(parsed, null, 2);
-    case "yaml": { const { dump } = await import("js-yaml"); return dump(parsed, { indent: 2 }); }
+    case "yaml": { const { stringify } = await import("yaml"); return stringify(parsed, { indent: 2 }); }
     case "toml": { const { stringify } = await import("smol-toml"); return stringify(parsed as any); }
     case "ini": { const { stringify } = await import("ini"); return stringify(parsed as any); }
     default: throw new Error(`Unsupported target format: ${to}`);

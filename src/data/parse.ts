@@ -1,4 +1,4 @@
-import { load as loadYaml, dump as dumpYaml } from "js-yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { parse as parseIni, stringify as stringifyIni } from "ini";
 import type { DataParseResult, DataLang, DataValue } from "../types";
@@ -12,7 +12,7 @@ export function parseData(text: string, lang: DataLang): DataParseResult {
         parsed = JSON.parse(text);
         break;
       case "yaml":
-        parsed = loadYaml(text);
+        parsed = parseYaml(text);
         break;
       case "toml":
         parsed = parseToml(text);
@@ -57,7 +57,7 @@ export function serializeData(value: DataValue, lang: DataLang): string {
     case "json":
       return JSON.stringify(raw, null, 2) + "\n";
     case "yaml":
-      return dumpYaml(raw, { indent: 2, lineWidth: 120, noRefs: true });
+      return stringifyYaml(raw, { indent: 2, lineWidth: 120 });
     case "toml":
       return stringifyToml(raw as Record<string, unknown>) + "\n";
     case "ini":

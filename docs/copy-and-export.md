@@ -10,7 +10,7 @@ There are four surfaces:
 2. [Code blocks](#code-blocks) — a single fenced block.
 3. [Mermaid diagrams](#mermaid-diagrams) — a single diagram, as an image **or as
    editable shapes** in another tool.
-4. [The web build's Download menu](#web-download--format-conversion) — export with
+4. [The Download menu](#download--format-conversion) — export with
    format conversion.
 
 ---
@@ -27,7 +27,8 @@ The toolbar's right-hand group acts on the whole rendered document:
 | **Export PDF** | A native PDF with a fixed A4 page. |
 
 > On the **web build**, Export HTML / PDF are replaced by the
-> [Download menu](#web-download--format-conversion).
+> [Download menu](#download--format-conversion). Desktop keeps those one-click
+> actions and also exposes Download as… for format conversion.
 
 ---
 
@@ -74,17 +75,18 @@ the destination tool → paste (`Cmd/Ctrl+V`). A ✓ on the button confirms the 
 
 ---
 
-## Web download & format conversion
+## Download & format conversion
 
-The browser build has no native file dialogs, so it exposes a **Download as…**
-menu instead. Pick a target format and Lucent converts on the way out:
+Both desktop and browser builds expose a **Download as…** menu. Desktop opens a
+native Save dialog; the browser downloads the result directly. Pick a target
+format and Lucent converts on the way out:
 
 - **Markdown (.md)**, **HTML (.html)**, **PDF (.pdf)** — the rendered document.
 - **JSON / YAML / TOML / INI** — for structured-data files, convert *between*
   formats (e.g. open a YAML config, download it as JSON).
 
-HTML and PDF reuse the same self-contained export as the desktop app; PDF opens
-a print-ready page in a new tab.
+HTML and PDF reuse the same self-contained export. On the web, PDF opens a
+print-ready page in a new tab; desktop uses the native PDF exporter.
 
 ---
 

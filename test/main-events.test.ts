@@ -99,4 +99,53 @@ describe("main event and toolbar integration", () => {
     expect(onChanged).toBeTypeOf("function");
     expect(onRemoved).toBeTypeOf("function");
   });
+
+  it("shows Download as on desktop and converts structured data through a native Save dialog", async () => {
+    const saveTextFile = vi.fn(async () => {});
+    const saveDialog = vi.fn(async () => "/output.yaml");
+    const adapter: PlatformAdapter = {
+      platform: "tauri",
+      readFile: vi.fn(async (path) => ({ path, content: '{"name":"lucent","enabled":true}' })),
+      saveTextFile,
+      saveBinaryFile: vi.fn(async () => {}),
+      fileSize: vi.fn(async () => 32),
+      logOpen: vi.fn(async () => 0),
+      logWindow: vi.fn(async () => []),
+      logSearch: vi.fn(async () => []),
+      listSiblingViewable: vi.fn(async () => []),
+      listViewableRecursive: vi.fn(async (path) => [path]),
+      probeIsText: vi.fn(async () => true),
+      resolveSibling: vi.fn(async (_base, rel) => rel),
+      writeTempFile: vi.fn(async () => "/tmp/export.html"),
+      openDialog: vi.fn(async () => "/config.json"),
+      saveDialog,
+      watchFile: vi.fn(async () => {}),
+      unwatchFile: vi.fn(async () => {}),
+      unwatchAll: vi.fn(async () => {}),
+      openUrl: vi.fn(async () => {}),
+      openPath: vi.fn(async () => {}),
+      onFileChanged: vi.fn(),
+      onFileRemoved: vi.fn(),
+      onDrop: vi.fn(),
+      onOpenFiles: vi.fn(async () => {}),
+      getStartupFiles: vi.fn(async () => []),
+    };
+
+    initApp(adapter);
+    document.getElementById("btn-open")!.click();
+    await vi.waitFor(() => expect(document.querySelector(".download-format")?.hasAttribute("hidden")).toBe(false));
+
+    const select = document.querySelector<HTMLSelectElement>(".download-format")!;
+    select.value = "yaml";
+    select.dispatchEvent(new Event("change"));
+    (document.getElementById("btn-download") as HTMLButtonElement).click();
+
+    await vi.waitFor(() => expect(saveTextFile).toHaveBeenCalled());
+    expect(saveDialog).toHaveBeenCalledWith(expect.objectContaining({
+      defaultPath: "config.yaml",
+      filters: [{ name: "YAML", extensions: ["yaml"] }],
+    }));
+    expect(saveTextFile.mock.calls[0][0]).toBe("/output.yaml");
+    expect(saveTextFile.mock.calls[0][1]).toContain("name: lucent");
+  });
 });

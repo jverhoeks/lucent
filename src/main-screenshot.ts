@@ -107,9 +107,8 @@ const screenshotAdapter: PlatformAdapter = {
 
 // Force the hover-only Mermaid toolbar visible so it shows up in a static capture.
 const style = document.createElement("style");
-// Also hide the web-only "Download as…" control and force the desktop-only
-// Next / export buttons visible, so the capture reads as the shipped desktop
-// app rather than a mixed web/desktop toolbar that can't actually exist.
+// Hide "Download as…" in the compact documentation capture and force the
+// desktop-only Next / export buttons visible.
 style.textContent = `
   .mermaid-actions { opacity: 1 !important; }
   #banner { display: none !important; }

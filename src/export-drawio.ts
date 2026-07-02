@@ -4,7 +4,14 @@
  *  edges → `mxCell` edges referencing vertex ids; free lines → edges with
  *  explicit source/target points. */
 
-import { extractGraph, contrastText, type DiagramGraph, type IRNode, type RGB } from "./mermaid-whiteboard";
+import {
+  extractGraph,
+  contrastText,
+  type DiagramGraph,
+  type IRNode,
+  type IRTextRun,
+  type RGB,
+} from "./mermaid-whiteboard";
 
 function hex(c: RGB): string {
   const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
@@ -17,6 +24,25 @@ function xmlEscape(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function htmlEscape(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** XML-attribute-safe draw.io HTML. Plain single-line labels keep the compact
+ * legacy representation; rich/multiline labels use draw.io's html=1 markup. */
+function drawioValue(text: string, runs?: IRTextRun[]): string {
+  if (!runs?.length && !/[\r\n]/.test(text)) return xmlEscape(text);
+  const html = runs?.length
+    ? runs.map((run) => {
+        let value = htmlEscape(run.text);
+        if (run.italic) value = `<i>${value}</i>`;
+        if (run.bold) value = `<b>${value}</b>`;
+        return `${run.breakBefore ? "<br>" : ""}${value}`;
+      }).join("")
+    : text.split(/\r\n?|\n/).map(htmlEscape).join("<br>");
+  return xmlEscape(html);
 }
 
 /** Mermaid shape kind → draw.io style prefix. */
@@ -71,7 +97,7 @@ export function drawioFromGraph(g: DiagramGraph): string {
       const style =
         "rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;container=1;collapsible=0;fillColor=none;";
       cells.push(
-        `<mxCell id="${groupCell.get(gr.id)}" value="${xmlEscape(gr.label)}" style="${style}" vertex="1" parent="${parent}">` +
+        `<mxCell id="${groupCell.get(gr.id)}" value="${drawioValue(gr.label)}" style="${style}" vertex="1" parent="${parent}">` +
           `<mxGeometry x="${g0.x - tl.x}" y="${g0.y - tl.y}" width="${gr.w}" height="${gr.h}" as="geometry"/></mxCell>`,
       );
     });
@@ -87,7 +113,7 @@ export function drawioFromGraph(g: DiagramGraph): string {
     const x = n.x - n.w / 2 - tl.x;
     const y = n.y - n.h / 2 - tl.y;
     cells.push(
-      `<mxCell id="${id}" value="${xmlEscape(n.label)}" style="${style}" vertex="1" parent="${parent}">` +
+      `<mxCell id="${id}" value="${drawioValue(n.label, n.labelRuns)}" style="${style}" vertex="1" parent="${parent}">` +
         `<mxGeometry x="${x}" y="${y}" width="${n.w}" height="${n.h}" as="geometry"/></mxCell>`,
     );
   });
@@ -101,7 +127,7 @@ export function drawioFromGraph(g: DiagramGraph): string {
     if (e.dashed) style += "dashed=1;";
     if (e.stroke) style += `strokeColor=${hex(e.stroke)};`;
     cells.push(
-      `<mxCell id="e${i}" value="${xmlEscape(e.label || "")}" style="${style}" edge="1" parent="1" source="${s}" target="${t}">` +
+      `<mxCell id="e${i}" value="${drawioValue(e.label || "", e.labelRuns)}" style="${style}" edge="1" parent="1" source="${s}" target="${t}">` +
         `<mxGeometry relative="1" as="geometry"/></mxCell>`,
     );
   });
@@ -128,7 +154,7 @@ export function drawioFromGraph(g: DiagramGraph): string {
     let style = "text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;";
     if (t.color) style += `fontColor=${hex(t.color)};`;
     cells.push(
-      `<mxCell id="t${i}" value="${xmlEscape(t.text)}" style="${style}" vertex="1" parent="1">` +
+      `<mxCell id="t${i}" value="${drawioValue(t.text, t.runs)}" style="${style}" vertex="1" parent="1">` +
         `<mxGeometry x="${t.x - w / 2}" y="${t.y - h / 2}" width="${w}" height="${h}" as="geometry"/></mxCell>`,
     );
   });

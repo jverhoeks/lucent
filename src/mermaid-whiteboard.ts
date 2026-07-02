@@ -20,6 +20,14 @@
 
 export type RGB = { r: number; g: number; b: number };
 
+export type IRTextRun = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  /** Start this run on a new visual line (encoded as a ProseMirror hardBreak). */
+  breakBefore?: boolean;
+};
+
 /** A node/box in mermaid's own SVG coordinate space (`x`,`y` = center). */
 export type IRNode = {
   id: string;
@@ -28,6 +36,8 @@ export type IRNode = {
   w: number;
   h: number;
   label: string;
+  /** Optional rich runs recovered from Mermaid's SVG tspans. */
+  labelRuns?: IRTextRun[];
   fill?: RGB | null;
   stroke?: RGB | null;
   /** id of the innermost group (subgraph) that contains this node, if any. */
@@ -61,6 +71,7 @@ export type IREdge = {
   sourceId: string;
   targetId: string;
   label?: string;
+  labelRuns?: IRTextRun[];
   labelPos?: [number, number];
   dashed?: boolean;
   arrowStart?: boolean;
@@ -75,6 +86,7 @@ export type IRText = {
   w: number;
   h: number;
   text: string;
+  runs?: IRTextRun[];
   color?: RGB | null;
 };
 
@@ -109,11 +121,55 @@ const PATH_LABEL_COLOR: RGB = { r: 23, g: 43, b: 77 }; // Atlaskit default text 
 // cluster fill onto that palette, so every section uses white: an observed palette
 // entry (from a real section copy) that renders light everywhere. The cluster's
 // own fill is intentionally ignored (sections are readable regions, not faithful
-// color reproductions). Contrast with shapes, which accept any RGB.
+// color reproductions).
 const SECTION_FILL: RGB = { r: 255, g: 255, b: 255 };
+
+// Whiteboard shapes, like sections, only accept colors from their picker
+// palette. An arbitrary Mermaid RGB is interpreted as the dark fallback. Keep
+// labels readable and preserve the source hue by snapping light fills to the
+// corresponding light Atlassian accent swatch.
+const WHITEBOARD_LIGHT_FILLS = {
+  red: { r: 255, g: 210, b: 204 },
+  orange: { r: 254, g: 222, b: 200 },
+  yellow: { r: 248, g: 230, b: 160 },
+  green: { r: 186, g: 243, b: 219 },
+  teal: { r: 198, g: 237, b: 251 },
+  blue: { r: 204, g: 224, b: 255 },
+  purple: { r: 223, g: 216, b: 253 },
+  magenta: { r: 253, g: 208, b: 236 },
+  gray: { r: 220, g: 223, b: 228 },
+} as const;
 
 function sectionColor(_fill?: RGB | null): RGB {
   return SECTION_FILL;
+}
+
+/** Snap a Mermaid fill to a light color accepted by Whiteboard's picker. */
+export function whiteboardFill(fill?: RGB | null): RGB {
+  if (!fill || isDarkFill(fill)) return DEFAULT_FILL;
+
+  const r = fill.r / 255, g = fill.g / 255, b = fill.b / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const delta = max - min;
+  const lightness = (max + min) / 2;
+  const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+  if (saturation < 0.12) return lightness > 0.94 ? DEFAULT_FILL : WHITEBOARD_LIGHT_FILLS.gray;
+
+  let hue = 0;
+  if (delta !== 0) {
+    if (max === r) hue = 60 * (((g - b) / delta) % 6);
+    else if (max === g) hue = 60 * ((b - r) / delta + 2);
+    else hue = 60 * ((r - g) / delta + 4);
+  }
+  if (hue < 0) hue += 360;
+  if (hue < 15 || hue >= 345) return WHITEBOARD_LIGHT_FILLS.red;
+  if (hue < 45) return WHITEBOARD_LIGHT_FILLS.orange;
+  if (hue < 70) return WHITEBOARD_LIGHT_FILLS.yellow;
+  if (hue < 165) return WHITEBOARD_LIGHT_FILLS.green;
+  if (hue < 200) return WHITEBOARD_LIGHT_FILLS.teal;
+  if (hue < 255) return WHITEBOARD_LIGHT_FILLS.blue;
+  if (hue < 290) return WHITEBOARD_LIGHT_FILLS.purple;
+  return WHITEBOARD_LIGHT_FILLS.magenta;
 }
 
 /** Mermaid node shape → whiteboard `shape` enum, verified from real whiteboard
@@ -151,11 +207,19 @@ export function contrastText(fill: RGB): RGB {
 /** Stringified ProseMirror doc for a shape/text label. When `color` is given,
  *  the text carries an Atlaskit `textColor` mark (lenient — stripped if the
  *  target doesn't support it, never rejects the paste). */
-function proseDoc(text: string, color?: string): string {
-  const marks = color ? [{ type: "textColor", attrs: { color } }] : undefined;
-  const textNode: Record<string, unknown> = { type: "text", text };
-  if (marks) textNode.marks = marks;
-  const content = text ? [textNode] : ([] as Array<Record<string, unknown>>);
+function proseDoc(text: string, color?: string, runs?: IRTextRun[]): string {
+  const sourceRuns = runs?.length ? runs : text ? [{ text }] : [];
+  const content: Array<Record<string, unknown>> = [];
+  for (const run of sourceRuns.filter((candidate) => candidate.text)) {
+    if (run.breakBefore && content.length) content.push({ type: "hardBreak" });
+    const marks: Array<Record<string, unknown>> = [];
+    if (run.bold) marks.push({ type: "strong" });
+    if (run.italic) marks.push({ type: "em" });
+    if (color) marks.push({ type: "textColor", attrs: { color } });
+    const node: Record<string, unknown> = { type: "text", text: run.text };
+    if (marks.length) node.marks = marks;
+    content.push(node);
+  }
   return JSON.stringify({
     version: 1,
     type: "doc",
@@ -232,7 +296,12 @@ export function whiteboardFromGraph(
   const linePointBoxes = lines.flatMap((l) =>
     l.points.map(([x, y]) => ({ x, y, w: 0, h: 0 })),
   );
-  const { cx, cy } = bboxCenter([...g.nodes, ...texts, ...linePointBoxes]);
+  const { cx, cy } = bboxCenter([
+    ...g.nodes,
+    ...(g.groups ?? []),
+    ...texts,
+    ...linePointBoxes,
+  ]);
 
   const nodeIds = new Map<string, string>();
   const nodeIndex = new Map<string, number>();
@@ -265,19 +334,18 @@ export function whiteboardFromGraph(
     const size = vec2(n.w, n.h);
     // The whiteboard renders shape label text in a fixed dark color (it ignores
     // our textColor mark) AND ignores fillEnabled:false on a pasted shape — it
-    // paints `color` regardless. So a dark fill renders black-on-black. Keep a
-    // light mermaid fill as-is; for a dark or absent fill paint white — a light
-    // box with the fixed dark label, the "empty/light-canvas" look we wanted.
-    const fillable = !!n.fill && !isDarkFill(n.fill);
+    // paints `color` regardless. So a dark fill renders black-on-black. Snap a
+    // light Mermaid fill to the matching accepted swatch; for a dark or absent
+    // fill paint white so the fixed dark label remains readable.
     els.push({
       type: "shape",
       source: 1,
       position: pos,
       size,
-      color: vec3(fillable ? n.fill! : DEFAULT_FILL),
+      color: vec3(whiteboardFill(n.fill)),
       strokeColor: vec3(n.stroke ?? DEFAULT_STROKE),
       strokeStyle: 1,
-      text: proseDoc(n.label),
+      text: proseDoc(n.label, undefined, n.labelRuns),
       shape: SHAPE_ENUM[n.shapeKind ?? "rect"],
       fillEnabled: true,
       fontScale: 1,
@@ -297,7 +365,7 @@ export function whiteboardFromGraph(
       source: 1,
       position: pos,
       size,
-      text: proseDoc(t.text),
+      text: proseDoc(t.text, undefined, t.runs),
       allowFlexibleWidth: true,
       color: vec3(t.color ?? DEFAULT_STROKE),
       fontScale: 1,
@@ -308,7 +376,12 @@ export function whiteboardFromGraph(
     });
   }
 
-  const pathLabels: Array<{ index: number; id: string; label: string }> = [];
+  const pathLabels: Array<{
+    index: number;
+    id: string;
+    label: string;
+    runs?: IRTextRun[];
+  }> = [];
   for (const e of g.edges) {
     const s = g.nodes.find((n) => n.id === e.sourceId);
     const t = g.nodes.find((n) => n.id === e.targetId);
@@ -337,7 +410,9 @@ export function whiteboardFromGraph(
       sourceIndex: nodeIndex.get(e.sourceId),
       targetIndex: nodeIndex.get(e.targetId),
     });
-    if (e.label) pathLabels.push({ index: connIndex, id: connId, label: e.label });
+    if (e.label) {
+      pathLabels.push({ index: connIndex, id: connId, label: e.label, runs: e.labelRuns });
+    }
   }
 
   for (const ln of lines) {
@@ -371,7 +446,7 @@ export function whiteboardFromGraph(
       position: vec2(0, 0),
       size: vec2(0, 0),
       color: vec3(PATH_LABEL_COLOR),
-      text: proseDoc(pl.label),
+      text: proseDoc(pl.label, undefined, pl.runs),
       fontScale: 1,
       pathOffsetPosition: 0,
       sourcePathIndex: pl.index,
@@ -401,11 +476,24 @@ function transformTranslate(el: Element): { x: number; y: number } {
   return { x: m ? parseFloat(m[1]) : 0, y: m ? parseFloat(m[2]) : 0 };
 }
 
-/** `rgb()/rgba()` string → RGB, or null. */
-function parseRgb(v: string | null | undefined): RGB | null {
+/** CSS hex/rgb()/rgba() string → RGB, or null for transparent/unrecognised. */
+export function parseCssColor(v: string | null | undefined): RGB | null {
   if (!v) return null;
-  const m = v.match(/rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/);
+  const value = v.trim().toLowerCase();
+  const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)?.[1];
+  if (hex) {
+    const full = hex.length === 3 ? [...hex].map((c) => c + c).join("") : hex;
+    return {
+      r: parseInt(full.slice(0, 2), 16),
+      g: parseInt(full.slice(2, 4), 16),
+      b: parseInt(full.slice(4, 6), 16),
+    };
+  }
+  const m = value.match(
+    /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+)%?)?\s*\)/,
+  );
   if (!m) return null;
+  if (m[4] != null && parseFloat(m[4]) === 0) return null;
   return { r: Math.round(+m[1]), g: Math.round(+m[2]), b: Math.round(+m[3]) };
 }
 
@@ -416,7 +504,10 @@ function computedColors(el: Element | null): { fill: RGB | null; stroke: RGB | n
   const fillRaw = cs.fill || (el as Element).getAttribute("fill") || "";
   const strokeRaw = cs.stroke || (el as Element).getAttribute("stroke") || "";
   const noFill = fillRaw === "none" || fillRaw === "transparent" || fillRaw === "";
-  return { fill: noFill ? null : parseRgb(fillRaw), stroke: parseRgb(strokeRaw) };
+  return {
+    fill: noFill ? null : parseCssColor(fillRaw),
+    stroke: parseCssColor(strokeRaw),
+  };
 }
 
 /** Endpoints from a mermaid edge id like `L_A_B_0` / `L-A-B-0`, tolerating a
@@ -447,11 +538,24 @@ function elementBox(
   const cy = b.y + b.height / 2;
   const m = g.getCTM?.();
   if (!m) return { x: cx, y: cy, w: b.width, h: b.height };
+  const corners = [
+    [b.x, b.y],
+    [b.x + b.width, b.y],
+    [b.x + b.width, b.y + b.height],
+    [b.x, b.y + b.height],
+  ].map(([x, y]) => ({
+    x: m.a * x + m.c * y + m.e,
+    y: m.b * x + m.d * y + m.f,
+  }));
+  const xs = corners.map((p) => p.x);
+  const ys = corners.map((p) => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
   return {
-    x: m.a * cx + m.c * cy + m.e,
-    y: m.b * cx + m.d * cy + m.f,
-    w: b.width * (m.a || 1),
-    h: b.height * (m.d || 1),
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2,
+    w: maxX - minX,
+    h: maxY - minY,
   };
 }
 
@@ -538,16 +642,53 @@ function nodeShape(
   return { w: 80, h: 40, kind: "rect" };
 }
 
-/** First and last coordinate pair of a path's `d` (works through curves). */
-function pathEndpoints(
-  d: string,
-): { start: [number, number]; end: [number, number] } | null {
-  const nums = (d.match(/-?\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number);
-  if (nums.length < 4) return null;
-  return {
-    start: [nums[0], nums[1]],
-    end: [nums[nums.length - 2], nums[nums.length - 1]],
+/** First/last point of an SVG path, including relative commands and curves. */
+function pathEndpoints(d: string): { start: [number, number]; end: [number, number] } | null {
+  const tokens = d.match(/[a-zA-Z]|[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/g);
+  if (!tokens) return null;
+  const arity: Record<string, number> = {
+    M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7,
   };
+  let i = 0;
+  let command = "";
+  let x = 0, y = 0;
+  let subpathStart: [number, number] = [0, 0];
+  let start: [number, number] | null = null;
+  let firstMoveInCommand = false;
+
+  while (i < tokens.length) {
+    if (/^[a-zA-Z]$/.test(tokens[i])) {
+      command = tokens[i++];
+      firstMoveInCommand = command.toUpperCase() === "M";
+      if (command.toUpperCase() === "Z") {
+        x = subpathStart[0];
+        y = subpathStart[1];
+        continue;
+      }
+    }
+    const upper = command.toUpperCase();
+    const count = arity[upper];
+    if (!count || i + count > tokens.length || /^[a-zA-Z]$/.test(tokens[i])) return null;
+    const args = tokens.slice(i, i + count).map(Number);
+    i += count;
+    const relative = command === command.toLowerCase();
+    const oldX = x, oldY = y;
+    if (upper === "H") x = (relative ? oldX : 0) + args[0];
+    else if (upper === "V") y = (relative ? oldY : 0) + args[0];
+    else {
+      const px = args[count - 2], py = args[count - 1];
+      x = (relative ? oldX : 0) + px;
+      y = (relative ? oldY : 0) + py;
+    }
+    if (upper === "M" && firstMoveInCommand) {
+      subpathStart = [x, y];
+      if (!start) start = [x, y];
+      firstMoveInCommand = false;
+    } else if (!start) {
+      start = [oldX, oldY];
+    }
+  }
+  return start ? { start, end: [x, y] } : null;
 }
 
 /** Id of the node whose center is nearest a point (edge-endpoint matching). */
@@ -605,7 +746,7 @@ function extractGroups(svg: SVGSVGElement): IRGroup[] {
     if (!rect) return;
     const x = num(rect, "x"), y = num(rect, "y"), w = num(rect, "width"), h = num(rect, "height");
     if (x == null || y == null || w == null || h == null) return;
-    const label = (c.querySelector(".cluster-label") || c.querySelector("text"))?.textContent?.trim() || "";
+    const label = svgTextRuns(c.querySelector(".cluster-label") || c.querySelector("text")).text;
     groups.push({
       id: c.getAttribute("id") || `sg${i}`,
       label,
@@ -617,6 +758,89 @@ function extractGroups(svg: SVGSVGElement): IRGroup[] {
     });
   });
   return groups;
+}
+
+function runStyle(el: Element, name: "font-weight" | "font-style"): string {
+  for (let cur: Element | null = el; cur; cur = cur.parentElement) {
+    const attr = cur.getAttribute(name);
+    if (attr) return attr.toLowerCase();
+    const inline = cur.getAttribute("style")?.match(
+      new RegExp(`${name}\\s*:\\s*([^;]+)`, "i"),
+    )?.[1];
+    if (inline) return inline.trim().toLowerCase();
+    if (cur.tagName.toLowerCase() === "text") break;
+  }
+  return "";
+}
+
+function isBoldWeight(value: string): boolean {
+  return value === "bold" || value === "bolder" || parseInt(value, 10) >= 600;
+}
+
+/** Mermaid renders one label as several inner tspans. Their leading spaces are
+ * normally significant, but some SVG serializers remove them. Reconstruct the
+ * word boundaries and retain Markdown emphasis as rich-text runs. */
+function svgTextRuns(root: Element | null): { text: string; runs?: IRTextRun[] } {
+  if (!root) return { text: "" };
+  const textEls = root.tagName.toLowerCase() === "text"
+    ? [root]
+    : Array.from(root.querySelectorAll("text"));
+  if (!textEls.length) return { text: "" };
+  const runs: IRTextRun[] = [];
+
+  const append = (raw: string, source: Element, breakBefore = false) => {
+    if (!raw) return;
+    const previous = runs[runs.length - 1];
+    let value = raw;
+    if (
+      previous &&
+      !breakBefore &&
+      !/\s$/.test(previous.text) &&
+      !/^\s/.test(value) &&
+      !/^[,.;:!?…)}\]]/.test(value)
+    ) {
+      value = " " + value;
+    }
+    const run: IRTextRun = {
+      text: value,
+      bold: isBoldWeight(runStyle(source, "font-weight")) || undefined,
+      italic: runStyle(source, "font-style") === "italic" || undefined,
+    };
+    if (breakBefore) run.breakBefore = true;
+    const last = runs[runs.length - 1];
+    if (
+      last &&
+      !run.breakBefore &&
+      last.bold === run.bold &&
+      last.italic === run.italic
+    ) last.text += run.text;
+    else runs.push(run);
+  };
+
+  textEls.forEach((textEl, textIndex) => {
+    const rowEls = Array.from(textEl.querySelectorAll("tspan.row"));
+    const rows: Element[] = rowEls.length ? rowEls : [textEl];
+    rows.forEach((row, rowIndex) => {
+      const inner = Array.from(row.querySelectorAll("tspan.text-inner-tspan"));
+      if (inner.length) {
+        inner.forEach((span, spanIndex) => append(
+          span.textContent || "",
+          span,
+          textIndex > 0 && rowIndex === 0 && spanIndex === 0,
+        ));
+      } else {
+        append(row.textContent || "", row, textIndex > 0 && rowIndex === 0);
+      }
+    });
+  });
+
+  if (!runs.length) return { text: "" };
+  runs[0].text = runs[0].text.replace(/^\s+/, "");
+  runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/\s+$/, "");
+  const text = runs.map((run) => (run.breakBefore ? "\n" : "") + run.text).join("");
+  return runs.some((run) => run.bold || run.italic || run.breakBefore)
+    ? { text, runs }
+    : { text };
 }
 
 function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
@@ -633,20 +857,37 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
       gEl.querySelector("rect.label-container") ||
       gEl.querySelector("rect, polygon, circle, ellipse, path");
     const { w, h, kind } = nodeShape(shapeEl);
-    const label =
-      (gEl.querySelector(".label text") || gEl.querySelector("text"))?.textContent?.trim() ||
-      "";
+    const richLabel = svgTextRuns(gEl.querySelector(".label") || gEl.querySelector("text"));
     const { fill, stroke } = computedColors(shapeEl);
-    nodes.push({ id, x, y, w, h, label, fill, stroke, shapeKind: kind });
+    nodes.push({
+      id,
+      x,
+      y,
+      w,
+      h,
+      label: richLabel.text,
+      labelRuns: richLabel.runs,
+      fill,
+      stroke,
+      shapeKind: kind,
+    });
   });
 
   // Edge labels are emitted index-parallel to the edge paths (an empty
   // placeholder group for unlabeled edges), so the k-th label belongs to the
-  // k-th path. Mermaid positions each at the edge midpoint (graph coords).
+  // k-th path. Prefer Mermaid's explicit data-id because placeholders and
+  // renderer changes can disturb that ordering; retain index matching as a
+  // fallback for diagram types that omit ids.
   const edgeLabels = Array.from(svg.querySelectorAll("g.edgeLabels g.edgeLabel"));
+  const edgeLabelsById = new Map<string, Element>();
+  for (const edgeLabel of edgeLabels) {
+    const id = edgeLabel.querySelector("[data-id]")?.getAttribute("data-id");
+    if (id) edgeLabelsById.set(id, edgeLabel);
+  }
   const edges: IREdge[] = [];
   svg.querySelectorAll("g.edgePaths path").forEach((p, i) => {
-    const parsed = parseEdgeId(p.getAttribute("data-id") || p.getAttribute("id") || "");
+    const rawEdgeId = p.getAttribute("data-id") || p.getAttribute("id") || "";
+    const parsed = parseEdgeId(rawEdgeId);
     let src: string | null = null;
     let tgt: string | null = null;
     if (parsed && byId.has(parsed.src) && byId.has(parsed.tgt)) {
@@ -659,9 +900,10 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
         tgt = nearestNodeId(nodes, ep.end);
       }
     }
-    if (!src || !tgt || src === tgt) return;
-    const labelEl = edgeLabels[i];
-    const label = labelEl?.textContent?.trim() || undefined;
+    if (!src || !tgt) return;
+    const labelEl = edgeLabelsById.get(rawEdgeId) ?? edgeLabels[i];
+    const richLabel = svgTextRuns(labelEl);
+    const label = richLabel.text || undefined;
     const lp = labelEl ? transformTranslate(labelEl) : { x: 0, y: 0 };
     edges.push({
       sourceId: src,
@@ -671,6 +913,7 @@ function extractNodeGraph(svg: SVGSVGElement): DiagramGraph {
       dashed: isDashed(p),
       stroke: computedColors(p).stroke,
       label,
+      labelRuns: label ? richLabel.runs : undefined,
       labelPos: label && !(lp.x === 0 && lp.y === 0) ? [lp.x, lp.y] : undefined,
     });
   });
@@ -697,11 +940,23 @@ function num(el: Element, attr: string): number | null {
 }
 
 function isDashed(el: Element): boolean {
+  const classes = el.getAttribute("class") || "";
   return (
     !!el.getAttribute("stroke-dasharray") ||
     (el.getAttribute("style") || "").includes("dasharray") ||
-    (el.getAttribute("class") || "").includes("dashed")
+    classes.includes("dashed") ||
+    classes.includes("dotted")
   );
+}
+
+/** SVG resource definitions are paint instructions, not visible primitives. */
+function isSvgResource(el: Element): boolean {
+  for (let cur: Element | null = el.parentElement; cur; cur = cur.parentElement) {
+    if (["defs", "marker", "clippath", "mask", "pattern"].includes(cur.tagName.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Layer 1: any diagram → editable geometry (shapes, loose text, free lines).
@@ -710,6 +965,7 @@ function isDashed(el: Element): boolean {
 function extractGeometry(svg: SVGSVGElement): DiagramGraph {
   const nodes: IRNode[] = [];
   svg.querySelectorAll("rect, circle, ellipse, polygon").forEach((el) => {
+    if (isSvgResource(el)) return;
     const box = elementBox(el);
     if (!box) return;
     const tag = el.tagName.toLowerCase();
@@ -720,14 +976,16 @@ function extractGeometry(svg: SVGSVGElement): DiagramGraph {
   });
   const texts: IRText[] = [];
   svg.querySelectorAll("text").forEach((t) => {
-    const s = t.textContent?.trim();
+    if (isSvgResource(t)) return;
+    const rich = svgTextRuns(t);
     const box = elementBox(t);
-    if (!s || !box) return;
-    texts.push({ ...box, text: s, color: computedColors(t).fill });
+    if (!rich.text || !box) return;
+    texts.push({ ...box, text: rich.text, runs: rich.runs, color: computedColors(t).fill });
   });
 
   const lines: IRLine[] = [];
   svg.querySelectorAll("line").forEach((el) => {
+    if (isSvgResource(el)) return;
     const x1 = num(el, "x1"), y1 = num(el, "y1"), x2 = num(el, "x2"), y2 = num(el, "y2");
     if (x1 == null || y1 == null || x2 == null || y2 == null) return;
     lines.push({
@@ -739,6 +997,7 @@ function extractGeometry(svg: SVGSVGElement): DiagramGraph {
     });
   });
   svg.querySelectorAll("path").forEach((el) => {
+    if (isSvgResource(el)) return;
     const pts = parsePathPoints(el.getAttribute("d") || "");
     if (!pts) return;
     lines.push({
@@ -804,6 +1063,8 @@ export function svgToWhiteboardClipboard(
   const g = extractGraph(svg);
   const labels = [
     ...g.nodes.map((n) => n.label),
+    ...(g.groups ?? []).map((group) => group.label),
+    ...g.edges.map((edge) => edge.label || ""),
     ...(g.texts ?? []).map((t) => t.text),
   ].filter(Boolean);
   const visible = labels.map((l) => `<p>${htmlEscape(l)}</p>`).join("");

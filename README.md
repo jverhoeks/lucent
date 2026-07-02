@@ -11,7 +11,7 @@ split-screen editor for when you want to write too.
 
 ![Lucent rendering a Markdown document — a styled callout, a Mermaid diagram with its copy/export toolbar, syntax-highlighted code, KaTeX math, and a table](docs/screenshot.png)
 
-> **Status:** v0.3 — a multi-format viewer with editing. Markdown, structured
+> **Status:** v0.4 — a multi-format viewer with editing. Markdown, structured
 > data (JSON / YAML / TOML / INI), and logs all render the way they deserve.
 > Runs as a native desktop app and as a zero-install web build.
 
@@ -37,9 +37,11 @@ split-screen editor for when you want to write too.
   navigable, collapsible tree instead of raw text.
 - **Logs, made readable** — level highlighting, tail / follow for live files,
   in-view search, and inline decoding of embedded (even base64-encoded) JSON.
-- **Edit mode** — opt-in split-screen editor ([CodeMirror](https://codemirror.net/))
-  with live preview and `Cmd/Ctrl+S` to save. Lucent reads *and* writes when you
-  want it to, without becoming an editor-first app.
+- **Markdown and structured-data editor** — opt-in split-screen
+  [CodeMirror](https://codemirror.net/) editing for Markdown and JSON / YAML /
+  TOML / INI, with a live rendered preview or collapsible tree beside the
+  source. Save with `Cmd/Ctrl+S`; invalid structured data stays editable and
+  reports its parse error in the preview.
 - **View as** — reinterpret any file on the fly: Markdown, plain text, or a
   JSON / YAML / TOML / INI tree, regardless of extension.
 - **Tabs & multi-open** — open many files at once, page through a folder with
@@ -55,8 +57,10 @@ split-screen editor for when you want to write too.
 - **Export & copy** — one-click **PDF** (native, fixed A4 page) and
   **standalone HTML** (fully self-contained), plus copy the document as Markdown
   or as rich text (paste into Docs / Confluence / Word with formatting intact).
-- **Runs in the browser too** — a web build with a **Download as…** menu that
-  converts between Markdown, HTML, PDF, JSON, YAML, TOML, and INI on the way out.
+- **Download and convert as another type** — the desktop and web builds both
+  provide **Download as…**. Export rendered content as Markdown, standalone
+  HTML, or PDF, and convert structured files between JSON, YAML, TOML, and INI.
+  Desktop uses native Save dialogs; the browser downloads the result directly.
 - **Opens `.md` for you** — registers as a `.md` file handler on the OS, so
   double-clicking a Markdown file opens it in Lucent.
 - **Private by design** — `markdown-it` runs with raw-HTML passthrough disabled,
@@ -95,6 +99,28 @@ npm run dev            # web build in the browser (Vite dev server)
 npm run build:web      # static web bundle
 ```
 
+### Release downloads
+
+Each [GitHub Release](https://github.com/jverhoeks/lucent/releases/latest)
+contains native installers for the following platforms:
+
+| Platform | Architecture | Release files | Use |
+| --- | --- | --- | --- |
+| macOS | Universal (Apple Silicon + Intel) | `.dmg` | Open the disk image and drag Lucent to Applications. The same build is available through Homebrew. |
+| Linux | x86_64 | `.deb`, `.rpm`, `.AppImage` | Use `.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL-family systems, or the portable `.AppImage`. |
+| Linux | ARM64 / aarch64 | `.deb`, `.rpm`, `.AppImage` | Native packages for ARM64 Linux machines. |
+| Windows | x86_64 | `.msi`, NSIS setup `.exe` | Use either the Windows Installer package or the standard setup executable. |
+
+The release also includes `latest.json` plus signed updater archives and `.sig`
+files. Those are consumed by Lucent's in-app updater; they are not standalone
+installers. macOS users can alternatively install or upgrade with:
+
+```bash
+brew tap jverhoeks/tap
+brew install --cask lucent
+brew upgrade --cask lucent
+```
+
 ### Tests
 
 ```bash
@@ -106,7 +132,7 @@ cd src-tauri && cargo test     # backend (Rust)
 
 Tauri 2 (Rust backend + system webview) · TypeScript + Vite frontend ·
 markdown-it · highlight.js · Mermaid · KaTeX · CodeMirror ·
-js-yaml / smol-toml / ini for structured data.
+yaml / smol-toml / ini for structured data.
 
 ## License
 

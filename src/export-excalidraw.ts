@@ -32,6 +32,17 @@ function defaultIdGen(): string {
   return s;
 }
 
+const FONT_SIZE = 16;
+const LINE_HEIGHT = 1.25;
+
+function textBox(text: string, width?: number): { width: number; height: number } {
+  const lines = text.split("\n");
+  return {
+    width: width ?? Math.max(1, ...lines.map((line) => line.length)) * 8,
+    height: Math.max(1, lines.length) * FONT_SIZE * LINE_HEIGHT,
+  };
+}
+
 /** Pure: IR → Excalidraw clipboard JSON string. */
 export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defaultIdGen): string {
   const elements: Array<Record<string, unknown>> = [];
@@ -107,14 +118,15 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
     });
     if (n.label) {
       const tid = idGen();
+      const labelBox = textBox(n.label, n.w);
       bound.push({ id: tid, type: "text" });
       elements.push({
         ...base(tid),
         type: "text",
         x: n.x - n.w / 2,
-        y: n.y - 10,
-        width: n.w,
-        height: 20,
+        y: n.y - labelBox.height / 2,
+        width: labelBox.width,
+        height: labelBox.height,
         strokeColor: n.fill ? hex(contrastText(n.fill)) : "#1e1e1e",
         backgroundColor: "transparent",
         fillStyle: "solid",
@@ -122,13 +134,13 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
         roundness: null,
         boundElements: null,
         text: n.label,
-        fontSize: 16,
+        fontSize: FONT_SIZE,
         fontFamily: 1,
         textAlign: "center",
         verticalAlign: "middle",
         containerId: sid,
         originalText: n.label,
-        lineHeight: 1.25,
+        lineHeight: LINE_HEIGHT,
         frameId: fid,
       });
     }
@@ -142,9 +154,17 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
     if (!s || !t || !src || !tgt) continue;
     const aid = idGen();
     boundOf.get(s)?.push({ id: aid, type: "arrow" });
-    boundOf.get(t)?.push({ id: aid, type: "arrow" });
+    if (t !== s) boundOf.get(t)?.push({ id: aid, type: "arrow" });
     const dx = tgt.x - src.x;
     const dy = tgt.y - src.y;
+    const selfLoop = s === t;
+    const loopW = Math.max(60, src.w);
+    const loopH = Math.max(50, src.h + 20);
+    const arrowX = selfLoop ? src.x - loopW / 2 : src.x;
+    const arrowY = selfLoop ? src.y - src.h / 2 : src.y;
+    const arrowPoints = selfLoop
+      ? [[0, 0], [0, -loopH], [loopW, -loopH], [loopW, 0]]
+      : [[0, 0], [dx, dy]];
     // An arrow belongs to a frame only when both endpoints sit in the same group.
     const edgeFrame = src.groupId && src.groupId === tgt.groupId ? frameOf(src.groupId) : null;
     // Bind the edge label to the arrow (moves with it), like a container label.
@@ -157,17 +177,17 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
     elements.push({
       ...base(aid),
       type: "arrow",
-      x: src.x,
-      y: src.y,
-      width: dx,
-      height: dy,
+      x: arrowX,
+      y: arrowY,
+      width: selfLoop ? loopW : dx,
+      height: selfLoop ? loopH : dy,
       strokeColor: e.stroke ? hex(e.stroke) : "#1e1e1e",
       backgroundColor: "transparent",
       fillStyle: "solid",
       strokeStyle: e.dashed ? "dashed" : "solid",
       roundness: { type: 2 },
       boundElements: arrowBound.length ? arrowBound : null,
-      points: [[0, 0], [dx, dy]],
+      points: arrowPoints,
       lastCommittedPoint: null,
       startBinding: { elementId: s, focus: 0, gap: 4 },
       endBinding: { elementId: t, focus: 0, gap: 4 },
@@ -176,14 +196,18 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
       frameId: edgeFrame,
     });
     if (labelTextId && e.label) {
-      const [lx, ly] = e.labelPos ?? [src.x + dx / 2, src.y + dy / 2];
+      const defaultLabelPos: [number, number] = selfLoop
+        ? [src.x, src.y - src.h / 2 - loopH]
+        : [src.x + dx / 2, src.y + dy / 2];
+      const [lx, ly] = e.labelPos ?? defaultLabelPos;
+      const labelBox = textBox(e.label);
       elements.push({
         ...base(labelTextId),
         type: "text",
-        x: lx - (e.label.length * 8) / 2,
-        y: ly - 10,
-        width: e.label.length * 8,
-        height: 20,
+        x: lx - labelBox.width / 2,
+        y: ly - labelBox.height / 2,
+        width: labelBox.width,
+        height: labelBox.height,
         strokeColor: "#1e1e1e",
         backgroundColor: "transparent",
         fillStyle: "solid",
@@ -191,27 +215,29 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
         roundness: null,
         boundElements: null,
         text: e.label,
-        fontSize: 16,
+        fontSize: FONT_SIZE,
         fontFamily: 1,
         textAlign: "center",
         verticalAlign: "middle",
         containerId: aid,
         originalText: e.label,
-        lineHeight: 1.25,
+        lineHeight: LINE_HEIGHT,
         frameId: edgeFrame,
       });
     }
   }
 
   for (const t of g.texts ?? []) {
-    const w = t.w || 40;
+    const box = textBox(t.text, t.w || undefined);
+    const w = box.width || 40;
+    const h = Math.max(t.h || 0, box.height);
     elements.push({
       ...base(idGen()),
       type: "text",
       x: t.x - w / 2,
-      y: t.y - 10,
+      y: t.y - h / 2,
       width: w,
-      height: t.h || 20,
+      height: h,
       strokeColor: t.color ? hex(t.color) : "#1e1e1e",
       backgroundColor: "transparent",
       fillStyle: "solid",
@@ -219,13 +245,13 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
       roundness: null,
       boundElements: null,
       text: t.text,
-      fontSize: 16,
+      fontSize: FONT_SIZE,
       fontFamily: 1,
       textAlign: "center",
       verticalAlign: "middle",
       containerId: null,
       originalText: t.text,
-      lineHeight: 1.25,
+      lineHeight: LINE_HEIGHT,
     });
   }
 
@@ -250,7 +276,7 @@ export function excalidrawFromGraph(g: DiagramGraph, idGen: () => string = defau
       lastCommittedPoint: null,
       startBinding: null,
       endBinding: null,
-      startArrowhead: null,
+      startArrowhead: ln.arrowStart ? "arrow" : null,
       endArrowhead: ln.arrowEnd ? "arrow" : null,
     });
   }

@@ -203,6 +203,11 @@ export class TabManager {
     const t = this.active();
     return t ? effectiveFormat(t) : undefined;
   }
+  getActiveDataLang(): DataLang | undefined {
+    const t = this.active();
+    if (!t || effectiveFormat(t) !== "data") return undefined;
+    return t.forcedLang ?? dataLangOf(t.path) ?? undefined;
+  }
 
   setActiveForcedFormat(format: Format, lang?: DataLang): void | Promise<void> {
     const t = this.active();

@@ -290,9 +290,13 @@ export const webAdapter: PlatformAdapter = {
       const items = Array.from(e.dataTransfer?.items ?? []);
       const files = await collectFiles(items);
       const paths: string[] = [];
+      let skipped = 0;
       for (const file of files) {
         try {
-          if (!await isProbablyTextFile(file)) continue;
+          if (!await isProbablyTextFile(file)) {
+            skipped++;
+            continue;
+          }
           const text = await readBlobAsText(file);
           const path = fileNameToPath(file.name);
           fileStore.set(path, { content: text, lastModified: file.lastModified });
@@ -305,10 +309,11 @@ export const webAdapter: PlatformAdapter = {
 
           paths.push(path);
         } catch (err) {
+          skipped++;
           console.warn("Skipping unreadable dropped file:", file.name, err);
         }
       }
-      cb({ type: "drop", paths });
+      cb({ type: "drop", paths, skipped });
     });
   },
 

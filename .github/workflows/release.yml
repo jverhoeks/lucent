@@ -30,15 +30,18 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           # A published release is complete. A draft is resumable: a failed
           # matrix run can be rerun without creating another release.
-          if RELEASE=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" 2>/dev/null); then
-            if [ "$(jq -r .draft <<<"$RELEASE")" = "true" ]; then
-              echo "should_release=true" >> "$GITHUB_OUTPUT"
-              echo "release_id=$(jq -r .id <<<"$RELEASE")" >> "$GITHUB_OUTPUT"
-              echo "Resuming draft release v$VERSION."
-            else
-              echo "should_release=false" >> "$GITHUB_OUTPUT"
-              echo "Release v$VERSION is already published — nothing to do."
-            fi
+          RELEASES=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")
+          DRAFT_ID=$(jq -r --arg tag "v$VERSION" \
+            '[.[] | select(.tag_name == $tag and .draft)][0].id // empty' <<<"$RELEASES")
+          PUBLISHED_ID=$(jq -r --arg tag "v$VERSION" \
+            '[.[] | select(.tag_name == $tag and (.draft | not))][0].id // empty' <<<"$RELEASES")
+          if [ -n "$PUBLISHED_ID" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Release v$VERSION is already published — nothing to do."
+          elif [ -n "$DRAFT_ID" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "release_id=$DRAFT_ID" >> "$GITHUB_OUTPUT"
+            echo "Resuming draft release v$VERSION."
           else
             echo "should_release=true" >> "$GITHUB_OUTPUT"
             echo "New version v$VERSION — will build and release."
@@ -67,7 +70,8 @@ jobs:
               --title "Lucent v$VERSION" \
               --notes 'Download the asset for your platform below to install Lucent.' \
               --draft
-            RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" --jq .id)
+            RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq "[.[] | select(.tag_name == \"v$VERSION\" and .draft)][0].id")
           fi
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
 

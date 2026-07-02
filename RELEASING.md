@@ -2,7 +2,7 @@
 
 Releases are **version-on-merge**: bump the version, merge to `main`, and CI
 does the rest — builds macOS/Windows/Linux bundles, publishes a GitHub release,
-and updates the Homebrew cask.
+publishes signed in-app update artifacts, and updates the Homebrew cask.
 
 ## How to cut a release
 
@@ -21,10 +21,12 @@ and updates the Homebrew cask.
 2. Open a PR, get CI green, merge to `main`.
 
 3. The **Release** workflow notices `v0.4.0` has no release yet and:
-   - builds on `macos-latest` (universal `.dmg`), `ubuntu-22.04`
-     (`.deb`/`.rpm`/`.AppImage`), and `windows-latest` (`.msi`/NSIS `.exe`) into
-     a **draft** release;
-   - flips the release public once all three platforms finish;
+   - builds on `macos-latest` (universal `.dmg`), `ubuntu-22.04` and
+     `ubuntu-24.04-arm` (`.deb`/`.rpm`/`.AppImage`), and `windows-latest`
+     (`.msi`/NSIS `.exe`) into a **draft** release;
+   - uploads Tauri's signed updater bundles and `latest.json` alongside the
+     installers;
+   - flips the release public once all four platforms finish;
    - downloads the `.dmg`, hashes it, and pushes `Casks/lucent.rb` to
      `jverhoeks/homebrew-tap`.
 
@@ -41,6 +43,16 @@ Actions tab (it still skips if the release already exists).
   `repo` scope) that can **push to `jverhoeks/homebrew-tap`**. Add it under
   *Settings → Secrets and variables → Actions* in the `lucent` repo. Without it
   the build still releases; only the cask-update job fails.
+- **`TAURI_SIGNING_PRIVATE_KEY` secret** — the complete contents of
+  `.tauri/lucent.key`. This is Tauri's free update-integrity key, not an Apple
+  Developer certificate. Add it as a repository Actions secret, then keep an
+  encrypted backup outside the repository. The file is gitignored. If it is
+  lost, existing installations cannot trust updates signed by a replacement
+  key.
+
+The matching public key is embedded in `src-tauri/tauri.conf.json`; it is safe
+to commit. No `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secret is needed for the
+current unencrypted key.
 - Everything else uses the built-in `GITHUB_TOKEN`.
 
 ## Installing
@@ -57,6 +69,10 @@ brew install --cask lucent
 > macOS app is currently **unsigned**. After install, run
 > `xattr -cr /Applications/Lucent.app` once to clear Gatekeeper quarantine.
 
+Lucent checks `releases/latest/download/latest.json` shortly after startup. If
+a newer version exists it asks before downloading, verifies Tauri's signature,
+installs, and restarts. A network failure never blocks startup.
+
 ## Editing the cask
 
 `homebrew/lucent.rb` in this repo is canonical; the workflow stamps its
@@ -67,7 +83,7 @@ placeholders and writes the copy in the tap. Edit it here, never in the tap.
 - **macOS signing** is deferred. To enable it later, add an Apple Developer cert
   + notarization credentials as secrets and pass them to `tauri-action`; then
   drop the Gatekeeper caveat from `homebrew/lucent.rb`.
-- **Matrix race:** three legs uploading to one draft release with
+- **Matrix race:** four legs uploading to one draft release with
   `releaseDraft: true` can, rarely, create a duplicate release. If it ever
   happens, split out a `create-release` job that makes the draft once and pass
   its `releaseId` to the matrix.

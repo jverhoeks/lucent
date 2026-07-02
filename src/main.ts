@@ -22,6 +22,8 @@ import { initStdin } from "./stdin";
 import { detectFormat, siblingIndex, basename, dataLangOf } from "./format";
 import { injectSprite, setButtonIcon, iconMarkup } from "./icons";
 import { readingTimeLabel } from "./reading-time";
+import { loadSession, saveSession } from "./session";
+import { DocumentOutline } from "./outline";
 import type { PlatformAdapter } from "./platform/types";
 
 /** Trigger a browser file download from a string of content. */
@@ -110,6 +112,9 @@ export function initApp(adapter: PlatformAdapter): void {
   const content = document.getElementById("content")!;
   const banner = document.getElementById("banner")!;
   let settings: StyleSettings = loadSettings();
+  let restoringSession = false;
+  let sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let outline: DocumentOutline | null = null;
 
   const btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
 
@@ -135,13 +140,43 @@ export function initApp(adapter: PlatformAdapter): void {
   }
 
   const manager = new TabManager(tabbar, content, settings, {
-    onChange: () => { refreshToolbar(); rebindSearch(); },
+    onChange: () => { refreshToolbar(); rebindSearch(); refreshOutline(); scheduleSessionSave(); },
     onTabClosed: (path) => void adapter.unwatchFile(path),
     onCloseAll: () => void adapter.unwatchAll(),
     onSave: async (path, content) => {
       await adapter.saveTextFile(path, content);
     },
+    resolveLocalImage: adapter.localImageUrl
+      ? (basePath, relativePath) => adapter.localImageUrl!(basePath, relativePath)
+      : async () => null,
   });
+
+  const outlineElement = document.getElementById("outline");
+  if (outlineElement) {
+    outline = new DocumentOutline(outlineElement, content);
+    new MutationObserver(refreshOutline).observe(content, { childList: true, subtree: true });
+  }
+
+  function refreshOutline(): void {
+    outline?.refresh(
+      manager.getActiveFormat() === "markdown" && manager.getActiveMode() === "rendered",
+    );
+  }
+
+  function persistSession(): void {
+    if (adapter.platform === "tauri" && !restoringSession) {
+      saveSession(manager.snapshotSession());
+    }
+  }
+
+  function scheduleSessionSave(): void {
+    if (adapter.platform !== "tauri" || restoringSession) return;
+    if (sessionSaveTimer !== null) clearTimeout(sessionSaveTimer);
+    sessionSaveTimer = setTimeout(() => {
+      sessionSaveTimer = null;
+      persistSession();
+    }, 100);
+  }
 
   if (adapter.platform === "tauri") {
     initStdin(manager);
@@ -287,21 +322,21 @@ export function initApp(adapter: PlatformAdapter): void {
     return true;
   }
 
-  async function readPath(path: string): Promise<string | null> {
+  async function readPath(path: string, quiet = false): Promise<string | null> {
     try {
       const payload = await adapter.readFile(path);
       return payload.content;
     } catch (e) {
       const msg = (e as AppError)?.message ?? String(e);
-      showBanner(`Couldn't open ${path} — ${msg}`);
+      if (!quiet) showBanner(`Couldn't open ${path} — ${msg}`);
       return null;
     }
   }
 
   const WINDOW_THRESHOLD = 5 * 1024 * 1024;
 
-  async function openPath(path: string) {
-    showBanner(`Loading ${basename(path)} …`);
+  async function openPath(path: string, quiet = false) {
+    if (!quiet) showBanner(`Loading ${basename(path)} …`);
     if (detectFormat(path) === "log") {
       try {
         const size = await adapter.fileSize(path);
@@ -319,7 +354,7 @@ export function initApp(adapter: PlatformAdapter): void {
         // fall through
       }
     }
-    const fileContent = await readPath(path);
+    const fileContent = await readPath(path, quiet);
     if (fileContent === null) return;
     manager.openOrActivate(path, fileContent);
     await adapter.watchFile(path);
@@ -694,10 +729,13 @@ export function initApp(adapter: PlatformAdapter): void {
   adapter.onFileRemoved((path) => showBanner(`File removed: ${path}`));
 
   window.addEventListener("beforeunload", (event) => {
+    persistSession();
     if (!manager.hasDirtyTabs()) return;
     event.preventDefault();
     event.returnValue = true;
   });
+
+  content.addEventListener("scroll", scheduleSessionSave, { passive: true });
 
   adapter.onDrop((event) => {
     if (event.type === "enter" || event.type === "over") {
@@ -727,6 +765,17 @@ export function initApp(adapter: PlatformAdapter): void {
     await adapter.onOpenFiles((paths) => {
       if (paths.length > 0) void openMany(paths);
     });
+    if (adapter.platform === "tauri") {
+      const session = loadSession();
+      restoringSession = true;
+      for (const tab of session.tabs) {
+        await openPath(tab.path, true);
+        manager.restoreSessionTab(tab);
+      }
+      if (session.activePath) await manager.activatePath(session.activePath);
+      restoringSession = false;
+      persistSession();
+    }
     const startup = await adapter.getStartupFiles();
     if (startup.length > 0) await openMany(startup);
   })();

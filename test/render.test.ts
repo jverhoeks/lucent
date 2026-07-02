@@ -5,6 +5,11 @@ describe("renderMarkdown", () => {
   it("renders headings", async () => {
     expect(await renderMarkdown("# Title")).toContain("Title");
   });
+  it("gives headings anchor IDs without rendering their titles as links", async () => {
+    const html = await renderMarkdown("# Plain heading");
+    expect(html).toContain('<h1 id="plain-heading"');
+    expect(html).not.toMatch(/<h1[^>]*>\s*<a/);
+  });
   it("highlights fenced code", async () => {
     const html = await renderMarkdown("```js\nconst x = 1;\n```");
     expect(html).toContain("hljs");

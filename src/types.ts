@@ -57,6 +57,7 @@ export interface RenderCtx {
   /** False once a newer tab repaint supersedes this render. Async renderers
    *  must check before mutating the shared content container. */
   isCurrent?: () => boolean;
+  resolveLocalImage?: (basePath: string, relativePath: string) => Promise<string | null>;
 }
 
 export interface Renderer {

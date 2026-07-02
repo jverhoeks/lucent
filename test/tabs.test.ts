@@ -49,6 +49,24 @@ describe("TabManager", () => {
     expect(mgr.getActiveRawText()).toBe("# A2");
   });
 
+  it("snapshots and restores serializable tab state", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openOrActivate("/d/a.md", "# A");
+    content.scrollTop = 37;
+    const snapshot = mgr.snapshotSession();
+    expect(snapshot.activePath).toBe("/d/a.md");
+    expect(snapshot.tabs[0].scrollTop).toBe(37);
+
+    await mgr.restoreSessionTab({
+      path: "/d/a.md",
+      forcedFormat: "text",
+      mode: "raw",
+      scrollTop: 19,
+    });
+    expect(mgr.getActiveMode()).toBe("raw");
+    expect(content.scrollTop).toBe(19);
+  });
+
   it("toggles between rendered and raw for the active tab", async () => {
     const { mgr, content } = makeManager();
     await mgr.openOrActivate("/d/a.md", "# A");

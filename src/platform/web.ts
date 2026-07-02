@@ -192,6 +192,10 @@ export const webAdapter: PlatformAdapter = {
     throw Object.assign(new Error(`File not found: ${resolved}`), { kind: "not_found" });
   },
 
+  async localImageUrl(_base: string, _rel: string): Promise<string | null> {
+    return null;
+  },
+
   async writeTempFile(_filename: string, contents: string): Promise<string> {
     const path = tmpPath();
     fileStore.set(path, { content: contents, lastModified: Date.now() });

@@ -20,7 +20,8 @@ split-screen editor for when you want to write too.
 ## Features
 
 - **Rich Markdown rendering** — GitHub-flavored Markdown with tables, task lists,
-  footnotes, definition lists, emoji, and admonition blocks (note / warning / tip).
+  footnotes, definition lists, emoji, local images, and admonition blocks
+  (note / warning / tip).
 - **Code blocks done right** — syntax highlighting (highlight.js), a filename/
   language header, one-click **copy** and **save-to-file**, and toggleable,
   click-to-highlight **line numbers** that always stay aligned.
@@ -42,7 +43,10 @@ split-screen editor for when you want to write too.
 - **View as** — reinterpret any file on the fly: Markdown, plain text, or a
   JSON / YAML / TOML / INI tree, regardless of extension.
 - **Tabs & multi-open** — open many files at once, page through a folder with
-  **Next**, or launch from the shell: `lucent *.md`.
+  **Next**, or launch from the shell: `lucent *.md`; tabs, scroll positions, and
+  format overrides return after relaunch.
+- **Document outline** — Markdown headings form a pinned, clickable outline
+  without turning the headings themselves into links.
 - **Live reload** — edits on disk refresh the view automatically (scroll preserved).
 - **Raw ⇄ rendered** toggle, drag-and-drop, and a plain-text mode for any file.
 - **Adjustable & persistent** — font family, size, and **light / sepia / dark**
@@ -57,7 +61,10 @@ split-screen editor for when you want to write too.
   double-clicking a Markdown file opens it in Lucent.
 - **Private by design** — `markdown-it` runs with raw-HTML passthrough disabled,
   links are scheme-allowlisted, and all filesystem access goes through a small
-  audited Rust layer.
+  audited Rust layer. Lucent has no analytics, crash reporting, or telemetry;
+  the desktop app only contacts GitHub to check for signed updates.
+- **Signed in-app updates** — desktop releases check for a newer GitHub Release,
+  ask before downloading, verify its Tauri signature, install, and restart.
 
 See the [`examples/`](examples/) folder for a tour of everything Lucent renders,
 and [Copy & export](docs/copy-and-export.md) for every way to get content back

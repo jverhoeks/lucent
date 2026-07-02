@@ -506,12 +506,77 @@ body {
 }
 
 /* ---- Content ---- */
+#workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+#outline {
+  flex: 0 0 220px;
+  overflow: auto;
+  padding: 16px 10px;
+  border-right: 1px solid var(--bar-border);
+  background: var(--surface);
+}
+
+#outline[hidden] {
+  display: none;
+}
+
+.outline-title {
+  padding: 0 8px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#outline nav {
+  display: grid;
+  gap: 2px;
+}
+
+#outline button {
+  width: 100%;
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 12px/1.3 var(--sans);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#outline button:hover,
+#outline button:focus-visible {
+  background: var(--btn-hover);
+  color: var(--text);
+  outline: none;
+}
+
+#outline button[data-level="2"] { padding-left: 18px; }
+#outline button[data-level="3"] { padding-left: 30px; }
+#outline button[data-level="4"] { padding-left: 42px; }
+#outline button[data-level="5"] { padding-left: 54px; }
+#outline button[data-level="6"] { padding-left: 66px; }
+
 #content {
   flex: 1;
+  min-width: 0;
   overflow: auto;
   padding: 16px 24px;
   background: var(--bg);
   color: var(--text);
+}
+
+@media (max-width: 720px) {
+  #outline { display: none; }
 }
 
 /* ---- Rendered Markdown document (.doc) ---- */
@@ -560,6 +625,13 @@ body {
 .doc table,
 .doc pre {
   margin: 0 0 1em;
+}
+
+.doc img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto 1em;
 }
 
 .doc a {

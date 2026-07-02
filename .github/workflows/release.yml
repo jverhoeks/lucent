@@ -19,6 +19,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       should_release: ${{ steps.v.outputs.should_release }}
+      release_id: ${{ steps.v.outputs.release_id }}
     steps:
       - uses: actions/checkout@v4
       - id: v
@@ -27,20 +28,52 @@ jobs:
         run: |
           VERSION=$(jq -r .version package.json)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          # The tag-existence check is the real guard (not a path filter), so a
-          # bump lands a release no matter which files the merge touched.
-          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Release v$VERSION already exists — nothing to do."
+          # A published release is complete. A draft is resumable: a failed
+          # matrix run can be rerun without creating another release.
+          if RELEASE=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" 2>/dev/null); then
+            if [ "$(jq -r .draft <<<"$RELEASE")" = "true" ]; then
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+              echo "release_id=$(jq -r .id <<<"$RELEASE")" >> "$GITHUB_OUTPUT"
+              echo "Resuming draft release v$VERSION."
+            else
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              echo "Release v$VERSION is already published — nothing to do."
+            fi
           else
             echo "should_release=true" >> "$GITHUB_OUTPUT"
             echo "New version v$VERSION — will build and release."
           fi
 
-  # ── Build native bundles on each platform, upload to a DRAFT release ───────
-  release:
+  # ── Create exactly one draft before the platform matrix starts ─────────────
+  create-release:
     needs: check
     if: needs.check.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXISTING_RELEASE_ID: ${{ needs.check.outputs.release_id }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          if [ -n "$EXISTING_RELEASE_ID" ]; then
+            RELEASE_ID="$EXISTING_RELEASE_ID"
+          else
+            gh release create "v$VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Lucent v$VERSION" \
+              --notes 'Download the asset for your platform below to install Lucent.' \
+              --draft
+            RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" --jq .id)
+          fi
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+  # ── Build native bundles on each platform, upload to a DRAFT release ───────
+  release:
+    needs: [check, create-release]
     permissions:
       contents: write
     strategy:
@@ -97,11 +130,10 @@ jobs:
           # code-signing certificate. It produces the .sig/update artifacts.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
-          # Tag is what the `check` job decided, so the decision and the tag
-          # tauri-action creates are identical by construction.
+          # The single create-release job owns release creation. Matrix legs
+          # only build and upload, so they cannot race to create duplicates.
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: v${{ needs.check.outputs.version }}
-          releaseName: Lucent v${{ needs.check.outputs.version }}
-          releaseBody: 'Download the asset for your platform below to install Lucent.'
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
@@ -110,7 +142,7 @@ jobs:
 
   # ── All platforms done → flip the release public ──────────────────────────
   publish:
-    needs: [check, release]
+    needs: [check, create-release, release]
     runs-on: ubuntu-latest
     permissions:
       contents: write

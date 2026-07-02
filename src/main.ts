@@ -21,6 +21,7 @@ import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
 import { detectFormat, siblingIndex, basename, dataLangOf } from "./format";
 import { injectSprite, setButtonIcon, iconMarkup } from "./icons";
+import { readingTimeLabel } from "./reading-time";
 import type { PlatformAdapter } from "./platform/types";
 
 /** Trigger a browser file download from a string of content. */
@@ -202,6 +203,14 @@ export function initApp(adapter: PlatformAdapter): void {
     if (dlSelect && dlBtn) {
       dlSelect.hidden = !has;
       dlBtn.hidden = !has;
+    }
+
+    // Reading-time estimate — Markdown only; hidden for data/log/text tabs.
+    const readingTime = document.getElementById("reading-time");
+    if (readingTime) {
+      const label = fmt === "markdown" ? readingTimeLabel(manager.getActiveRawText()) : "";
+      readingTime.textContent = label;
+      readingTime.hidden = label === "";
     }
   }
 

@@ -101,6 +101,20 @@ body {
   flex: 1;
 }
 
+/* Reading-time estimate (Markdown tabs only) — quiet status text, not a control */
+#toolbar .reading-time {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+#toolbar .reading-time[hidden] {
+  display: none;
+}
+
 #toolbar button,
 #toolbar select,
 #toolbar input[type="range"] {

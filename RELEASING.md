@@ -30,9 +30,9 @@ publishes signed in-app update artifacts, and updates the Homebrew cask.
    - downloads the `.dmg`, hashes it, and pushes `Casks/lucent.rb` to
      `jverhoeks/homebrew-tap`.
 
-   Re-running on a version that already has a release is a no-op (the
-   tag-existence check short-circuits), so an unrelated push to `main` never
-   triggers a duplicate build.
+   The workflow creates the draft once before starting the platform matrix.
+   Re-running a failed build resumes that draft; re-running after publication is
+   a no-op. Matrix jobs never create releases themselves.
 
 To trigger a build without a version change, run **Release** manually from the
 Actions tab (it still skips if the release already exists).
@@ -83,10 +83,6 @@ placeholders and writes the copy in the tap. Edit it here, never in the tap.
 - **macOS signing** is deferred. To enable it later, add an Apple Developer cert
   + notarization credentials as secrets and pass them to `tauri-action`; then
   drop the Gatekeeper caveat from `homebrew/lucent.rb`.
-- **Matrix race:** four legs uploading to one draft release with
-  `releaseDraft: true` can, rarely, create a duplicate release. If it ever
-  happens, split out a `create-release` job that makes the draft once and pass
-  its `releaseId` to the matrix.
 - **`brew audit --cask lucent`** may warn that the URL doesn't interpolate
   `#{version}` — expected, since the workflow injects the exact published asset
   name (robust against Tauri's dmg naming).

@@ -230,11 +230,51 @@ function decorateMermaid(node: HTMLElement): void {
   node.appendChild(bar);
 }
 
+// Cache of rendered mermaid SVG markup keyed by (resolved theme + source). A
+// re-render (external file edit, tab switch) reuses diagrams whose source and
+// theme are unchanged instead of re-running mermaid's expensive parse + layout —
+// the only costly post-render step (katex/highlight are baked into the worker
+// HTML). Theme is in the key, so a theme switch correctly re-renders every
+// diagram. Bounded LRU by insertion order. Value is the SVG-only innerHTML,
+// captured before decorateMermaid so a cache hit doesn't double-add the toolbar.
+const MERMAID_CACHE_MAX = 64;
+const mermaidSvgCache = new Map<string, string>();
+
+function mermaidKey(resolvedTheme: Theme, source: string): string {
+  return resolvedTheme + "\0" + source;
+}
+
 export async function runPostRender(container: HTMLElement, theme: Theme): Promise<void> {
   const resolved = resolveTheme(theme);
   const nodes = Array.from(container.querySelectorAll<HTMLElement>("pre.mermaid"));
   if (nodes.length === 0) return;
-  for (const n of nodes) n.style.visibility = "hidden";
+
+  // Reuse cached SVGs for unchanged (source + theme) diagrams; collect the rest.
+  // `seenThisPass` guards duplicate same-source blocks: only the first reuses the
+  // cache, the rest go through mermaid.run so they get their own unique element
+  // ids (injecting the same cached markup twice would collide `url(#id)` refs).
+  const toRender: HTMLElement[] = [];
+  const seenThisPass = new Set<string>();
+  for (const n of nodes) {
+    const source = n.textContent ?? "";
+    const key = mermaidKey(resolved, source);
+    const cached = mermaidSvgCache.get(key);
+    if (cached && !seenThisPass.has(key)) {
+      n.innerHTML = cached;
+      n.setAttribute("data-processed", "true");
+      n.style.visibility = ""; // reveal — markdown.ts hid it pre-paint
+      seenThisPass.add(key);
+      mermaidSvgCache.delete(key); // refresh LRU recency
+      mermaidSvgCache.set(key, cached);
+      decorateMermaid(n);
+    } else {
+      n.dataset.mermaidSrc = source; // stash: mermaid.run replaces textContent with the SVG
+      toRender.push(n);
+    }
+  }
+  if (toRender.length === 0) return; // fully served from cache — no mermaid import
+
+  for (const n of toRender) n.style.visibility = "hidden";
   try {
     const { default: mermaid } = await import("mermaid");
     if (mermaidConfiguredTheme !== resolved) {
@@ -251,11 +291,27 @@ export async function runPostRender(container: HTMLElement, theme: Theme): Promi
       });
       mermaidConfiguredTheme = resolved;
     }
-    await mermaid.run({ nodes });
-    for (const n of nodes) decorateMermaid(n);
+    await mermaid.run({ nodes: toRender });
+    for (const n of toRender) {
+      const source = n.dataset.mermaidSrc ?? "";
+      delete n.dataset.mermaidSrc;
+      // Cache the SVG only when mermaid actually produced one — a parse error
+      // leaves the annotated source, which must not be cached (so fixing the
+      // diagram re-renders). Cache before decorate so hits get the toolbar fresh.
+      if (n.querySelector("svg")) {
+        const key = mermaidKey(resolved, source);
+        mermaidSvgCache.set(key, n.innerHTML);
+        while (mermaidSvgCache.size > MERMAID_CACHE_MAX) {
+          const oldest = mermaidSvgCache.keys().next().value as string | undefined;
+          if (oldest === undefined) break;
+          mermaidSvgCache.delete(oldest);
+        }
+      }
+      decorateMermaid(n);
+    }
   } catch {
     /* mermaid annotates failing blocks inline; also swallows a failed chunk load */
   } finally {
-    for (const n of nodes) n.style.visibility = "";
+    for (const n of toRender) n.style.visibility = "";
   }
 }

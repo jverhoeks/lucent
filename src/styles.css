@@ -879,19 +879,21 @@ body.exporting .doc .code-header {
 .split-divider:hover {
   background: var(--accent);
 }
-/* Dark theme overrides for split editor */
-body:has(#content[data-theme="dark"]) .split-editor {
+/* Dark theme overrides for split editor. The split view is a direct child of
+   #content, so a plain descendant selector suffices — avoid :has() here so the
+   web build works on Firefox <121 (Tauri's Chromium webview supports either). */
+#content[data-theme="dark"] .split-editor {
   border-right-color: rgba(255, 255, 255, 0.1);
 }
-body:has(#content[data-theme="dark"]) .split-textarea {
+#content[data-theme="dark"] .split-textarea {
   background: #1e1e1e;
   color: #e6e6e6;
 }
-body:has(#content[data-theme="dark"]) .split-divider {
+#content[data-theme="dark"] .split-divider {
   background: #2a2a2a;
   border-color: rgba(255, 255, 255, 0.1);
 }
-body:has(#content[data-theme="dark"]) .split-divider:hover {
+#content[data-theme="dark"] .split-divider:hover {
   background: #4a9eff;
 }
 

@@ -14,6 +14,11 @@ dist
 dist-ssr
 *.local
 
+# Tauri updater signing key. The public key is embedded in tauri.conf.json;
+# this private key must only live locally and in GitHub Actions secrets.
+.tauri/*.key
+.tauri/*.key.pub
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

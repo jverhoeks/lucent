@@ -57,6 +57,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(watcher::WatchState::default())
         .manage(stdin_buf)
         .manage(logindex::LogIndexState::default())
@@ -75,6 +77,7 @@ pub fn run() {
             commands::list_sibling_viewable,
             commands::write_temp_file,
             commands::resolve_sibling,
+            commands::read_local_image,
             commands::probe_is_text,
             commands::list_viewable_recursive,
             watcher::watch_file,

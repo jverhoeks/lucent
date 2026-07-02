@@ -39,6 +39,9 @@ export interface PlatformAdapter {
   listViewableRecursive(path: string): Promise<string[]>;
   probeIsText(path: string, maxBytes: number): Promise<boolean>;
   resolveSibling(base: string, rel: string): Promise<string>;
+  /** Resolve a Markdown-relative image to a displayable URL, or null when the
+   * platform cannot access sibling files. */
+  localImageUrl?(base: string, rel: string): Promise<string | null>;
   writeTempFile(filename: string, contents: string): Promise<string>;
   openDialog(options?: OpenDialogOptions): Promise<string | string[] | null>;
   saveDialog(options?: SaveDialogOptions): Promise<string | null>;

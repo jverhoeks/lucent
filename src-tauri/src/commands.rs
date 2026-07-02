@@ -218,6 +218,56 @@ pub fn resolve_sibling(base: String, rel: String) -> Result<String, AppError> {
     Ok(target.to_string_lossy().to_string())
 }
 
+/// Read an image referenced by a Markdown document as a data URL. Keeping this
+/// behind a command avoids granting the webview broad asset-protocol access to
+/// the filesystem. Absolute paths and non-image extensions are rejected.
+#[tauri::command]
+pub fn read_local_image(base: String, rel: String) -> Result<String, AppError> {
+    use base64::Engine;
+
+    if Path::new(&rel).is_absolute() || rel.contains('\0') {
+        return Err(AppError::new(ErrorKind::Io, "Invalid image path"));
+    }
+    let base_dir = Path::new(&base)
+        .parent()
+        .ok_or_else(|| AppError::new(ErrorKind::Io, "No parent directory"))?;
+    let target = std::fs::canonicalize(base_dir.join(&rel))
+        .map_err(|e| AppError::new(ErrorKind::NotFound, e.to_string()))?;
+    if !target.is_file() {
+        return Err(AppError::new(ErrorKind::NotFound, "Image is not a file"));
+    }
+    let ext = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "avif" => "image/avif",
+        _ => return Err(AppError::new(ErrorKind::Io, "Unsupported image type")),
+    };
+    let metadata = std::fs::metadata(&target)
+        .map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    if metadata.len() > 20 * 1024 * 1024 {
+        return Err(AppError::new(
+            ErrorKind::Io,
+            "Image exceeds the 20 MB limit",
+        ));
+    }
+    let bytes =
+        std::fs::read(target).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    Ok(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
 /// Probe whether a file is text by reading its first `max_bytes` and checking
 /// for null bytes. Files with known viewable extensions skip the probe.
 /// Returns `true` if the file is likely text or has a viewable extension.
@@ -402,6 +452,31 @@ mod tests {
 
         // Absolute targets are refused.
         assert!(resolve_sibling(base, "/etc/passwd".into()).is_err());
+    }
+
+    #[test]
+    fn reads_only_relative_local_images_as_data_urls() {
+        let dir = std::env::temp_dir().join("lucent_test_local_image");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("docs")).unwrap();
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        let doc = dir.join("docs/readme.md");
+        std::fs::write(&doc, "# image").unwrap();
+        std::fs::write(dir.join("assets/pixel.png"), b"png").unwrap();
+        std::fs::write(dir.join("assets/secret.key"), b"secret").unwrap();
+
+        let url = read_local_image(
+            doc.to_string_lossy().to_string(),
+            "../assets/pixel.png".into(),
+        )
+        .unwrap();
+        assert_eq!(url, "data:image/png;base64,cG5n");
+        assert!(read_local_image(
+            doc.to_string_lossy().to_string(),
+            "../assets/secret.key".into(),
+        )
+        .is_err());
+        assert!(read_local_image(doc.to_string_lossy().to_string(), "/tmp/x.png".into()).is_err());
     }
 
     #[test]

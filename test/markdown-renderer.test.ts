@@ -52,4 +52,28 @@ describe("markdownRenderer lifecycle (A4/B1/B5)", () => {
     });
     expect(c.textContent).toBe("newer tab");
   });
+
+  it("resolves relative images against the open document", async () => {
+    const c = document.createElement("div");
+    document.body.appendChild(c);
+    const resolveLocalImage = vi.fn(async () => "data:image/png;base64,cG5n");
+    await markdownRenderer.render("![diagram](../assets/diagram.png)", c, {
+      theme: "light",
+      resolveLocalImage,
+    }, "/docs/README.md");
+
+    expect(resolveLocalImage).toHaveBeenCalledWith("/docs/README.md", "../assets/diagram.png");
+    expect(c.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,cG5n");
+    c.remove();
+  });
+
+  it("does not resolve remote image URLs through the filesystem", async () => {
+    const c = document.createElement("div");
+    const resolveLocalImage = vi.fn(async () => "unexpected");
+    await markdownRenderer.render("![remote](https://example.com/a.png)", c, {
+      theme: "light",
+      resolveLocalImage,
+    }, "/docs/README.md");
+    expect(resolveLocalImage).not.toHaveBeenCalled();
+  });
 });

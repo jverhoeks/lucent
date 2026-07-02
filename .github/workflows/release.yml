@@ -93,6 +93,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This is Tauri's own update-integrity key, not an Apple or Windows
+          # code-signing certificate. It produces the .sig/update artifacts.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           # Tag is what the `check` job decided, so the decision and the tag
           # tauri-action creates are identical by construction.
@@ -101,6 +104,8 @@ jobs:
           releaseBody: 'Download the asset for your platform below to install Lucent.'
           releaseDraft: true
           prerelease: false
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
           args: ${{ matrix.args }}
 
   # ── All platforms done → flip the release public ──────────────────────────

@@ -86,7 +86,9 @@ function createRenderer(hljs: HLJS, katexPlugin?: unknown): MarkdownIt {
     .use(footnote)
     .use(emoji)
     .use(deflist)
-    .use(anchor, { permalink: anchor.permalink.headerLink() });
+    // Heading IDs power fragment links and the outline. Do not wrap the title
+    // itself in an anchor: that makes every heading look like a blue link.
+    .use(anchor);
   if (katexPlugin) md.use(katexPlugin as never);
   md.use(container, "note")
     .use(container, "warning")

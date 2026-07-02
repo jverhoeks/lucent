@@ -1,12 +1,14 @@
 import { loadHighlight } from "./highlight-loader";
 import { detectFormat, dataLangOf, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
+import { resolveLocalImages } from "./renderers/markdown";
 import { prewarmMarkdown } from "./render";
 import { LogView, toLines } from "./renderers/log";
 import { VirtualLogView } from "./logs/virtual-log-view";
 import { StyleSettings, Theme, Format, DataLang, Renderer, Mode } from "./types";
 import type { EditorAPI, EditorLang } from "./editor";
 import type { TreeView } from "./data/tree";
+import type { SessionState, SessionTab } from "./session";
 
 export const STDIN_PATH = "<stdin>";
 
@@ -43,6 +45,7 @@ export interface TabHooks {
   onTabClosed: (path: string) => void; // stop watching one closed document
   onCloseAll: () => void; // stop watching everything
   onSave?: (path: string, content: string) => Promise<void>; // save editor content to disk
+  resolveLocalImage?: (basePath: string, relativePath: string) => Promise<string | null>;
 }
 
 /** The format actually used to render this tab (override beats detection). */
@@ -115,6 +118,41 @@ export class TabManager {
   }
   getActiveRawText(): string {
     return this.active()?.content ?? "";
+  }
+  snapshotSession(): SessionState {
+    const active = this.active();
+    if (active) active.scrollTop = this.content.scrollTop;
+    return {
+      version: 1,
+      activePath: active?.path === STDIN_PATH ? undefined : active?.path,
+      tabs: this.tabs
+        .filter((tab) => tab.path !== STDIN_PATH)
+        .map((tab) => ({
+          path: tab.path,
+          forcedFormat: tab.forcedFormat,
+          forcedLang: tab.forcedLang,
+          mode: tab.mode === "raw" ? "raw" : "rendered",
+          scrollTop: tab.scrollTop,
+          follow: tab.follow,
+        })),
+    };
+  }
+
+  restoreSessionTab(saved: SessionTab): void | Promise<void> {
+    const tab = this.tabs.find((candidate) => candidate.path === saved.path);
+    if (!tab) return;
+    tab.forcedFormat = saved.forcedFormat;
+    tab.forcedLang = saved.forcedLang;
+    tab.mode = saved.mode;
+    tab.scrollTop = saved.scrollTop;
+    tab.follow = saved.follow;
+    this.hooks.onChange();
+    if (tab === this.active()) return this.repaint(true);
+  }
+
+  activatePath(path: string): void | Promise<void> {
+    const index = this.tabs.findIndex((tab) => tab.path === path);
+    if (index >= 0) return this.activate(index);
   }
   /**
    * The HTML currently displayed for the active doc (renderer-agnostic), with
@@ -603,6 +641,11 @@ export class TabManager {
     // switching to them paints from cache instead of a fresh worker render.
     this.prewarmAdjacent();
 
+    return this.renderActiveMode(t, seq, restoreScroll);
+  }
+
+  /** Dispatch the active tab to the renderer for its storage/mode shape. */
+  private renderActiveMode(t: Tab, seq: number, restoreScroll: boolean): void | Promise<void> {
     // Windowed tab: build/rebuild VirtualLogView (no content read)
     if (t.windowed && t.lineCount !== undefined && t.fetchWindow) {
       this.currentVlog?.destroy();
@@ -618,75 +661,70 @@ export class TabManager {
     this.currentVlog = null;
     this.content.classList.remove("vlog");
 
-    if (t.mode === "rendered") {
-      // Rendered log. Large logs (> threshold) render via a virtualized
-      // in-memory VirtualLogView (bounded DOM); smaller logs use the full-DOM
-      // LogView, which TabManager owns so it can stream incremental updates and
-      // which keeps inline-JSON expansion working for the common case.
-      if (effectiveFormat(t) === "log") {
-        const lines = toLines(t.content);
-        try {
-          if (lines.length > LOG_VIRTUALIZE_LINES) {
-            this.content.replaceChildren();
-            this.currentVlogLines = lines;
-            this.currentVlog = new VirtualLogView(
-              this.content,
-              lines.length,
-              (start, count) => Promise.resolve((this.currentVlogLines ?? []).slice(start, start + count)),
-            );
-          } else {
-            const view = new LogView(this.content);
-            view.setLines(lines);
-            this.currentLog = view;
-          }
-        } catch (err) {
-          this.showRenderError(t, err);
-          return;
-        }
-        this.settleScroll(t, restoreScroll);
-        return;
-      }
+    if (t.mode === "rendered") return this.renderRenderedMode(t, seq, restoreScroll);
 
-      const renderer = getRenderer(effectiveFormat(t));
-      // Release the previous renderer's resources before the new render.
-      if (renderer !== this.currentRenderer) {
-        this.currentRenderer?.destroy?.();
-        this.currentRenderer = renderer;
-      }
-      let result: void | Promise<void>;
+    if (t.mode === "edit") return this.renderEditMode(t, restoreScroll);
+    return this.renderRawMode(t, restoreScroll);
+  }
+
+  /** Render a document/log in its formatted view. */
+  private renderRenderedMode(t: Tab, seq: number, restoreScroll: boolean): void | Promise<void> {
+    if (effectiveFormat(t) === "log") {
+      const lines = toLines(t.content);
       try {
-        result = renderer.render(
-          t.content, this.content,
-          {
-            theme: this.theme,
-            dataLang: t.forcedLang,
-            isCurrent: () => seq === this.repaintSeq && this.active() === t,
-          },
-          t.path,
-        );
+        if (lines.length > LOG_VIRTUALIZE_LINES) {
+          this.content.replaceChildren();
+          this.currentVlogLines = lines;
+          this.currentVlog = new VirtualLogView(
+            this.content,
+            lines.length,
+            (start, count) => Promise.resolve((this.currentVlogLines ?? []).slice(start, start + count)),
+          );
+        } else {
+          const view = new LogView(this.content);
+          view.setLines(lines);
+          this.currentLog = view;
+        }
       } catch (err) {
-        // A renderer throwing synchronously must not leave the content area
-        // half-built — show raw text plus a clear error instead.
         this.showRenderError(t, err);
         return;
       }
-      // Immediate settle for the synchronous paint, so plain documents feel
-      // instant and don't wait on a microtask.
       this.settleScroll(t, restoreScroll);
-      // Async renderers (Mermaid) mutate the DOM after `render` returns. Re-settle
-      // once they resolve so a restored scrollTop isn't left clamped against the
-      // shorter pre-SVG layout; route a late rejection to the same error view.
-      // The `seq` guard drops the callback if a newer repaint has superseded us.
-      if (result instanceof Promise) {
-        return result.then(
-          () => { if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll); },
-          (err) => { if (seq === this.repaintSeq) this.showRenderError(t, err); },
-        );
-      }
       return;
     }
 
-    if (t.mode === "edit") {
+    const renderer = getRenderer(effectiveFormat(t));
+    if (renderer !== this.currentRenderer) {
+      this.currentRenderer?.destroy?.();
+      this.currentRenderer = renderer;
+    }
+    let result: void | Promise<void>;
+    try {
+      result = renderer.render(
+        t.content, this.content,
+        {
+          theme: this.theme,
+          dataLang: t.forcedLang,
+          isCurrent: () => seq === this.repaintSeq && this.active() === t,
+          resolveLocalImage: this.hooks.resolveLocalImage,
+        },
+        t.path,
+      );
+    } catch (err) {
+      this.showRenderError(t, err);
+      return;
+    }
+    this.settleScroll(t, restoreScroll);
+    if (result instanceof Promise) {
+      return result.then(
+        () => { if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll); },
+        (err) => { if (seq === this.repaintSeq) this.showRenderError(t, err); },
+      );
+    }
+  }
+
+  /** Build the split editor and its live Markdown/data preview. */
+  private renderEditMode(t: Tab, restoreScroll: boolean): void {
       const split = document.createElement("div");
       split.className = "split-view";
       const edPane = document.createElement("div");
@@ -783,6 +821,11 @@ export class TabManager {
           article.className = "doc";
           article.innerHTML = html;
           prevPane.replaceChildren(article);
+          void resolveLocalImages(article, t.path, {
+            theme: this.theme,
+            isCurrent: () => seq === this.repaintSeq && this.active() === t,
+            resolveLocalImage: this.hooks.resolveLocalImage,
+          });
         };
 
         // ---- Initial preview: full render with math + mermaid ----
@@ -1009,9 +1052,10 @@ export class TabManager {
           if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll);
         } catch { /* CodeMirror failed to load — keep the textarea fallback. */ }
       })();
-      return;
-    }
+  }
 
+  /** Paint raw text immediately, then enhance recognized data with highlighting. */
+  private renderRawMode(t: Tab, restoreScroll: boolean): void {
     const pre = document.createElement("pre");
     pre.className = "raw";
     pre.textContent = t.content; // paint plain text instantly — no async dependency

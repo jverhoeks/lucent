@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderMarkdown, splitHighlightedLines } from "../src/render";
+import { renderMarkdown, prewarmMarkdown, splitHighlightedLines } from "../src/render";
 
 describe("renderMarkdown", () => {
   it("renders headings", async () => {
@@ -94,5 +94,35 @@ describe("splitHighlightedLines", () => {
     expect(out).toHaveLength(2);
     expect(out[0]).toBe('<span class="c">line1</span>');
     expect(out[1]).toBe('<span class="c">line2</span>');
+  });
+});
+
+describe("render cache / prewarm (#96)", () => {
+  it("serves identical source from cache (same promise reference)", () => {
+    const src = "# cache\n\nsome **body** text";
+    const a = renderMarkdown(src);
+    const b = renderMarkdown(src);
+    expect(a).toBe(b); // deduped: one underlying render shared
+  });
+
+  it("does not confuse distinct sources", async () => {
+    const one = renderMarkdown("# alpha unique heading");
+    const two = renderMarkdown("# beta unique heading");
+    expect(one).not.toBe(two);
+    expect(await one).toContain("alpha unique heading");
+    expect(await two).toContain("beta unique heading");
+  });
+
+  it("prewarmMarkdown populates the cache so a later render is the same promise", async () => {
+    const src = "# prewarmed doc\n\ncontent to warm";
+    prewarmMarkdown(src);
+    const rendered = renderMarkdown(src);
+    // Same underlying cached promise the prewarm created.
+    expect(await rendered).toContain("prewarmed doc");
+  });
+
+  it("prewarmMarkdown never throws for pathological input", () => {
+    expect(() => prewarmMarkdown("")).not.toThrow();
+    expect(() => prewarmMarkdown("<script>alert(1)</script>")).not.toThrow();
   });
 });

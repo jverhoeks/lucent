@@ -5,19 +5,19 @@ describe("parseData", () => {
   it("parses JSON into the value model", () => {
     const r = parseData('{"a":1,"b":[true,null,"x"]}', "json");
     expect(r.ok).toBe(true);
+    // Node paths are not stored on the model (TreeView derives them on the fly).
     expect(r.value).toEqual({
       kind: "object",
       entries: [
-        { key: "a", path: "root.a", value: { kind: "scalar", type: "number", text: "1" } },
+        { key: "a", value: { kind: "scalar", type: "number", text: "1" } },
         {
           key: "b",
-          path: "root.b",
           value: {
             kind: "array",
             items: [
-              { key: "0", path: "root.b[0]", value: { kind: "scalar", type: "boolean", text: "true" } },
-              { key: "1", path: "root.b[1]", value: { kind: "scalar", type: "null", text: "null" } },
-              { key: "2", path: "root.b[2]", value: { kind: "scalar", type: "string", text: "x" } },
+              { key: "0", value: { kind: "scalar", type: "boolean", text: "true" } },
+              { key: "1", value: { kind: "scalar", type: "null", text: "null" } },
+              { key: "2", value: { kind: "scalar", type: "string", text: "x" } },
             ],
           },
         },

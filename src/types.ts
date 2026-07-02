@@ -76,10 +76,12 @@ export type DataValue =
   | { kind: "object"; entries: DataNode[] }
   | { kind: "array"; items: DataNode[] };
 
-/** One keyed child within an object (key = property) or array (key = index). */
+/** One keyed child within an object (key = property) or array (key = index).
+ *  The node's path (`root`, `root.a`, `root.a[2].b`) is NOT stored — allocating
+ *  one string per node dominated model-build time on large files. TreeView
+ *  computes paths on demand as it walks parent→child (see `childPath`). */
 export interface DataNode {
   key: string;
-  path: string; // unique, e.g. `root`, `root.a`, `root.a[2].b`
   value: DataValue;
 }
 

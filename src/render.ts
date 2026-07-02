@@ -123,15 +123,52 @@ async function renderVia(text: string, renderWithMath: boolean): Promise<string>
   });
 }
 
-/** Base render — NO math. Math syntax is left as raw text. */
-export async function renderMarkdown(text: string): Promise<string> {
-  return renderVia(text, false);
+// Bounded cache of rendered HTML, keyed by (math flag + source). Pre-warming
+// adjacent tabs on idle (TabManager.prewarmAdjacent) populates this so a tab
+// switch can skip the worker round-trip and paint from cache. Keyed by the full
+// source, so an edit or external change to a file produces a new key — a stale
+// render is never served. Bounded (LRU by insertion order) to cap memory when
+// many/large docs are open. Promises are cached so concurrent identical
+// requests share one render; a rejection is evicted so a retry re-renders.
+const RENDER_CACHE_MAX = 16;
+const renderCache = new Map<string, Promise<string>>();
+
+function renderCached(text: string, renderWithMath: boolean): Promise<string> {
+  const key = (renderWithMath ? "m\0" : "b\0") + text;
+  const hit = renderCache.get(key);
+  if (hit) {
+    renderCache.delete(key); // refresh LRU recency
+    renderCache.set(key, hit);
+    return hit;
+  }
+  const p = renderVia(text, renderWithMath);
+  p.catch(() => renderCache.delete(key));
+  renderCache.set(key, p);
+  while (renderCache.size > RENDER_CACHE_MAX) {
+    const oldest = renderCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    renderCache.delete(oldest);
+  }
+  return p;
+}
+
+/** Base render — NO math. Math syntax is left as raw text. Returns the cached
+ *  promise directly so concurrent identical requests share one render. */
+export function renderMarkdown(text: string): Promise<string> {
+  return renderCached(text, false);
+}
+
+/** Warm the render cache for `text` off the critical path (e.g. adjacent tabs
+ *  during idle time) so a later switch paints instantly. Never rejects —
+ *  a failed pre-warm is simply not cached, and the real render surfaces it. */
+export function prewarmMarkdown(text: string): void {
+  void renderMarkdown(text).catch(() => {});
 }
 
 /** Render Markdown WITH math (lazy katex import in the Worker). */
 export async function renderMath(text: string): Promise<string> {
   injectKatexCss();
-  return renderVia(text, true);
+  return renderCached(text, true);
 }
 
 let mermaidConfiguredTheme: Theme | null = null;

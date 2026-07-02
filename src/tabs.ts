@@ -1,6 +1,7 @@
 import { loadHighlight } from "./highlight-loader";
 import { detectFormat, dataLangOf, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
+import { prewarmMarkdown } from "./render";
 import { LogView, toLines } from "./renderers/log";
 import { VirtualLogView } from "./logs/virtual-log-view";
 import { StyleSettings, Theme, Format, DataLang, Renderer, Mode } from "./types";
@@ -79,6 +80,10 @@ export class TabManager {
   /** Monotonic repaint generation; an async post-render tail only applies if it
    *  still matches (i.e. no newer repaint has run since). */
   private repaintSeq = 0;
+
+  /** Pending idle handle for adjacent-tab pre-warming (requestIdleCallback id,
+   *  or a setTimeout id in environments without it). */
+  private prewarmHandle: number | null = null;
   /** The active CodeMirror editor instance (edit mode). */
   private currentEditor: EditorAPI | null = null;
   /** Debounce timer for live preview in edit mode. */
@@ -550,6 +555,30 @@ export class TabManager {
   /** Re-render the active tab. Returns a Promise when the render is async
    *  (e.g. markdown with Mermaid, or raw mode that lazy-loads highlight.js)
    *  so callers can await the content being populated. */
+  /** During idle time, warm the Markdown render cache for the tabs immediately
+   *  left and right of the active one. Pure cache population — it never touches
+   *  the DOM, so it can't clobber the visible tab. Only Markdown benefits (data
+   *  trees and logs don't use the worker); windowed logs are skipped. */
+  private prewarmAdjacent(): void {
+    if (typeof window === "undefined") return;
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const schedule = w.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 200));
+    const cancel = w.cancelIdleCallback ?? window.clearTimeout;
+    if (this.prewarmHandle !== null) cancel(this.prewarmHandle);
+    this.prewarmHandle = schedule(() => {
+      this.prewarmHandle = null;
+      for (const i of [this.activeIndex - 1, this.activeIndex + 1]) {
+        const neighbour = this.tabs[i];
+        if (neighbour && !neighbour.windowed && effectiveFormat(neighbour) === "markdown") {
+          prewarmMarkdown(neighbour.content);
+        }
+      }
+    });
+  }
+
   private repaint(restoreScroll: boolean): void | Promise<void> {
     // Bump the generation counter FIRST — before any early return — so that a
     // switch to a windowed/empty tab also invalidates an in-flight async
@@ -569,6 +598,10 @@ export class TabManager {
 
     const t = this.active();
     if (!t) { this.content.replaceChildren(); return; }
+
+    // Warm the render cache for neighbouring Markdown tabs during idle time so
+    // switching to them paints from cache instead of a fresh worker render.
+    this.prewarmAdjacent();
 
     // Windowed tab: build/rebuild VirtualLogView (no content read)
     if (t.windowed && t.lineCount !== undefined && t.fetchWindow) {

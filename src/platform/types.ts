@@ -18,6 +18,8 @@ export interface SaveDialogOptions {
 export interface DropEvent {
   type: "enter" | "over" | "leave" | "drop";
   paths: string[];
+  /** Files rejected by the platform adapter before paths reached shared code. */
+  skipped?: number;
 }
 
 export type FileChangedCallback = (path: string, content: string) => void;

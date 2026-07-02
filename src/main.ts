@@ -34,6 +34,54 @@ function downloadFile(content: string, filename: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
+const TEXT_EXTENSIONS = new Set([
+  "md", "markdown", "mdown", "mkd", "txt", "text", "log", "json", "yaml", "yml",
+  "toml", "ini", "csv", "tsv", "xml", "html", "htm", "css", "js", "ts", "jsx",
+  "tsx", "py", "rb", "rs", "go", "java", "c", "cpp", "h", "hpp", "sh", "bash",
+  "zsh", "fish", "env", "gitignore", "dockerfile", "cfg", "conf",
+]);
+
+type DropProbeAdapter = Pick<
+  PlatformAdapter,
+  "fileSize" | "listViewableRecursive" | "probeIsText"
+>;
+
+async function isTextFile(path: string, adapter: DropProbeAdapter): Promise<boolean> {
+  try {
+    const ext = path.split("/").pop()?.split(".").pop()?.toLowerCase();
+    if (ext && TEXT_EXTENSIONS.has(ext)) return true;
+    const size = await adapter.fileSize(path);
+    if (size > 1_048_576) return false;
+    return await adapter.probeIsText(path, 512);
+  } catch {
+    return false;
+  }
+}
+
+/** Expand dropped files/directories in root order and count every candidate
+ * rejected by text probing or filesystem errors. */
+export async function collectTextDropPaths(
+  roots: string[],
+  adapter: DropProbeAdapter,
+): Promise<{ paths: string[]; skipped: number }> {
+  const paths: string[] = [];
+  let skipped = 0;
+  for (const root of roots) {
+    let children: string[];
+    try {
+      children = await adapter.listViewableRecursive(root);
+    } catch {
+      skipped++;
+      continue;
+    }
+    for (const child of children) {
+      if (await isTextFile(child, adapter)) paths.push(child);
+      else skipped++;
+    }
+  }
+  return { paths, skipped };
+}
+
 /** Convert data between formats for download. */
 async function convertData(source: string, from: string, to: string): Promise<string> {
   if (from === to) return source;
@@ -642,34 +690,6 @@ export function initApp(adapter: PlatformAdapter): void {
     event.returnValue = true;
   });
 
-  async function isTextFile(path: string): Promise<boolean> {
-    try {
-      const ext = path.split("/").pop()?.split(".").pop()?.toLowerCase();
-      const textExts = new Set(["md","markdown","mdown","mkd","txt","text","log","json","yaml","yml","toml","ini","csv","tsv","xml","html","htm","css","js","ts","jsx","tsx","py","rb","rs","go","java","c","cpp","h","hpp","sh","bash","zsh","fish","env","gitignore","dockerfile","cfg","conf"]);
-      if (ext && textExts.has(ext)) return true;
-      const size = await adapter.fileSize(path);
-      if (size > 1_048_576) return false;
-      return await adapter.probeIsText(path, 512);
-    } catch {
-      return false;
-    }
-  }
-
-  async function collectDropPaths(paths: string[]): Promise<string[]> {
-    const result: string[] = [];
-    for (const p of paths) {
-      try {
-        const children = await adapter.listViewableRecursive(p);
-        for (const child of children) {
-          if (await isTextFile(child)) result.push(child);
-        }
-      } catch {
-        // skip silently
-      }
-    }
-    return result;
-  }
-
   adapter.onDrop((event) => {
     if (event.type === "enter" || event.type === "over") {
       document.body.classList.add("drag-over");
@@ -677,16 +697,14 @@ export function initApp(adapter: PlatformAdapter): void {
       document.body.classList.remove("drag-over");
     } else if (event.type === "drop") {
       document.body.classList.remove("drag-over");
-      if (event.paths.length > 0) {
-        const total = event.paths.length;
-        void collectDropPaths(event.paths).then((collected) => {
-          const skipped = total - collected.length;
-          if (collected.length > 0) void openMany(collected);
-          if (skipped > 0) {
-            showBanner(`Opened ${collected.length} file${collected.length === 1 ? "" : "s"}, skipped ${skipped} binary/unreadable`);
-          }
-        });
-      }
+      void collectTextDropPaths(event.paths, adapter).then(async (result) => {
+        if (result.paths.length > 0) await openMany(result.paths);
+        const skipped = result.skipped + (event.skipped ?? 0);
+        showBanner(
+          `Opened ${result.paths.length} file${result.paths.length === 1 ? "" : "s"}, ` +
+          `skipped ${skipped} binary/unreadable`,
+        );
+      });
     }
   });
 

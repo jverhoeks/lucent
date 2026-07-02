@@ -1,5 +1,5 @@
 import { renderMarkdown, renderMath, hasMath, runPostRender } from "../render";
-import type { Renderer, RenderCtx, Theme } from "../types";
+import type { Renderer, RenderCtx } from "../types";
 
 export const markdownRenderer: Renderer = {
   format: "markdown",
@@ -9,13 +9,14 @@ export const markdownRenderer: Renderer = {
     // Base paint — math, if any, shows as raw TeX. The async lifecycle
     // upgrades math via katex and runs Mermaid via the post-render pass.
     article.innerHTML = await renderMarkdown(source);
+    if (ctx.isCurrent && !ctx.isCurrent()) return;
     // Hide mermaid source blocks before they paint — runPostRender reveals them
     // as inlined SVGs once the async mermaid render finishes.
     for (const pre of article.querySelectorAll<HTMLElement>("pre.mermaid")) {
       pre.style.visibility = "hidden";
     }
     container.replaceChildren(article);
-    return finishRender(article, source, container, ctx.theme);
+    return finishRender(article, source, container, ctx);
   },
 };
 
@@ -25,18 +26,19 @@ async function finishRender(
   article: HTMLElement,
   source: string,
   container: HTMLElement,
-  theme: Theme,
+  ctx: RenderCtx,
 ): Promise<void> {
   if (hasMath(source)) {
     try {
       const html = await renderMath(source);
       // Only repaint if this article is still on screen — a tab switch during
       // the lazy katex load must not clobber the newer tab's content.
-      if (article.isConnected) article.innerHTML = html;
+      if ((!ctx.isCurrent || ctx.isCurrent()) && article.isConnected) article.innerHTML = html;
     } catch {
       // katex chunk failed to load — keep the readable base paint (raw TeX)
       // rather than letting the failure blank the document.
     }
   }
-  await runPostRender(container, theme);
+  if (ctx.isCurrent && !ctx.isCurrent()) return;
+  await runPostRender(container, ctx.theme);
 }

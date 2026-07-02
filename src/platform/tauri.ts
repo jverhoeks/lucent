@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { FilePayload } from "../types";
 import type {
@@ -32,6 +32,18 @@ export const tauriAdapter: PlatformAdapter = {
 
   async fileSize(path: string): Promise<number> {
     return invoke<number>("file_size", { path });
+  },
+
+  async logOpen(path: string): Promise<number> {
+    return invoke<number>("log_open", { path });
+  },
+
+  async logWindow(path: string, start: number, count: number): Promise<string[]> {
+    return invoke<string[]>("log_window", { path, start, count });
+  },
+
+  async logSearch(path: string, query: string, caseSensitive: boolean, regex: boolean): Promise<number[]> {
+    return invoke<number[]>("log_search", { path, query, caseSensitive, regex });
   },
 
   async listSiblingViewable(path: string): Promise<string[]> {
@@ -87,6 +99,10 @@ export const tauriAdapter: PlatformAdapter = {
     await openUrl(url);
   },
 
+  async openPath(path: string): Promise<void> {
+    await openPath(path);
+  },
+
   onFileChanged(cb: FileChangedCallback): void {
     listen<FilePayload>("file-changed", (e) => {
       cb(e.payload.path, e.payload.content);
@@ -117,9 +133,5 @@ export const tauriAdapter: PlatformAdapter = {
 
   async getStartupFiles(): Promise<string[]> {
     return invoke<string[]>("get_startup_files");
-  },
-
-  async exportPdf(_html: string): Promise<void> {
-    await invoke("export_pdf_native");
   },
 };

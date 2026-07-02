@@ -100,8 +100,7 @@ pub fn run() {
         {
             use tauri::{Emitter, Manager};
             if let tauri::RunEvent::Opened { urls } = _event {
-                let paths =
-                    filter_viewable(urls.into_iter().filter_map(|u| u.to_file_path().ok()));
+                let paths = filter_viewable(urls.into_iter().filter_map(|u| u.to_file_path().ok()));
                 if !paths.is_empty() {
                     let state = _app_handle.state::<StartupFiles>();
                     if state.consumed.load(Ordering::SeqCst) {

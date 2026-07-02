@@ -57,7 +57,12 @@ pub fn watch_file(path: String, state: State<WatchState>, app: AppHandle) -> Res
                     }
                 }
                 EventKind::Remove(_) => {
-                    let _ = app2.emit("file-removed", RemovedPayload { path: path2.clone() });
+                    let _ = app2.emit(
+                        "file-removed",
+                        RemovedPayload {
+                            path: path2.clone(),
+                        },
+                    );
                 }
                 _ => {}
             }
@@ -108,9 +113,15 @@ mod tests {
         let target = PathBuf::from("/tmp/dir/note.md");
         assert!(event_targets(&[PathBuf::from("/tmp/dir/note.md")], &target));
         // Sibling files in the same watched directory are ignored.
-        assert!(!event_targets(&[PathBuf::from("/tmp/dir/other.md")], &target));
+        assert!(!event_targets(
+            &[PathBuf::from("/tmp/dir/other.md")],
+            &target
+        ));
         // An atomic-save temp file is ignored; the final rename onto the target matches.
-        assert!(!event_targets(&[PathBuf::from("/tmp/dir/.note.md.tmp")], &target));
+        assert!(!event_targets(
+            &[PathBuf::from("/tmp/dir/.note.md.tmp")],
+            &target
+        ));
         assert!(event_targets(
             &[
                 PathBuf::from("/tmp/dir/.note.md.tmp"),

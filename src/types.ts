@@ -54,6 +54,9 @@ export interface SearchProvider {
 export interface RenderCtx {
   theme: Theme;
   dataLang?: DataLang;
+  /** False once a newer tab repaint supersedes this render. Async renderers
+   *  must check before mutating the shared content container. */
+  isCurrent?: () => boolean;
 }
 
 export interface Renderer {

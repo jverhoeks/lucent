@@ -25,6 +25,8 @@ export interface Tab {
   follow?: boolean;
   /** True when the editor buffer has unsaved changes. */
   editDirty?: boolean;
+  /** New disk content held aside while this tab has an unsaved draft. */
+  pendingDiskContent?: string;
   /** Saved editor scroll position (for sync scrolling). */
   editScroll?: number;
   /** True when the file is too large to load into memory; rendered via VirtualLogView. */
@@ -96,6 +98,9 @@ export class TabManager {
 
   count(): number {
     return this.tabs.length;
+  }
+  hasDirtyTabs(): boolean {
+    return this.tabs.some((t) => t.editDirty);
   }
   active(): Tab | undefined {
     return this.tabs[this.activeIndex];
@@ -268,9 +273,11 @@ export class TabManager {
     if (i < 0) return;
     // Windowed logs never hold full content; growth comes via the log-grew event.
     if (this.tabs[i].windowed) return;
-    // In edit mode with unsaved changes: show conflict rather than overwriting.
-    if (i === this.activeIndex && this.currentEditor && this.tabs[i].editDirty) {
-      this.externalEditConflict(this.tabs[i], content);
+    // Never overwrite an unsaved draft. Inactive tabs retain the disk version
+    // until activation rebuilds their conflict bar.
+    if (this.tabs[i].editDirty) {
+      this.tabs[i].pendingDiskContent = content;
+      if (i === this.activeIndex) this.externalEditConflict(this.tabs[i], content);
       return;
     }
     this.tabs[i].content = content;
@@ -318,6 +325,7 @@ export class TabManager {
 
   activate(index: number): void | Promise<void> {
     if (index < 0 || index >= this.tabs.length) return;
+    this.captureActiveDraft();
     const cur = this.active();
     if (cur) cur.scrollTop = this.content.scrollTop;
     this.activeIndex = index;
@@ -332,6 +340,10 @@ export class TabManager {
 
   closeTab(index: number): void | Promise<void> {
     if (index < 0 || index >= this.tabs.length) return;
+    this.captureActiveDraft();
+    if (this.tabs[index].editDirty && !window.confirm(`Discard unsaved changes to ${this.tabs[index].title}?`)) {
+      return;
+    }
     const [closed] = this.tabs.splice(index, 1);
     if (index === this.activeIndex) {
       this.currentVlog?.destroy();
@@ -352,6 +364,8 @@ export class TabManager {
   }
 
   closeAll(): void {
+    this.captureActiveDraft();
+    if (this.hasDirtyTabs() && !window.confirm("Discard unsaved changes and close all tabs?")) return;
     this.currentVlog?.destroy();
     this.currentVlog = null;
     this.destroyEditor();
@@ -393,13 +407,23 @@ export class TabManager {
         this.hooks.onChange();
         return this.repaint(false);
       };
-      if (t.editDirty && this.currentEditor) {
-        t.content = this.currentEditor.getValue();
-        t.editDirty = false;
-        this.renderTabbar();
-        this.hooks.onChange();
-        const saved = this.hooks.onSave?.(t.path, t.content);
-        return saved ? saved.then(doExit) : doExit();
+      const editorValue = this.activeEditorValue();
+      if (t.editDirty && editorValue !== null) {
+        const nextContent = editorValue;
+        const saved = this.hooks.onSave?.(t.path, nextContent);
+        if (!saved) {
+          t.content = nextContent;
+          t.editDirty = false;
+          return doExit();
+        }
+        return saved.then(() => {
+          t.content = nextContent;
+          t.editDirty = false;
+          t.pendingDiskContent = undefined;
+          this.renderTabbar();
+          this.hooks.onChange();
+          return doExit();
+        });
       }
       return doExit();
     }
@@ -417,13 +441,30 @@ export class TabManager {
   /** Save the editor buffer to disk. Returns true if saved. */
   async saveActive(): Promise<boolean> {
     const t = this.active();
-    if (!t || !this.currentEditor || !t.editDirty) return false;
-    t.content = this.currentEditor.getValue();
+    const editorValue = this.activeEditorValue();
+    if (!t || editorValue === null || !t.editDirty) return false;
+    const nextContent = editorValue;
+    await this.hooks.onSave?.(t.path, nextContent);
+    t.content = nextContent;
     t.editDirty = false;
+    t.pendingDiskContent = undefined;
     this.renderTabbar();
     this.hooks.onChange();
-    await this.hooks.onSave?.(t.path, t.content);
     return true;
+  }
+
+  /** Preserve the active editor buffer before a repaint/tab switch destroys
+   *  CodeMirror. The tab stays dirty until a disk write succeeds. */
+  private captureActiveDraft(): void {
+    const t = this.active();
+    const editorValue = this.activeEditorValue();
+    if (t?.editDirty && editorValue !== null) t.content = editorValue;
+  }
+
+  private activeEditorValue(): string | null {
+    if (this.currentEditor) return this.currentEditor.getValue();
+    const textarea = this.content.querySelector<HTMLTextAreaElement>(".split-textarea");
+    return textarea?.value ?? null;
   }
 
   /** Destroy the active editor and clean up the split view. */
@@ -515,6 +556,7 @@ export class TabManager {
     // post-render tail from a previous repaint. Otherwise a pending Mermaid
     // callback could re-settle scroll (or show an error) against now-stale
     // content it no longer owns.
+    this.captureActiveDraft();
     const seq = ++this.repaintSeq;
     // Clear the owned rendered-log view + its in-memory line source on EVERY
     // repaint path (windowed, empty, rendered) so they can never dangle at
@@ -582,7 +624,11 @@ export class TabManager {
       try {
         result = renderer.render(
           t.content, this.content,
-          { theme: this.theme, dataLang: t.forcedLang },
+          {
+            theme: this.theme,
+            dataLang: t.forcedLang,
+            isCurrent: () => seq === this.repaintSeq && this.active() === t,
+          },
           t.path,
         );
       } catch (err) {
@@ -681,6 +727,10 @@ export class TabManager {
         <button class="conflict-accept">Overwrite with mine</button>
         <button class="conflict-reload">Reload from disk</button>
       `;
+      if (t.pendingDiskContent !== undefined) {
+        conflictBar.hidden = false;
+        conflictBar.dataset.diskContent = t.pendingDiskContent;
+      }
 
       // ---- Show a plain textarea instantly, then upgrade to CodeMirror ----
       const textarea = document.createElement("textarea");
@@ -840,18 +890,20 @@ export class TabManager {
       split.after(conflictBar);
 
       conflictBar.querySelector(".conflict-accept")?.addEventListener("click", () => {
-        if (conflictBar.dataset.diskContent) {
+        if (conflictBar.dataset.diskContent !== undefined) {
           conflictBar.hidden = true;
           delete conflictBar.dataset.diskContent;
+          t.pendingDiskContent = undefined;
         }
       });
 
       conflictBar.querySelector(".conflict-reload")?.addEventListener("click", () => {
         const diskContent = conflictBar.dataset.diskContent;
-        if (diskContent) {
+        if (diskContent !== undefined) {
           t.content = diskContent;
           curText = diskContent;
           t.editDirty = false;
+          t.pendingDiskContent = undefined;
           conflictBar.hidden = true;
           delete conflictBar.dataset.diskContent;
           schedulePreview();
@@ -880,11 +932,20 @@ export class TabManager {
       (async () => {
         try {
           const ed = await import("./editor");
-          if (seq !== this.repaintSeq) { edPane.textContent = ""; return; }
-          edPane.textContent = ""; // remove textarea
-          this.currentEditor = await ed.createEditor(edPane, t.content, this.theme, fmtToEditorLang(t));
+          if (seq !== this.repaintSeq) return;
+          // Build off-DOM so the textarea remains usable until CodeMirror has
+          // loaded successfully. This also gives us a disposable instance if a
+          // tab switch supersedes the render while createEditor is awaiting.
+          const editorHost = document.createElement("div");
+          const editor = await ed.createEditor(editorHost, curText, this.theme, fmtToEditorLang(t));
+          if (seq !== this.repaintSeq || this.active() !== t) {
+            editor.destroy();
+            return;
+          }
+          edPane.replaceChildren(editorHost);
+          this.currentEditor = editor;
 
-          this.currentEditor.onUpdate((text) => {
+          editor.onUpdate((text) => {
             if (text !== (this.active()?.content ?? t.content)) {
               t.editDirty = true;
               this.renderTabbar();
@@ -895,25 +956,25 @@ export class TabManager {
           });
 
           // Sync scroll from editor → preview
-          this.currentEditor.onScroll((scrollTop) => {
+          editor.onScroll((scrollTop) => {
             if (!syncScrollEnabled || syncing) return;
             syncing = true;
-            const pct = scrollTop / (this.currentEditor!.getScrollHeight() - this.currentEditor!.getClientHeight() || 1);
+            const pct = scrollTop / (editor.getScrollHeight() - editor.getClientHeight() || 1);
             prevPane.scrollTop = pct * (prevPane.scrollHeight - prevPane.clientHeight || 1);
             syncing = false;
           });
 
           // When the editor is destroyed later, clean up drag listeners
-          const origDestroy = this.currentEditor.destroy.bind(this.currentEditor);
+          const origDestroy = editor.destroy.bind(editor);
           const patchDestroy = () => {
             document.removeEventListener("mousemove", onDivMove);
             document.removeEventListener("mouseup", onDivUp);
             origDestroy();
           };
-          this.currentEditor.destroy = patchDestroy;
+          editor.destroy = patchDestroy;
 
           if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll);
-        } catch { /* CM upgrade failure — textarea remains as fallback */ }
+        } catch { /* CodeMirror failed to load — keep the textarea fallback. */ }
       })();
       return;
     }

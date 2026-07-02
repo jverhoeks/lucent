@@ -1,7 +1,7 @@
 use crate::error::{AppError, ErrorKind};
 use memmap2::Mmap;
 use serde::Serialize;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 
 #[derive(Debug, Serialize, Clone)]
@@ -21,8 +21,19 @@ pub fn read_file(path: String) -> Result<FilePayload, AppError> {
     }
     let file =
         std::fs::File::open(p).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
-    let mmap =
-        unsafe { Mmap::map(&file) }.map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    if file
+        .metadata()
+        .map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?
+        .len()
+        == 0
+    {
+        return Ok(FilePayload {
+            path,
+            content: String::new(),
+        });
+    }
+    let mmap = unsafe { Mmap::map(&file) }
+        .map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
     let content = String::from_utf8(mmap[..].to_vec())
         .map_err(|_| AppError::new(ErrorKind::NotUtf8, "File is not valid UTF-8"))?;
     Ok(FilePayload { path, content })
@@ -63,7 +74,7 @@ pub fn is_viewable(path: &Path) -> bool {
 
 /// The filename portion of a path string (handles `/` and `\`).
 fn file_basename(p: &str) -> &str {
-    p.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(p)
+    p.rsplit(['/', '\\']).next().unwrap_or(p)
 }
 
 /// Compare two names the way macOS Finder's "by name" sort does (approximately):
@@ -85,11 +96,21 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
                 if x.is_ascii_digit() && y.is_ascii_digit() {
                     let mut an = String::new();
                     while let Some(&c) = ai.peek() {
-                        if c.is_ascii_digit() { an.push(c); ai.next(); } else { break; }
+                        if c.is_ascii_digit() {
+                            an.push(c);
+                            ai.next();
+                        } else {
+                            break;
+                        }
                     }
                     let mut bn = String::new();
                     while let Some(&c) = bi.peek() {
-                        if c.is_ascii_digit() { bn.push(c); bi.next(); } else { break; }
+                        if c.is_ascii_digit() {
+                            bn.push(c);
+                            bi.next();
+                        } else {
+                            break;
+                        }
                     }
                     // Compare numerically: ignore leading zeros, then by length, then digits.
                     let at = an.trim_start_matches('0');
@@ -136,9 +157,38 @@ pub fn list_sibling_viewable(path: String) -> Result<Vec<String>, AppError> {
 /// its absolute path. Used to stage the standalone HTML for browser-based PDF export.
 #[tauri::command]
 pub fn write_temp_file(filename: String, contents: String) -> Result<String, AppError> {
-    let path = std::env::temp_dir().join(filename);
-    std::fs::write(&path, contents).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?;
-    Ok(path.to_string_lossy().to_string())
+    let filename = Path::new(&filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| AppError::new(ErrorKind::Io, "Invalid temporary filename"))?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?
+        .as_nanos();
+    for attempt in 0..10 {
+        let path = std::env::temp_dir().join(format!(
+            "lucent-{}-{nonce}-{attempt}-{filename}",
+            std::process::id()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                file.write_all(contents.as_bytes())
+                    .map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?;
+                return Ok(path.to_string_lossy().to_string());
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(AppError::new(ErrorKind::Io, e.to_string())),
+        }
+    }
+    Err(AppError::new(
+        ErrorKind::Io,
+        "Could not allocate a unique temporary file",
+    ))
 }
 
 /// Resolve a relative link (`rel`) against the directory of the open file
@@ -175,16 +225,24 @@ pub fn resolve_sibling(base: String, rel: String) -> Result<String, AppError> {
 pub fn probe_is_text(path: String, max_bytes: u64) -> Result<bool, AppError> {
     let p = Path::new(&path);
     if !p.exists() {
-        return Err(AppError::new(ErrorKind::NotFound, format!("File not found: {path}")));
+        return Err(AppError::new(
+            ErrorKind::NotFound,
+            format!("File not found: {path}"),
+        ));
     }
     // Known viewable extension → no probe needed
     if is_viewable(p) || is_markdown(p) {
         return Ok(true);
     }
     // Read first max_bytes and check for null bytes (binary indicator)
-    let file = std::fs::File::open(p).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    let file =
+        std::fs::File::open(p).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    let max_bytes = max_bytes.min(64 * 1024);
     let mut buf = vec![0u8; max_bytes as usize];
-    let n = file.take(max_bytes).read(&mut buf).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    let n = file
+        .take(max_bytes)
+        .read(&mut buf)
+        .map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
     Ok(!buf[..n].contains(&0u8))
 }
 
@@ -195,7 +253,10 @@ pub fn probe_is_text(path: String, max_bytes: u64) -> Result<bool, AppError> {
 pub fn list_viewable_recursive(path: String) -> Result<Vec<String>, AppError> {
     let p = Path::new(&path);
     if !p.exists() {
-        return Err(AppError::new(ErrorKind::NotFound, format!("Path not found: {path}")));
+        return Err(AppError::new(
+            ErrorKind::NotFound,
+            format!("Path not found: {path}"),
+        ));
     }
     let mut results = Vec::new();
     walk_viewable(p, &mut results, 0)?;
@@ -207,16 +268,24 @@ fn walk_viewable(p: &Path, results: &mut Vec<String>, depth: u32) -> Result<(), 
     if depth > 32 {
         return Ok(()); // safety limit
     }
-    if p.is_file() {
-        if is_viewable(p) || is_markdown(p) {
-            results.push(p.to_string_lossy().to_string());
-        }
+    let metadata =
+        std::fs::symlink_metadata(p).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?;
+    if metadata.file_type().is_symlink() {
         return Ok(());
     }
-    if p.is_dir() {
-        for entry in std::fs::read_dir(p).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))? {
-            let entry = entry.map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?;
-            walk_viewable(&entry.path(), results, depth + 1)?;
+    if metadata.is_file() {
+        // Return every file to the frontend, which probes unknown extensions
+        // before opening them. Filtering here made that probe unreachable.
+        results.push(p.to_string_lossy().to_string());
+        return Ok(());
+    }
+    if metadata.is_dir() {
+        for entry in
+            std::fs::read_dir(p).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))?
+        {
+            let Ok(entry) = entry else { continue };
+            // One unreadable child must not abort the entire dropped tree.
+            let _ = walk_viewable(&entry.path(), results, depth + 1);
         }
     }
     Ok(())
@@ -236,6 +305,14 @@ mod tests {
         f.write_all(b"# Hello").unwrap();
         let payload = read_file(path.to_string_lossy().to_string()).unwrap();
         assert_eq!(payload.content, "# Hello");
+    }
+
+    #[test]
+    fn reads_empty_file() {
+        let path = std::env::temp_dir().join("mdv_test_empty.md");
+        std::fs::write(&path, "").unwrap();
+        let payload = read_file(path.to_string_lossy().to_string()).unwrap();
+        assert_eq!(payload.content, "");
     }
 
     #[test]
@@ -261,6 +338,21 @@ mod tests {
         let path = dir.join("out.html");
         save_text_file(path.to_string_lossy().to_string(), "<h1>Hi</h1>".into()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "<h1>Hi</h1>");
+    }
+
+    #[test]
+    fn temp_file_uses_safe_unique_leaf_name() {
+        let path = write_temp_file("../export.html".into(), "hello".into()).unwrap();
+        let path = Path::new(&path);
+        let temp_dir = std::env::temp_dir();
+        assert_eq!(path.parent(), Some(temp_dir.as_path()));
+        assert!(path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with("export.html"));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "hello");
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -335,14 +427,26 @@ mod tests {
     #[test]
     fn natural_cmp_is_case_insensitive_and_numeric() {
         let mut v = vec![
-            "file10.md", "File2.md", "apple.txt", "Banana.txt", "README.md", "10.log", "2.log",
+            "file10.md",
+            "File2.md",
+            "apple.txt",
+            "Banana.txt",
+            "README.md",
+            "10.log",
+            "2.log",
         ];
         v.sort_by(|a, b| natural_cmp(a, b));
         // Numeric-aware (2 before 10), case-insensitive (Banana among a/f, README among r).
         assert_eq!(
             v,
             vec![
-                "2.log", "10.log", "apple.txt", "Banana.txt", "File2.md", "file10.md", "README.md",
+                "2.log",
+                "10.log",
+                "apple.txt",
+                "Banana.txt",
+                "File2.md",
+                "file10.md",
+                "README.md",
             ]
         );
     }

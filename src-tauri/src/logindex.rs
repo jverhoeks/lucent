@@ -37,10 +37,12 @@ impl LineIndex {
         if !idx.try_load() {
             idx.scan_from(0)?;
         } else {
-            let current_len = std::fs::metadata(&idx.path)
-                .map(|m| m.len())
-                .unwrap_or(0);
-            if current_len > idx.indexed_len {
+            let current_len = std::fs::metadata(&idx.path).map(|m| m.len()).unwrap_or(0);
+            if current_len < idx.indexed_len {
+                idx.offsets.clear();
+                idx.indexed_len = 0;
+                idx.scan_from(0)?;
+            } else if current_len > idx.indexed_len {
                 idx.scan_from(idx.indexed_len)?;
             }
         }
@@ -128,9 +130,17 @@ impl LineIndex {
     fn scan_from(&mut self, from_offset: u64) -> Result<(), AppError> {
         let file = std::fs::File::open(&self.path)
             .map_err(|e| AppError::new(ErrorKind::NotFound, e.to_string()))?;
-        let mmap =
-            unsafe { Mmap::map(&file) }.map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
-        let file_len = mmap.len() as u64;
+        let file_len = file
+            .metadata()
+            .map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?
+            .len();
+        if file_len == 0 {
+            self.offsets.clear();
+            self.indexed_len = 0;
+            return Ok(());
+        }
+        let mmap = unsafe { Mmap::map(&file) }
+            .map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
 
         // Push `from_offset` as a line-start only when it truly is one:
         //   - offset 0 is always the start of the first line, OR
@@ -211,9 +221,7 @@ impl LineIndex {
         let log_mtime = std::fs::metadata(&self.path)
             .and_then(|m| m.modified())
             .ok();
-        let idx_mtime = std::fs::metadata(&path)
-            .and_then(|m| m.modified())
-            .ok();
+        let idx_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         match (log_mtime, idx_mtime) {
             (Some(log_mt), Some(idx_mt)) if idx_mt < log_mt => return false,
             _ => {}
@@ -310,10 +318,7 @@ impl Default for LogIndexState {
 
 /// Open (or re-index) a log file and return its line count.
 #[tauri::command]
-pub fn log_open(
-    path: String,
-    state: tauri::State<LogIndexState>,
-) -> Result<usize, AppError> {
+pub fn log_open(path: String, state: tauri::State<LogIndexState>) -> Result<usize, AppError> {
     let idx = LineIndex::build(&path)?;
     let count = idx.line_count();
     state
@@ -402,6 +407,14 @@ mod tests {
     }
 
     #[test]
+    fn indexes_empty_log() {
+        let p = tmp("li_empty.log", "");
+        let idx = LineIndex::build(p.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(idx.line_count(), 0);
+        assert!(idx.window(0, 10).is_empty());
+    }
+
+    #[test]
     fn search_returns_line_numbers() {
         let p = tmp("li_b.log", "alpha\nBETA\ngamma beta\n");
         let idx = LineIndex::build(p.to_string_lossy().as_ref()).unwrap();
@@ -465,7 +478,7 @@ mod tests {
         let _ = std::fs::remove_file(&sidecar);
 
         LineIndex::build(p.to_string_lossy().as_ref()).unwrap();
-        assert_eq!(std::fs::read(&sidecar).unwrap().len(), 16 + 1 * 8);
+        assert_eq!(std::fs::read(&sidecar).unwrap().len(), 24);
 
         // Append two more lines and re-open.
         let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();

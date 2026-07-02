@@ -105,6 +105,15 @@ async function renderVia(text: string, renderWithMath: boolean): Promise<string>
       if (error) p.reject(new Error(error));
       else p.resolve(html!);
     };
+    const rejectPending = (message: string) => {
+      const error = new Error(message);
+      for (const request of pending.values()) request.reject(error);
+      pending.clear();
+      worker?.terminate();
+      worker = null;
+    };
+    worker.onerror = (event) => rejectPending(event.message || "Render worker failed");
+    worker.onmessageerror = () => rejectPending("Render worker returned an invalid message");
   }
 
   return new Promise<string>((resolve, reject) => {

@@ -79,23 +79,8 @@ export function initApp(adapter: PlatformAdapter): void {
       logLines: manager.getActiveLogLines(),
       path: manager.getActivePath(),
       tree: getCurrentTree(),
-      logSearch: (path, q) => adapter.readFile(path).then((p) => {
-        // Simple client-side log search fallback
-        const lines = p.content.split("\n");
-        const matches = lines
-          .map((line, i) => ({ line, i }))
-          .filter(({ line }) => {
-            const text = q.caseSensitive ? line : line.toLowerCase();
-            const query = q.caseSensitive ? q.text : q.text.toLowerCase();
-            if (q.regex) {
-              try { return new RegExp(query, q.caseSensitive ? "" : "i").test(line); }
-              catch { return false; }
-            }
-            return text.includes(query);
-          })
-          .map(({ i }) => i);
-        return matches;
-      }),
+      logSearch: (path, q) =>
+        adapter.logSearch(path, q.text, q.caseSensitive, q.regex),
       onUpdate: () => search.refresh(),
     }));
   }
@@ -264,13 +249,13 @@ export function initApp(adapter: PlatformAdapter): void {
       try {
         const size = await adapter.fileSize(path);
         if (size > WINDOW_THRESHOLD) {
-          const content = await adapter.readFile(path);
-          const lines = content.content.split("\n");
+          const lineCount = await adapter.logOpen(path);
           manager.openWindowedLog(
             path,
-            lines.length,
-            (_start, _count) => Promise.resolve([]), // simplified for web
+            lineCount,
+            (start, count) => adapter.logWindow(path, start, count),
           );
+          await adapter.watchFile(path);
           return;
         }
       } catch {
@@ -323,13 +308,29 @@ export function initApp(adapter: PlatformAdapter): void {
       if (manager.count() > 0) { e.preventDefault(); manager.closeActiveTab(); }
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-      if (manager.isEditing()) { e.preventDefault(); void manager.saveActive(); }
+      if (manager.isEditing()) {
+        e.preventDefault();
+        void manager.saveActive().catch((err) =>
+          showBanner(`Save failed — ${err instanceof Error ? err.message : String(err)}`)
+        );
+      }
     }
   });
 
   btn("btn-toggle").addEventListener("click", () => manager.toggleMode());
-  btn("btn-edit").addEventListener("click", () => manager.toggleEdit());
-  btn("btn-save").addEventListener("click", () => void manager.saveActive());
+  btn("btn-edit").addEventListener("click", () => {
+    const result = manager.toggleEdit();
+    if (result instanceof Promise) {
+      void result.catch((err) =>
+        showBanner(`Save failed — ${err instanceof Error ? err.message : String(err)}`)
+      );
+    }
+  });
+  btn("btn-save").addEventListener("click", () => {
+    void manager.saveActive().catch((err) =>
+      showBanner(`Save failed — ${err instanceof Error ? err.message : String(err)}`)
+    );
+  });
   btn("btn-tail").addEventListener("click", () => manager.toggleFollow());
   btn("btn-close-all").addEventListener("click", () => manager.closeAll());
 
@@ -621,17 +622,25 @@ export function initApp(adapter: PlatformAdapter): void {
     }
   });
 
-  let watchDebounceId: ReturnType<typeof setTimeout> | undefined;
+  const watchDebounceIds = new Map<string, ReturnType<typeof setTimeout>>();
   adapter.onFileChanged((path, content) => {
-    if (watchDebounceId !== undefined) clearTimeout(watchDebounceId);
-    watchDebounceId = setTimeout(() => {
-      watchDebounceId = undefined;
+    const existing = watchDebounceIds.get(path);
+    if (existing !== undefined) clearTimeout(existing);
+    const id = setTimeout(() => {
+      watchDebounceIds.delete(path);
       manager.updateContent(path, content);
       if (path === manager.getActivePath() && !manager.isActiveWindowed()) rebindSearch();
     }, 200);
+    watchDebounceIds.set(path, id);
   });
 
   adapter.onFileRemoved((path) => showBanner(`File removed: ${path}`));
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!manager.hasDirtyTabs()) return;
+    event.preventDefault();
+    event.returnValue = true;
+  });
 
   async function isTextFile(path: string): Promise<boolean> {
     try {
@@ -642,7 +651,7 @@ export function initApp(adapter: PlatformAdapter): void {
       if (size > 1_048_576) return false;
       return await adapter.probeIsText(path, 512);
     } catch {
-      return true;
+      return false;
     }
   }
 

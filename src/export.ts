@@ -83,7 +83,7 @@ async function exportPdfViaBrowser(rawText: string, adapter: PlatformAdapter): P
   const theme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
   const body = await renderDocumentHtml(rawText, theme);
   const path = await adapter.writeTempFile("markdown-export.html", buildStandaloneHtml(body, true));
-  await adapter.openUrl(path);
+  await adapter.openPath(path);
 }
 
 /**

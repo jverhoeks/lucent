@@ -63,11 +63,16 @@ async function collectFiles(items: DataTransferItem[]): Promise<File[]> {
           files.push(file);
         } else if (entry.isDirectory) {
           const reader = (entry as FileSystemDirectoryEntry).createReader();
-          const entries = await new Promise<FileSystemEntry[]>((resolve) =>
-            reader.readEntries(resolve),
-          );
-          for (const e of entries) {
-            queue.push({ webkitGetAsEntry: () => e } as DataTransferItem);
+          // Chromium returns directory entries in batches (commonly 100).
+          // Keep reading until an empty batch signals completion.
+          while (true) {
+            const entries = await new Promise<FileSystemEntry[]>((resolve, reject) =>
+              reader.readEntries(resolve, reject),
+            );
+            if (entries.length === 0) break;
+            for (const e of entries) {
+              queue.push({ webkitGetAsEntry: () => e } as DataTransferItem);
+            }
           }
         }
       }
@@ -80,7 +85,22 @@ async function collectFiles(items: DataTransferItem[]): Promise<File[]> {
 }
 
 function fileNameToPath(name: string): string {
-  return `/opened/${name}`;
+  const safeName = name.split("/").join("_");
+  let path = `/opened/${safeName}`;
+  let suffix = 2;
+  while (fileStore.has(path)) {
+    const dot = safeName.lastIndexOf(".");
+    const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
+    const ext = dot > 0 ? safeName.slice(dot) : "";
+    path = `/opened/${stem}-${suffix++}${ext}`;
+  }
+  return path;
+}
+
+function splitLogLines(content: string): string[] {
+  const lines = content.split("\n");
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 export const webAdapter: PlatformAdapter = {
@@ -119,6 +139,37 @@ export const webAdapter: PlatformAdapter = {
     return new Blob([entry.content]).size;
   },
 
+  async logOpen(path: string): Promise<number> {
+    const entry = fileStore.get(path);
+    if (!entry) throw Object.assign(new Error("File not found"), { kind: "not_found" });
+    return splitLogLines(entry.content).length;
+  },
+
+  async logWindow(path: string, start: number, count: number): Promise<string[]> {
+    const entry = fileStore.get(path);
+    if (!entry) throw Object.assign(new Error("File not found"), { kind: "not_found" });
+    return splitLogLines(entry.content).slice(start, start + count);
+  },
+
+  async logSearch(path: string, query: string, caseSensitive: boolean, regex: boolean): Promise<number[]> {
+    const entry = fileStore.get(path);
+    if (!entry) throw Object.assign(new Error("File not found"), { kind: "not_found" });
+    let matcher: (line: string) => boolean;
+    if (regex) {
+      let pattern: RegExp;
+      try {
+        pattern = new RegExp(query, caseSensitive ? "" : "i");
+      } catch {
+        return [];
+      }
+      matcher = (line) => pattern.test(line);
+    } else {
+      const needle = caseSensitive ? query : query.toLowerCase();
+      matcher = (line) => (caseSensitive ? line : line.toLowerCase()).includes(needle);
+    }
+    return splitLogLines(entry.content).flatMap((line, i) => matcher(line) ? [i] : []);
+  },
+
   async listSiblingViewable(_path: string): Promise<string[]> {
     return Array.from(fileStore.keys()).filter((p) => isTextPath(p));
   },
@@ -152,6 +203,9 @@ export const webAdapter: PlatformAdapter = {
       const input = document.createElement("input");
       input.type = "file";
       input.multiple = options?.multiple ?? false;
+      input.accept = options?.filters
+        ?.flatMap((filter) => filter.extensions.map((ext) => `.${ext}`))
+        .join(",") ?? "";
       input.addEventListener("change", async () => {
         const files = input.files;
         if (!files || files.length === 0) {
@@ -199,6 +253,10 @@ export const webAdapter: PlatformAdapter = {
     window.open(url, "_blank", "noopener,noreferrer");
   },
 
+  async openPath(path: string): Promise<void> {
+    window.open(path, "_blank", "noopener,noreferrer");
+  },
+
   onFileChanged(_cb: FileChangedCallback): void {
     // File watching not available in web version
   },
@@ -233,18 +291,22 @@ export const webAdapter: PlatformAdapter = {
       const files = await collectFiles(items);
       const paths: string[] = [];
       for (const file of files) {
-        if (!isTextPath(file.name)) continue;
-        const text = await readBlobAsText(file);
-        const path = fileNameToPath(file.name);
-        fileStore.set(path, { content: text, lastModified: file.lastModified });
-
-        // Try to persist a write handle
         try {
-          const handle = await (file as any).handle as FileSystemFileHandle | undefined;
-          if (handle) fileHandles.set(path, handle);
-        } catch { /* no write handle available */ }
+          if (!await isProbablyTextFile(file)) continue;
+          const text = await readBlobAsText(file);
+          const path = fileNameToPath(file.name);
+          fileStore.set(path, { content: text, lastModified: file.lastModified });
 
-        paths.push(path);
+          // Try to persist a write handle
+          try {
+            const handle = await (file as any).handle as FileSystemFileHandle | undefined;
+            if (handle) fileHandles.set(path, handle);
+          } catch { /* no write handle available */ }
+
+          paths.push(path);
+        } catch (err) {
+          console.warn("Skipping unreadable dropped file:", file.name, err);
+        }
       }
       cb({ type: "drop", paths });
     });
@@ -256,8 +318,17 @@ export const webAdapter: PlatformAdapter = {
   async getStartupFiles(): Promise<string[]> {
     return [];
   },
-
-  async exportPdf(_html: string): Promise<void> {
-    window.print();
-  },
 };
+
+async function isProbablyTextFile(file: File): Promise<boolean> {
+  if (isTextPath(file.name)) return true;
+  if (file.size > 1_048_576) return false;
+  const bytes = new Uint8Array(await file.slice(0, 512).arrayBuffer());
+  if (bytes.includes(0)) return false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+}

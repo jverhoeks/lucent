@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { TabManager } from "../src/tabs";
 import { basename } from "../src/format";
 import { DEFAULT_SETTINGS } from "../src/types";
 
-function makeManager() {
+function makeManager(onSave?: (path: string, content: string) => Promise<void>) {
   const tabbar = document.createElement("nav");
   const content = document.createElement("main");
   document.body.append(tabbar, content);
@@ -13,6 +13,7 @@ function makeManager() {
     onChange: () => {},
     onTabClosed: (p) => closed.push(p),
     onCloseAll: () => closedAll++,
+    onSave,
   });
   return { mgr, tabbar, content, closed, closedAll: () => closedAll };
 }
@@ -107,5 +108,50 @@ describe("TabManager", () => {
     expect(mgr.count()).toBe(1);
     expect(mgr.getActivePath()).toBe("/d/c.md");
     expect(mgr.getActiveDisplayedHtml()).toMatch(/<h1[\s\S]*C/);
+  });
+
+  it("does not close a dirty tab when discard is cancelled", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openOrActivate("/d/a.md", "# A");
+    mgr.toggleEdit();
+    const textarea = content.querySelector(".split-textarea") as HTMLTextAreaElement;
+    textarea.value = "# changed";
+    textarea.dispatchEvent(new Event("input"));
+    vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+
+    mgr.closeActiveTab();
+
+    expect(mgr.count()).toBe(1);
+    expect(mgr.hasDirtyTabs()).toBe(true);
+  });
+
+  it("keeps a tab dirty when saving fails", async () => {
+    const { mgr, content } = makeManager(async () => {
+      throw new Error("disk full");
+    });
+    await mgr.openOrActivate("/d/a.md", "# A");
+    mgr.toggleEdit();
+    const textarea = content.querySelector(".split-textarea") as HTMLTextAreaElement;
+    textarea.value = "# changed";
+    textarea.dispatchEvent(new Event("input"));
+
+    await expect(mgr.saveActive()).rejects.toThrow("disk full");
+    expect(mgr.hasDirtyTabs()).toBe(true);
+  });
+
+  it("preserves an inactive dirty draft when the file changes on disk", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openOrActivate("/d/a.md", "# A");
+    mgr.toggleEdit();
+    const textarea = content.querySelector(".split-textarea") as HTMLTextAreaElement;
+    textarea.value = "# draft";
+    textarea.dispatchEvent(new Event("input"));
+
+    await mgr.openOrActivate("/d/b.md", "# B");
+    mgr.updateContent("/d/a.md", "# changed on disk");
+    await mgr.activate(0);
+
+    expect(mgr.getActiveRawText()).toBe("# draft");
+    expect(content.querySelector<HTMLElement>(".edit-conflict")?.hidden).toBe(false);
   });
 });

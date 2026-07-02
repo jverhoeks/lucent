@@ -30,6 +30,9 @@ export interface PlatformAdapter {
   saveTextFile(path: string, contents: string): Promise<void>;
   saveBinaryFile(path: string, contents: Uint8Array): Promise<void>;
   fileSize(path: string): Promise<number>;
+  logOpen(path: string): Promise<number>;
+  logWindow(path: string, start: number, count: number): Promise<string[]>;
+  logSearch(path: string, query: string, caseSensitive: boolean, regex: boolean): Promise<number[]>;
   listSiblingViewable(path: string): Promise<string[]>;
   listViewableRecursive(path: string): Promise<string[]>;
   probeIsText(path: string, maxBytes: number): Promise<boolean>;
@@ -41,6 +44,7 @@ export interface PlatformAdapter {
   unwatchFile(path: string): Promise<void>;
   unwatchAll(): Promise<void>;
   openUrl(url: string): Promise<void>;
+  openPath(path: string): Promise<void>;
   onFileChanged(cb: FileChangedCallback): void;
   onFileRemoved(cb: FileRemovedCallback): void;
   onDrop(cb: DropCallback): void;
@@ -48,7 +52,6 @@ export interface PlatformAdapter {
    *  Returns a promise that resolves once the listener is attached. */
   onOpenFiles(cb: OpenFilesCallback): Promise<void>;
   getStartupFiles(): Promise<string[]>;
-  exportPdf(html: string): Promise<void>;
 
   /** Unique platform name for diagnostics. */
   platform: "tauri" | "web";

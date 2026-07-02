@@ -42,4 +42,14 @@ describe("markdownRenderer lifecycle (A4/B1/B5)", () => {
     expect(c.querySelector("h1")?.textContent).toContain("Hi");
     expect(c.querySelector("pre.mermaid")).toBeNull();
   });
+
+  it("does not paint after a newer repaint supersedes it", async () => {
+    const c = document.createElement("div");
+    c.textContent = "newer tab";
+    await markdownRenderer.render("# stale", c, {
+      theme: "light",
+      isCurrent: () => false,
+    });
+    expect(c.textContent).toBe("newer tab");
+  });
 });

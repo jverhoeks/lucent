@@ -9,10 +9,12 @@ import type { Renderer, RenderCtx } from "../types";
  *  limit — it caps the cost of the one unavoidable synchronous step,
  *  `parseData` (JSON.parse + building the DataValue model), which blocks the
  *  main thread and can't be rescued by a spinner. Calibrated from measurement:
- *  the real parse path is ~220ms at 5 MB and ~340ms at 8 MB, so 10 MB keeps the
- *  freeze under roughly a third of a second. Supporting genuinely large files
- *  (freeze-free) needs an off-thread / streaming parser — a separate change. */
-export const SIZE_CAP_BYTES = 10_000_000;
+ *  after dropping stored per-node path strings, the real parse path is ~72ms at
+ *  5 MB and ~225ms at 20 MB; with the tree's node count walk on top, 20 MB keeps
+ *  the freeze around a third of a second. Beyond this, raw-text fallback rather
+ *  than a multi-second freeze; genuinely large files would need an off-thread /
+ *  streaming parser (evaluated and declined — see docs/superpowers/specs). */
+export const SIZE_CAP_BYTES = 20_000_000;
 
 let currentTree: TreeView | null = null;
 /** The tree from the most recent data render (single active doc), for search. */

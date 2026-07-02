@@ -9,19 +9,20 @@ const raf = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 function bigData(n: number): DataValue {
   const entries = [];
   for (let i = 0; i < n; i++) {
-    entries.push({ key: `k${i}`, path: `root.k${i}`, value: { kind: "scalar", type: "number", text: String(i) } as DataValue });
+    entries.push({ key: `k${i}`, value: { kind: "scalar", type: "number", text: String(i) } as DataValue });
   }
   return { kind: "object", entries };
 }
 
-// A collapsed-deep value used to exercise reveal in virtual mode.
+// A collapsed-deep value used to exercise reveal in virtual mode. Paths are
+// derived by TreeView, not stored on the fixture.
 const nested: DataValue = {
   kind: "object",
   entries: [
-    { key: "a", path: "root.a", value: { kind: "object", entries: [
-      { key: "target", path: "root.a.target", value: { kind: "scalar", type: "string", text: "needle" } },
+    { key: "a", value: { kind: "object", entries: [
+      { key: "target", value: { kind: "scalar", type: "string", text: "needle" } },
     ] } },
-    { key: "b", path: "root.b", value: { kind: "scalar", type: "string", text: "other" } },
+    { key: "b", value: { kind: "scalar", type: "string", text: "other" } },
   ],
 };
 

@@ -5,14 +5,13 @@ import type { DataValue } from "../src/types";
 const sample: DataValue = {
   kind: "object",
   entries: [
-    { key: "name", path: "root.name", value: { kind: "scalar", type: "string", text: "lucent" } },
+    { key: "name", value: { kind: "scalar", type: "string", text: "lucent" } },
     {
       key: "nested",
-      path: "root.nested",
       value: {
         kind: "object",
         entries: [
-          { key: "deep", path: "root.nested.deep", value: { kind: "scalar", type: "number", text: "42" } },
+          { key: "deep", value: { kind: "scalar", type: "number", text: "42" } },
         ],
       },
     },

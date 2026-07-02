@@ -13,6 +13,13 @@ interface VisRow {
   childCount: number;
 }
 
+/** Build a child node's path from its parent's path, matching the format the
+ *  model used to store: `parent.key` for object entries, `parent[i]` for array
+ *  items. Root is always `"root"`. */
+function childPath(parentPath: string, key: string, isArrayItem: boolean): string {
+  return isArrayItem ? `${parentPath}[${key}]` : `${parentPath}.${key}`;
+}
+
 const DEFAULT_EXPAND_CAP = 5000;
 const VIRTUALIZE_THRESHOLD = 200;
 const INDENT = 16;
@@ -136,27 +143,31 @@ export class TreeView {
     this.refresh();
   }
 
-  private seedExpansion(value: DataValue, maxDepth: number, currentDepth = 0): void {
+  private seedExpansion(value: DataValue, maxDepth: number, currentDepth = 0, parentPath = "root"): void {
     const children: DataNode[] =
       value.kind === "object" ? value.entries
       : value.kind === "array" ? value.items
       : [];
+    const isArray = value.kind === "array";
     for (const node of children) {
-      if (isContainer(node.value) && currentDepth + 1 < maxDepth) this.expanded.add(node.path);
-      this.seedExpansion(node.value, maxDepth, currentDepth + 1);
+      const path = childPath(parentPath, node.key, isArray);
+      if (isContainer(node.value) && currentDepth + 1 < maxDepth) this.expanded.add(path);
+      this.seedExpansion(node.value, maxDepth, currentDepth + 1, path);
     }
   }
 
-  private expandAllWalk(value: DataValue): void {
+  private expandAllWalk(value: DataValue, parentPath = "root"): void {
     if (value.kind === "object") {
       for (const e of value.entries) {
-        this.expanded.add(e.path);
-        this.expandAllWalk(e.value);
+        const path = childPath(parentPath, e.key, false);
+        this.expanded.add(path);
+        this.expandAllWalk(e.value, path);
       }
     } else if (value.kind === "array") {
       for (const e of value.items) {
-        this.expanded.add(e.path);
-        this.expandAllWalk(e.value);
+        const path = childPath(parentPath, e.key, true);
+        this.expanded.add(path);
+        this.expandAllWalk(e.value, path);
       }
     }
   }
@@ -164,8 +175,8 @@ export class TreeView {
   private buildFlat(): void {
     const walk = (value: DataValue, key: string, path: string): void => {
       this.flat.push({ path, key, value });
-      if (value.kind === "object") for (const e of value.entries) walk(e.value, e.key, e.path);
-      else if (value.kind === "array") for (const e of value.items) walk(e.value, e.key, e.path);
+      if (value.kind === "object") for (const e of value.entries) walk(e.value, e.key, childPath(path, e.key, false));
+      else if (value.kind === "array") for (const e of value.items) walk(e.value, e.key, childPath(path, e.key, true));
     };
     walk(this.rootValue, "root", "root");
   }
@@ -179,29 +190,30 @@ export class TreeView {
       : this.rootValue.kind === "array" ? this.rootValue.items
       : null;
     if (rootChildren) {
-      for (const node of rootChildren) this.renderNode(node, this.container);
+      const isArray = this.rootValue.kind === "array";
+      for (const node of rootChildren) this.renderNode(node, this.container, childPath("root", node.key, isArray));
       if (this.editMode) this.renderContainerAppend(this.rootValue, this.container);
     } else {
       this.container.appendChild(this.scalarRow("", "root", this.rootValue));
     }
   }
 
-  private renderNode(node: DataNode, parent: HTMLElement): void {
+  private renderNode(node: DataNode, parent: HTMLElement, path: string): void {
     if (isContainer(node.value)) {
-      const open = this.expanded.has(node.path);
+      const open = this.expanded.has(path);
       const row = document.createElement("div");
       row.className = "tree-row tree-branch";
-      row.dataset.path = node.path;
+      row.dataset.path = path;
 
       if (this.editMode) {
-        this.addDeleteBtn(row, node.path);
+        this.addDeleteBtn(row, path);
       }
 
       const toggle = document.createElement("button");
       toggle.className = "tree-toggle";
       toggle.textContent = open ? "−" : "+";
       toggle.setAttribute("aria-expanded", String(open));
-      toggle.addEventListener("click", () => this.toggle(node.path));
+      toggle.addEventListener("click", () => this.toggle(path));
 
       const keyEl = document.createElement("span");
       keyEl.className = "tree-key";
@@ -223,12 +235,13 @@ export class TreeView {
       if (open) {
         const childWrap = document.createElement("div");
         childWrap.className = "tree-children";
-        for (const c of containerChildren) this.renderNode(c, childWrap);
+        const childIsArray = node.value.kind === "array";
+        for (const c of containerChildren) this.renderNode(c, childWrap, childPath(path, c.key, childIsArray));
         if (this.editMode) this.renderContainerAppend(node.value, childWrap);
         parent.appendChild(childWrap);
       }
     } else {
-      parent.appendChild(this.scalarRow(node.key, node.path, node.value));
+      parent.appendChild(this.scalarRow(node.key, path, node.value));
     }
   }
 
@@ -239,8 +252,6 @@ export class TreeView {
     addBtn.textContent = value.kind === "object" ? "+ Add key" : "+ Add item";
     addBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const parentPath = parent.closest<HTMLElement>("[data-path]")?.dataset.path ?? "root";
-
       let key = "";
       if (value.kind === "object") {
         const input = prompt("Key name:");
@@ -259,12 +270,9 @@ export class TreeView {
       }
 
       if (value.kind === "object") {
-        const fullPath = parentPath === "root" ? key : `${parentPath}.${key}`;
-        value.entries.push({ key, path: fullPath, value: newValue });
+        value.entries.push({ key, value: newValue });
       } else if (value.kind === "array") {
-        const idx = value.items.length;
-        const fullPath = `${parentPath}[${idx}]`;
-        value.items.push({ key: String(idx), path: fullPath, value: newValue });
+        value.items.push({ key: String(value.items.length), value: newValue });
       }
       this.fireEdit();
       this.refresh();
@@ -299,7 +307,6 @@ export class TreeView {
       if (!isNaN(idx)) pv.items.splice(idx, 1);
       pv.items.forEach((item, i) => {
         item.key = String(i);
-        item.path = parentPath ? `${parentPath}[${i}]` : `[${i}]`;
       });
     } else if (pv.kind === "object") {
       const cleanKey = key.replace(/^\./, "");
@@ -409,23 +416,24 @@ export class TreeView {
 
   private computeVisible(): void {
     const out: VisRow[] = [];
-    const walk = (children: DataNode[], depth: number): void => {
+    const walk = (children: DataNode[], depth: number, parentPath: string, isArray: boolean): void => {
       for (const node of children) {
+        const path = childPath(parentPath, node.key, isArray);
         const container = isContainer(node.value);
         const kids: DataNode[] =
           node.value.kind === "array" ? node.value.items
           : node.value.kind === "object" ? node.value.entries
           : [];
-        const open = container && this.expanded.has(node.path);
-        out.push({ path: node.path, key: node.key, value: node.value, depth, container, open, childCount: kids.length });
-        if (open) walk(kids, depth + 1);
+        const open = container && this.expanded.has(path);
+        out.push({ path, key: node.key, value: node.value, depth, container, open, childCount: kids.length });
+        if (open) walk(kids, depth + 1, path, node.value.kind === "array");
       }
     };
     const rootChildren =
       this.rootValue.kind === "object" ? this.rootValue.entries
       : this.rootValue.kind === "array" ? this.rootValue.items
       : null;
-    if (rootChildren) walk(rootChildren, 0);
+    if (rootChildren) walk(rootChildren, 0, "root", this.rootValue.kind === "array");
     else out.push({ path: "root", key: "", value: this.rootValue, depth: 0, container: false, open: false, childCount: 0 });
     this.vis = out;
   }
@@ -601,7 +609,7 @@ function findNode(root: DataValue, path: string): DataNode | null {
     }
   }
   const lastKey = parts[parts.length - 1]?.replace(/^\./, "").replace(/\[(\d+)\]$/, "$1") ?? "";
-  return { key: lastKey, path, value: current };
+  return { key: lastKey, value: current };
 }
 
 /** Find a DataNode by its path, returning the parent container node. */

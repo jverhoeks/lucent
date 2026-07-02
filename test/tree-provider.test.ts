@@ -3,17 +3,18 @@ import { renderTree } from "../src/data/tree";
 import { TreeSearchProvider } from "../src/search/tree-provider";
 import type { DataValue } from "../src/types";
 
+// Paths (root.alpha, root.beta.alpha2) are NOT in the fixture — TreeView derives
+// them from structure; the data-path assertions below prove that derivation.
 const data: DataValue = {
   kind: "object",
   entries: [
-    { key: "alpha", path: "root.alpha", value: { kind: "scalar", type: "string", text: "find-me" } },
+    { key: "alpha", value: { kind: "scalar", type: "string", text: "find-me" } },
     {
       key: "beta",
-      path: "root.beta",
       value: {
         kind: "object",
         entries: [
-          { key: "alpha2", path: "root.beta.alpha2", value: { kind: "scalar", type: "string", text: "deep find-me" } },
+          { key: "alpha2", value: { kind: "scalar", type: "string", text: "deep find-me" } },
         ],
       },
     },

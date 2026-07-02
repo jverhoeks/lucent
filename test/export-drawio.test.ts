@@ -58,6 +58,33 @@ describe("drawioFromGraph", () => {
     expect(edge.getAttribute("value")).toBe("ship it");
   });
 
+  it("preserves multiline node labels through XML attribute normalization", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 0, y: 0, w: 120, h: 80, label: "Car\n+speed\n+drive()" }],
+      edges: [],
+    };
+    const doc = parse(drawioFromGraph(g));
+    expect(doc.querySelector('mxCell[vertex="1"]')?.getAttribute("value"))
+      .toBe("Car<br>+speed<br>+drive()");
+  });
+
+  it("preserves rich label runs as draw.io HTML", () => {
+    const g: DiagramGraph = {
+      nodes: [{
+        id: "A", x: 0, y: 0, w: 120, h: 40, label: "Start the engine",
+        labelRuns: [
+          { text: "Start" },
+          { text: " the", bold: true },
+          { text: " engine", italic: true },
+        ],
+      }],
+      edges: [],
+    };
+    const value = parse(drawioFromGraph(g))
+      .querySelector('mxCell[vertex="1"]')?.getAttribute("value");
+    expect(value).toBe("Start<b> the</b><i> engine</i>");
+  });
+
   it("emits loose texts as text vertices", () => {
     const g: DiagramGraph = { nodes: [], edges: [], texts: [{ x: 100, y: 50, w: 48, h: 20, text: "ship it" }] };
     const doc = parse(drawioFromGraph(g));

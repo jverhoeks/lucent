@@ -19,7 +19,7 @@ import { createSearchProvider } from "./search/factory";
 import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
-import { detectFormat, siblingIndex, basename, dataLangOf } from "./format";
+import { detectFormat, siblingIndex, basename } from "./format";
 import { injectSprite, setButtonIcon, iconMarkup } from "./icons";
 import { readingTimeLabel } from "./reading-time";
 import { loadSession, saveSession } from "./session";
@@ -232,12 +232,21 @@ export function initApp(adapter: PlatformAdapter): void {
     saveBtn.hidden = !isEdit;
     saveBtn.disabled = !manager.isEditing();
 
-    // Web download button visibility
-    const dlSelect = document.querySelector(".download-format") as HTMLElement | null;
-    const dlBtn = document.getElementById("btn-download") as HTMLElement | null;
+    // Download / conversion controls are available on both platforms.
+    const dlSelect = document.querySelector<HTMLSelectElement>(".download-format");
+    const dlBtn = document.getElementById("btn-download") as HTMLButtonElement | null;
     if (dlSelect && dlBtn) {
       dlSelect.hidden = !has;
       dlBtn.hidden = !has;
+      for (const option of Array.from(dlSelect.options)) {
+        if (["json", "yaml", "toml", "ini"].includes(option.value)) {
+          option.disabled = fmt !== "data";
+        } else if (option.value === "md") {
+          option.disabled = fmt !== "markdown";
+        }
+      }
+      if (dlSelect.selectedOptions[0]?.disabled) dlSelect.value = "";
+      dlBtn.disabled = !dlSelect.value;
     }
 
     // Reading-time estimate — Markdown only; hidden for data/log/text tabs.
@@ -427,7 +436,7 @@ export function initApp(adapter: PlatformAdapter): void {
   btn("btn-close-all").addEventListener("click", () => manager.closeAll());
 
   // ---- Platform-specific toolbar ----
-  // Web: hide Next (no directory concept), hide export HTML/PDF, add Download
+  // Web: hide Next (no directory concept) and the duplicate native export buttons.
   const isWeb = adapter.platform === "web";
   const btnNext = btn("btn-next");
   if (isWeb) {
@@ -436,12 +445,11 @@ export function initApp(adapter: PlatformAdapter): void {
     btn("btn-export-pdf").hidden = true;
   }
 
-  if (isWeb) {
-    const group = btnNext.closest(".group")!;
-    const dlSelect = document.createElement("select");
-    dlSelect.className = "download-format";
-    dlSelect.title = "Download format";
-    dlSelect.innerHTML = `
+  const group = btnNext.closest(".group")!;
+  const dlSelect = document.createElement("select");
+  dlSelect.className = "download-format";
+  dlSelect.title = "Download or convert format";
+  dlSelect.innerHTML = `
       <option value="">Download as…</option>
       <option value="md">Markdown (.md)</option>
       <option value="html">HTML (.html)</option>
@@ -451,64 +459,81 @@ export function initApp(adapter: PlatformAdapter): void {
       <option value="toml">TOML (.toml)</option>
       <option value="ini">INI (.ini)</option>
     `;
-    const dlBtn = document.createElement("button");
-    dlBtn.id = "btn-download";
-    dlBtn.className = "primary";
-    dlBtn.setAttribute("aria-label", "Download");
-    dlBtn.setAttribute("data-tip", "Download");
-    dlBtn.innerHTML = iconMarkup("ic-download");
-    dlBtn.disabled = true;
-    dlBtn.addEventListener("click", async () => {
-      const fmt = dlSelect.value;
-      if (!fmt) return;
-      const src = manager.getActiveRawText();
-      if (!src) return;
-      const path = manager.getActivePath() ?? "untitled";
-      const base = basename(path).replace(/\.[^.]+$/, "") || "document";
-      try {
-        let content = src;
-        let mime = "text/plain";
-        let ext = fmt;
-        if (fmt === "html" || fmt === "pdf") {
-          content = (await import("./export")).buildStandaloneHtml(
-            manager.getActiveDisplayedHtml(),
-            fmt === "pdf",
-          );
-          mime = "text/html";
-          ext = "html";
+  const dlBtn = document.createElement("button");
+  dlBtn.id = "btn-download";
+  dlBtn.className = "primary";
+  dlBtn.setAttribute("aria-label", "Download or convert");
+  dlBtn.setAttribute("data-tip", "Download or convert");
+  dlBtn.innerHTML = iconMarkup("ic-download");
+  dlBtn.disabled = true;
+  dlBtn.addEventListener("click", async () => {
+    const fmt = dlSelect.value;
+    if (!fmt) return;
+    const src = manager.getActiveRawText();
+    if (!src) return;
+    const path = manager.getActivePath() ?? "untitled";
+    const base = basename(path).replace(/\.[^.]+$/, "") || "document";
+    try {
+      if (fmt === "pdf") {
+        if (!isWeb) {
+          await exportPdf(src, adapter);
         } else {
-          const fromFmt = dataLangOf(path) ?? "markdown";
-          if (fromFmt !== "markdown" && fmt !== "md" && fromFmt !== fmt) {
-            content = await convertData(src, fromFmt, fmt);
-          }
-          const mimeMap: Record<string, string> = {
-            md: "text/markdown", html: "text/html", json: "application/json",
-            yaml: "text/yaml", toml: "text/toml", ini: "text/plain",
-          };
-          mime = mimeMap[fmt] ?? "text/plain";
-        }
-        if (fmt === "pdf") {
+          const content = (await import("./export")).buildStandaloneHtml(
+            manager.getActiveDisplayedHtml(),
+            true,
+          );
           const blob = new Blob([content], { type: "text/html" });
           const url = URL.createObjectURL(blob);
           window.open(url, "_blank");
           setTimeout(() => URL.revokeObjectURL(url), 10000);
-        } else {
-          downloadFile(content, `${base}.${ext}`, mime);
         }
-      } catch (err) {
-        showBanner(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+      } else {
+        let content = src;
+        let mime = "text/plain";
+        const ext = fmt;
+        if (fmt === "html") {
+          content = (await import("./export")).buildStandaloneHtml(
+            manager.getActiveDisplayedHtml(),
+          );
+          mime = "text/html";
+        } else if (fmt === "md") {
+          if (manager.getActiveFormat() !== "markdown") {
+            throw new Error("Markdown output requires a Markdown source");
+          }
+          mime = "text/markdown";
+        } else {
+          const from = manager.getActiveDataLang();
+          if (!from) throw new Error("Structured output requires a JSON, YAML, TOML, or INI source");
+          content = await convertData(src, from, fmt);
+          const mimeMap: Record<string, string> = {
+            json: "application/json", yaml: "text/yaml", toml: "text/toml", ini: "text/plain",
+          };
+          mime = mimeMap[fmt] ?? "text/plain";
+        }
+        if (isWeb) {
+          downloadFile(content, `${base}.${ext}`, mime);
+        } else {
+          const destination = await adapter.saveDialog({
+            defaultPath: `${base}.${ext}`,
+            filters: [{ name: fmt.toUpperCase(), extensions: [ext] }],
+          });
+          if (destination) await adapter.saveTextFile(destination, content);
+        }
       }
-      dlSelect.value = "";
-    });
-    dlSelect.addEventListener("change", () => {
-      dlBtn.disabled = !dlSelect.value;
-    });
-    group.appendChild(dlSelect);
-    group.appendChild(dlBtn);
+    } catch (err) {
+      showBanner(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    dlSelect.value = "";
+    dlBtn.disabled = true;
+  });
+  dlSelect.addEventListener("change", () => {
+    dlBtn.disabled = !dlSelect.value;
+  });
+  group.appendChild(dlSelect);
+  group.appendChild(dlBtn);
 
-    dlSelect.hidden = true;
-    dlBtn.hidden = true;
-  }
+  dlSelect.hidden = true;
+  dlBtn.hidden = true;
 
   btn("btn-next").addEventListener("click", async () => {
     const cur = manager.getActivePath();

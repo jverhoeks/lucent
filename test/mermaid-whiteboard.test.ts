@@ -5,6 +5,8 @@ import {
   svgToWhiteboardClipboard,
   extractGraph,
   assignContainment,
+  whiteboardFill,
+  parseCssColor,
   type DiagramGraph,
   type IRGroup,
   type IRNode,
@@ -66,6 +68,11 @@ describe("encodeWhiteboardClipboard", () => {
     // and the base64 payload still round-trips
     expect(decodeClipboard(html).filter((e: any) => e.type === "shape")).toHaveLength(2);
   });
+
+  it("includes node and edge labels in the plain-text clipboard fallback", () => {
+    const result = svgToWhiteboardClipboard(parseSvg(FLOWCHART_SVG));
+    expect(result.text).toBe("Alpha\nBeta\nyes");
+  });
 });
 
 describe("extractGraph (flowchart)", () => {
@@ -80,6 +87,49 @@ describe("extractGraph (flowchart)", () => {
     expect(a.label).toBe("Alpha");
   });
 
+  it("restores spaces between Mermaid word tspans and retains emphasis", () => {
+    const svg = parseSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <g class="nodes"><g class="node" id="mermaid-1-flowchart-A-0" transform="translate(50, 20)">
+          <rect class="label-container" x="-50" y="-20" width="100" height="40"/>
+          <g class="label"><text><tspan class="row">
+            <tspan class="text-inner-tspan">Start</tspan><tspan class="text-inner-tspan" font-weight="bold">the</tspan><tspan class="text-inner-tspan">engine</tspan>
+          </tspan></text></g>
+        </g></g>
+      </svg>`);
+    const graph = extractGraph(svg);
+    expect(graph.nodes[0].label).toBe("Start the engine");
+    expect(graph.nodes[0].labelRuns).toEqual([
+      { text: "Start", bold: undefined, italic: undefined },
+      { text: " the", bold: true, italic: undefined },
+      { text: " engine", bold: undefined, italic: undefined },
+    ]);
+    const shape = whiteboardFromGraph(graph, seqIds())[0];
+    const content = JSON.parse(shape.text as string).content[0].content;
+    expect(content.map((n: any) => n.text).join("")).toBe("Start the engine");
+    expect(content[1].marks).toEqual([{ type: "strong" }]);
+  });
+
+  it("keeps class/ER label rows as editable hard line breaks", () => {
+    const svg = parseSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg"><g class="nodes"><g class="node" id="mermaid-1-classId-Car-0" transform="translate(50,50)">
+        <rect class="label-container" x="-50" y="-40" width="100" height="80"/>
+        <g class="label">
+          <text font-weight="bold">Car</text>
+          <text>+speed: number</text>
+          <text>+drive()</text>
+        </g>
+      </g></g></svg>`);
+    const graph = extractGraph(svg);
+    expect(graph.nodes[0].label).toBe("Car\n+speed: number\n+drive()");
+    const shape = whiteboardFromGraph(graph, seqIds())[0];
+    const content = JSON.parse(shape.text as string).content[0].content;
+    expect(content.map((node: any) => node.type)).toEqual([
+      "text", "hardBreak", "text", "hardBreak", "text",
+    ]);
+    expect(content[0].marks).toEqual([{ type: "strong" }]);
+  });
+
   it("extracts edges with endpoints from the path id and an arrow cap", () => {
     const g = extractGraph(parseSvg(FLOWCHART_SVG));
     expect(g.edges).toHaveLength(1);
@@ -88,6 +138,50 @@ describe("extractGraph (flowchart)", () => {
       targetId: "B",
       arrowEnd: true,
     });
+  });
+
+  it("preserves Mermaid dotted edges as non-solid Whiteboard strokes", () => {
+    const svg = parseSvg(FLOWCHART_SVG.replace(
+      "edge-pattern-solid",
+      "edge-pattern-dotted",
+    ));
+    const connector = whiteboardFromGraph(extractGraph(svg), seqIds())
+      .find((element) => element.type === "connector")!;
+    expect(connector.strokeStyle).toBe(2);
+  });
+
+  it("matches edge labels by Mermaid data-id when DOM order differs", () => {
+    const svg = parseSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <g class="edgePaths">
+          <path data-id="L_A_B_0" d="M0,0L100,0"/>
+          <path data-id="L_B_C_0" d="M100,0L200,0"/>
+        </g>
+        <g class="edgeLabels">
+          <g class="edgeLabel"><g class="label" data-id="L_B_C_0"><text>second</text></g></g>
+          <g class="edgeLabel"><g class="label" data-id="L_A_B_0"><text>first</text></g></g>
+        </g>
+        <g class="nodes">
+          <g class="node" id="mermaid-1-flowchart-A-0" transform="translate(0,0)"><rect class="label-container" width="10" height="10"/><text>A</text></g>
+          <g class="node" id="mermaid-1-flowchart-B-0" transform="translate(100,0)"><rect class="label-container" width="10" height="10"/><text>B</text></g>
+          <g class="node" id="mermaid-1-flowchart-C-0" transform="translate(200,0)"><rect class="label-container" width="10" height="10"/><text>C</text></g>
+        </g>
+      </svg>`);
+    const graph = extractGraph(svg);
+    expect(graph.edges.map((edge) => edge.label)).toEqual(["first", "second"]);
+  });
+
+  it("keeps self-loop edges anchored to the same shape", () => {
+    const svg = parseSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <g class="edgePaths"><path data-id="L_A_A_0" d="M10,0C40,-40 40,40 10,0" marker-end="url(#arrow)"/></g>
+        <g class="nodes"><g class="node" id="mermaid-1-flowchart-A-0" transform="translate(0,0)"><rect class="label-container" x="-10" y="-10" width="20" height="20"/><text>A</text></g></g>
+      </svg>`);
+    const graph = extractGraph(svg);
+    expect(graph.edges).toHaveLength(1);
+    const connector = whiteboardFromGraph(graph, seqIds()).find((element) => element.type === "connector")!;
+    expect(connector.sourceIndex).toBe(connector.targetIndex);
+    expect(connector.sourceAnchor).not.toEqual(connector.targetAnchor);
   });
 
   it("produces a payload that connects the two shapes end-to-end", () => {
@@ -122,6 +216,15 @@ describe("extractGraph (subgraph clusters)", () => {
     expect(inner.parentId).toBe(outer.id);
     expect(g.nodes.find((n) => n.id === "A")!.groupId).toBe(inner.id);
     expect(g.nodes.find((n) => n.id === "B")!.groupId).toBe(outer.id);
+  });
+
+  it("restores spaces in cluster labels split across tspans", () => {
+    const svg = parseSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg"><g class="clusters"><g class="cluster" id="g">
+        <rect x="0" y="0" width="100" height="100"/>
+        <g class="cluster-label"><text><tspan class="row"><tspan class="text-inner-tspan">AWS</tspan><tspan class="text-inner-tspan">Account</tspan></tspan></text></g>
+      </g></g><g class="nodes"><g class="node" id="mermaid-1-flowchart-A-0"><rect class="label-container" width="10" height="10"/><text>A</text></g></g></svg>`);
+    expect(extractGraph(svg).groups?.[0].label).toBe("AWS Account");
   });
 });
 
@@ -188,6 +291,17 @@ describe("extractGraph (state diagram: g.node without flowchart ids)", () => {
     expect(e.arrowEnd).toBe(true);
   });
 
+  it("resolves relative curved path endpoints before matching nodes", () => {
+    const svg = parseSvg(STATE_SVG.replace(
+      "M100,67 C100,90 100,110 100,133",
+      "m100,67 c0,23 0,43 0,66",
+    ));
+    const graph = extractGraph(svg);
+    expect(graph.edges).toHaveLength(1);
+    expect(graph.nodes.find((n) => n.id === graph.edges[0].sourceId)?.label).toBe("Written");
+    expect(graph.nodes.find((n) => n.id === graph.edges[0].targetId)?.label).toBe("Forgotten");
+  });
+
   it("attaches the transition label to its edge (index-parallel)", () => {
     const g = extractGraph(parseSvg(STATE_SVG));
     expect(g.edges[0].label).toBe("ship it");
@@ -230,6 +344,31 @@ describe("extractGraph (non-flowchart geometry: lines & polylines)", () => {
     const poly = g.lines!.find((l) => l.points.length === 3)!;
     expect(poly.points[0]).toEqual([20, 20]);
     expect(poly.arrowEnd).toBe(true);
+  });
+
+  it("does not emit marker and defs paths as visible connectors", () => {
+    const svg = parseSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <defs><marker><path d="M0 0 L10 5 L0 10 Z"/></marker></defs>
+        <path d="M20 20 L120 20"/>
+      </svg>`);
+    const graph = extractGraph(svg);
+    expect(graph.lines).toHaveLength(1);
+    expect(graph.lines?.[0].points).toEqual([[20, 20], [120, 20]]);
+  });
+
+  it("parses hex colors and treats transparent RGBA as no color", () => {
+    expect(parseCssColor("#fa0")).toEqual({ r: 255, g: 170, b: 0 });
+    expect(parseCssColor("#12abef")).toEqual({ r: 18, g: 171, b: 239 });
+    expect(parseCssColor("rgba(0,0,0,0)")).toBeNull();
+  });
+
+  it("uses all four transformed bbox corners for rotated generic shapes", () => {
+    const svg = parseSvg(`<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>`);
+    const rect = svg.querySelector("rect") as any;
+    rect.getBBox = () => ({ x: 0, y: 0, width: 10, height: 20 });
+    rect.getCTM = () => ({ a: 0, b: 1, c: -1, d: 0, e: 100, f: 50 });
+    expect(extractGraph(svg).nodes[0]).toMatchObject({ x: 90, y: 55, w: 20, h: 10 });
   });
 
   it("emits free connectors (no anchors) for lines, recentered", () => {
@@ -321,6 +460,16 @@ describe("whiteboardFromGraph (sections)", () => {
     expect(els.indexOf(secs[0])).toBeLessThan(firstShape);
   });
 
+  it("centers a group-only diagram around the paste origin", () => {
+    const g: DiagramGraph = {
+      nodes: [],
+      edges: [],
+      groups: [{ id: "G", label: "Only group", x: 500, y: 300, w: 200, h: 100 }],
+    };
+    const section = whiteboardFromGraph(g, seqIds())[0];
+    expect(section.position).toEqual({ x: 0, y: 0, type: "Vector2" });
+  });
+
   it("colors a dark cluster's section with an observed-valid palette color, not an invented one", () => {
     // The whiteboard renders a pasted section's fill from a constrained palette;
     // an off-palette RGB (our old invented {244,245,247}) falls back to a dark
@@ -379,14 +528,14 @@ describe("whiteboardFromGraph", () => {
     expect(JSON.parse(s.text as string).content[0].content[0].marks).toBeUndefined();
   });
 
-  it("keeps a light fill as-is, without fabricating a color", () => {
+  it("snaps a light fill to the matching supported Whiteboard swatch", () => {
     const g: DiagramGraph = {
       nodes: [{ id: "A", x: 0, y: 0, w: 100, h: 40, label: "Alpha", fill: { r: 236, g: 236, b: 255 } }],
       edges: [],
     };
     const s = whiteboardFromGraph(g, seqIds())[0];
     expect(s.fillEnabled).toBe(true);
-    expect(s.color).toMatchObject({ x: 236, y: 236, z: 255 });
+    expect(s.color).toMatchObject({ x: 204, y: 224, z: 255 });
   });
 
   it("emits one centered shape for a single node", () => {
@@ -507,11 +656,15 @@ describe("whiteboardFromGraph", () => {
       edges: [],
     };
     const [a, b] = whiteboardFromGraph(g, seqIds());
-    expect(a.color).toEqual({ x: 255, y: 239, z: 174, type: "Vector3" });
+    expect(a.color).toEqual({ x: 248, y: 230, z: 160, type: "Vector3" });
     expect(a.strokeColor).toEqual({ x: 174, y: 42, z: 25, type: "Vector3" });
     expect(a.fillEnabled).toBe(true);
     // absent fill → white (whiteboard ignores fillEnabled:false and paints color)
     expect(b.fillEnabled).toBe(true);
     expect(b.color).toEqual({ x: 255, y: 255, z: 255, type: "Vector3" });
+  });
+
+  it("maps arbitrary orange to an accepted orange swatch instead of black", () => {
+    expect(whiteboardFill({ r: 255, g: 165, b: 0 })).toEqual({ r: 254, g: 222, b: 200 });
   });
 });

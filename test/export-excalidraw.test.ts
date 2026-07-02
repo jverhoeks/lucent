@@ -79,4 +79,43 @@ describe("excalidrawFromGraph", () => {
     const text = data.elements.find((e: any) => e.type === "text" && e.text === "Alpha");
     expect(text.containerId).toBe(a.id);
   });
+
+  it("sizes multiline bound text for every line", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 0, y: 0, w: 120, h: 100, label: "Car\n+speed\n+drive()" }],
+      edges: [],
+    };
+    const data = JSON.parse(excalidrawFromGraph(g, seqIds()));
+    const text = data.elements.find((e: any) => e.type === "text");
+    expect(text.height).toBe(60);
+    expect(text.y).toBe(-30);
+  });
+
+  it("keeps both arrowheads on free lines", () => {
+    const g: DiagramGraph = {
+      nodes: [],
+      edges: [],
+      lines: [{ points: [[0, 0], [100, 0]], arrowStart: true, arrowEnd: true }],
+    };
+    const data = JSON.parse(excalidrawFromGraph(g, seqIds()));
+    const line = data.elements.find((e: any) => e.type === "line");
+    expect(line.startArrowhead).toBe("arrow");
+    expect(line.endArrowhead).toBe("arrow");
+  });
+
+  it("emits a visible self-loop with one arrow binding on its shape", () => {
+    const g: DiagramGraph = {
+      nodes: [{ id: "A", x: 100, y: 100, w: 80, h: 40, label: "A" }],
+      edges: [{ sourceId: "A", targetId: "A", arrowEnd: true }],
+    };
+    const data = JSON.parse(excalidrawFromGraph(g, seqIds()));
+    const shape = data.elements.find((e: any) => e.type === "rectangle");
+    const arrow = data.elements.find((e: any) => e.type === "arrow");
+    expect(arrow.width).toBeGreaterThan(0);
+    expect(arrow.height).toBeGreaterThan(0);
+    expect(arrow.points).toHaveLength(4);
+    expect(arrow.startBinding.elementId).toBe(shape.id);
+    expect(arrow.endBinding.elementId).toBe(shape.id);
+    expect(shape.boundElements.filter((e: any) => e.type === "arrow")).toHaveLength(1);
+  });
 });

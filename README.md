@@ -30,11 +30,14 @@ split-screen editor for when you want to write too.
 - **Mermaid diagrams you can take with you** — hover any diagram for a toolbar:
   **copy** or **download** as SVG / PNG, or **copy as editable shapes** straight
   into [Atlassian Whiteboard](https://www.atlassian.com/software/confluence/whiteboards),
-  [draw.io](https://www.drawio.com/), or [Excalidraw](https://excalidraw.com/) —
+  [draw.io](https://www.drawio.com/), Lucidchart, or
+  [Excalidraw](https://excalidraw.com/) —
   native shapes, text, and connectors, not a flat image. See
   [Copy & export](docs/copy-and-export.md).
 - **Structured data as a tree** — JSON, YAML, TOML, and INI render as a
-  navigable, collapsible tree instead of raw text.
+  navigable, collapsible tree instead of raw text. YAML, TOML, INI, and
+  JSON-style `//` / `/* ... */` comments remain visible with their source line
+  context.
 - **Logs, made readable** — level highlighting, tail / follow for live files,
   in-view search, and inline decoding of embedded (even base64-encoded) JSON.
 - **Markdown and structured-data editor** — opt-in split-screen
@@ -60,7 +63,9 @@ split-screen editor for when you want to write too.
 - **Download and convert as another type** — the desktop and web builds both
   provide **Download as…**. Export rendered content as Markdown, standalone
   HTML, or PDF, and convert structured files between JSON, YAML, TOML, and INI.
-  Desktop uses native Save dialogs; the browser downloads the result directly.
+  Comments are preserved between comment-capable formats, including
+  nonstandard JSON comments. Desktop uses native Save dialogs; the browser
+  downloads the result directly.
 - **Opens `.md` for you** — registers as a `.md` file handler on the OS, so
   double-clicking a Markdown file opens it in Lucent.
 - **Private by design** — `markdown-it` runs with raw-HTML passthrough disabled,

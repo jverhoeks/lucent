@@ -25,10 +25,23 @@ describe("parseData", () => {
     });
   });
 
+  it("parses JSON with // and /* */ comments", () => {
+    const r = parseData('// config\n{"enabled": true, /* rollout */ "name": "lucent"}', "json");
+    expect(r.ok).toBe(true);
+    expect(r.comments).toEqual([
+      { text: "config", line: 1, inline: false },
+      { text: "rollout", line: 2, inline: true },
+    ]);
+  });
+
   it("parses YAML", () => {
-    const r = parseData("a: 1\nb:\n  - x\n  - y", "yaml");
+    const r = parseData("# heading\na: 1 # detail\nb:\n  - x\n  - y", "yaml");
     expect(r.ok).toBe(true);
     expect(r.value?.kind).toBe("object");
+    expect(r.comments).toEqual([
+      { text: "heading", line: 1, inline: false },
+      { text: "detail", line: 2, inline: true },
+    ]);
   });
 
   it("parses TOML", () => {
@@ -50,6 +63,22 @@ describe("parseData", () => {
     const out = serializeData(parsed.value!, "yaml");
     // Re-parsing the serialized output yields the same value model.
     expect(parseData(out, "yaml")).toEqual(parsed);
+  });
+
+  it("retains comments when a tree edit serializes YAML", () => {
+    const parsed = parseData("# config\nenabled: true # rollout\n", "yaml");
+    const out = serializeData(parsed.value!, "yaml", parsed.comments);
+    expect(out).toContain("# [line 1] config");
+    expect(out).toContain("# [line 2, inline] rollout");
+    expect(parseData(out, "yaml").comments).toEqual(parsed.comments);
+  });
+
+  it("retains nonstandard comments when serializing JSON", () => {
+    const parsed = parseData("// config\n{\"enabled\": true}\n", "json");
+    const out = serializeData(parsed.value!, "json", parsed.comments);
+    expect(out).toContain("// [line 1] config");
+    expect(out).toContain('"enabled": true');
+    expect(parseData(out, "json").comments).toEqual(parsed.comments);
   });
 
   it("returns an error result on invalid JSON (no throw)", () => {

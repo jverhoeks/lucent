@@ -1143,6 +1143,41 @@ body.drag-over::after {
   border-color: var(--accent);
 }
 
+.data-comments {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.data-comments-title {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-weight: 600;
+}
+
+.data-comment {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  line-height: 1.5;
+}
+
+.data-comment-line {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.data-comment-text {
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .tree-row {
   display: flex;
   align-items: center;

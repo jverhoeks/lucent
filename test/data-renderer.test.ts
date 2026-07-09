@@ -10,6 +10,18 @@ describe("dataRenderer", () => {
     expect(c.querySelector(".raw")).toBeNull();
   });
 
+  it("renders YAML comments with source line context above the tree", () => {
+    const c = document.createElement("div");
+    dataRenderer.render("# config\nenabled: true # rollout", c, {
+      theme: "light",
+      dataLang: "yaml",
+    });
+    expect(c.querySelector(".data-comments-title")?.textContent).toBe("Comments (2)");
+    expect(Array.from(c.querySelectorAll(".data-comment-text")).map((el) => el.textContent))
+      .toEqual(["config", "rollout"]);
+    expect(c.querySelector(".tree")).toBeTruthy();
+  });
+
   it("falls back to raw text (not a parse error) above the size cap", () => {
     const c = document.createElement("div");
     // Length over the cap short-circuits before parseData, so the content need

@@ -63,13 +63,14 @@ it there.
 | **SVG / PNG** (download) | file | — | Saves the diagram to disk. |
 | **WB** — Atlassian Whiteboard | native whiteboard clipboard (`text/html`) | an [Atlassian Whiteboard](https://www.atlassian.com/software/confluence/whiteboards) | Nodes, labels, and connectors come in as real, editable objects. |
 | **DIO** — draw.io | mxGraph XML | a [draw.io / diagrams.net](https://www.drawio.com/) canvas | Open-format XML that draw.io recognizes on paste. |
+| **LC** — Lucidchart | mxGraph XML | Lucidchart's draw.io import path | Same editable graph payload as draw.io, labeled for Lucid workflows. |
 | **EX** — Excalidraw | Excalidraw clipboard JSON | an [Excalidraw](https://excalidraw.com/) canvas | Triangles and parallelograms degrade to rectangles (Excalidraw has no such primitive). |
 
 Shape kind, fill color, edge labels, and arrow directions are carried across
 where the target supports them. A diagram that fails to parse keeps its source
 text and gets no toolbar.
 
-**How to use:** hover the diagram → click **WB** / **DIO** / **EX** → switch to
+**How to use:** hover the diagram → click **WB** / **DIO** / **LC** / **EX** → switch to
 the destination tool → paste (`Cmd/Ctrl+V`). A ✓ on the button confirms the copy;
 ✗ means it failed.
 
@@ -84,6 +85,11 @@ format and Lucent converts on the way out:
 - **Markdown (.md)**, **HTML (.html)**, **PDF (.pdf)** — the rendered document.
 - **JSON / YAML / TOML / INI** — for structured-data files, convert *between*
   formats (e.g. open a YAML config, download it as JSON).
+
+YAML, TOML, INI, and JSON-style `//` / `/* ... */` comments are retained as a
+source-ordered comment header when converting between formats. JSON output uses
+nonstandard `//` comments when needed. Downloading in the original format
+preserves the source exactly.
 
 HTML and PDF reuse the same self-contained export. On the web, PDF opens a
 print-ready page in a new tab; desktop uses the native PDF exporter.

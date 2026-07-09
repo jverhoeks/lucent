@@ -184,25 +184,26 @@ function resolveTheme(theme: Theme): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-type MermaidKind = "svg" | "png" | "wb" | "dio" | "exc";
+type MermaidKind = "svg" | "png" | "wb" | "dio" | "luc" | "exc";
 
 /** One action group. "Copy" offers SVG + PNG + Whiteboard + draw.io +
- *  Excalidraw; "Download" offers SVG + PNG (the editable payloads are
+ *  Lucidchart + Excalidraw; "Download" offers SVG + PNG (the editable payloads are
  *  clipboard-only). */
 function mermaidActionGroup(act: "copy" | "download", iconId: string, verb: string): string {
-  const LABEL: Record<MermaidKind, string> = { svg: "SVG", png: "PNG", wb: "WB", dio: "DIO", exc: "EX" };
+  const LABEL: Record<MermaidKind, string> = { svg: "SVG", png: "PNG", wb: "WB", dio: "DIO", luc: "LC", exc: "EX" };
   const TITLE: Record<MermaidKind, string> = {
     svg: `${verb} as SVG`,
     png: `${verb} as PNG`,
     wb: `${verb} to Whiteboard`,
     dio: `${verb} to draw.io`,
+    luc: `${verb} for Lucidchart`,
     exc: `${verb} to Excalidraw`,
   };
   const btn = (kind: MermaidKind) =>
     `<button class="mermaid-btn" type="button" data-act="${act}" data-kind="${kind}" ` +
     `title="${TITLE[kind]}" aria-label="${TITLE[kind]}">` +
     `<span class="mermaid-btn-label">${LABEL[kind]}</span></button>`;
-  const extra = act === "copy" ? btn("wb") + btn("dio") + btn("exc") : "";
+  const extra = act === "copy" ? btn("wb") + btn("dio") + btn("luc") + btn("exc") : "";
   return (
     `<div class="mermaid-group" role="group" aria-label="${verb}">` +
     `<span class="mermaid-group-icon" title="${verb}" aria-hidden="true">${iconMarkup(iconId)}</span>` +

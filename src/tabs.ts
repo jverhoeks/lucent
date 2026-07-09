@@ -11,6 +11,7 @@ import type { TreeView } from "./data/tree";
 import type { SessionState, SessionTab } from "./session";
 
 export const STDIN_PATH = "<stdin>";
+export const SCRATCH_PATH_PREFIX = "<scratch:";
 
 /** A rendered (non-windowed) log with more than this many lines is rendered via
  *  a virtualized in-memory VirtualLogView instead of a full-DOM LogView. */
@@ -44,8 +45,12 @@ export interface TabHooks {
   onChange: () => void; // tabs/active changed — refresh toolbar enabled state
   onTabClosed: (path: string) => void; // stop watching one closed document
   onCloseAll: () => void; // stop watching everything
-  onSave?: (path: string, content: string) => Promise<void>; // save editor content to disk
+  onSave?: (path: string, content: string) => Promise<string | null | void>; // save editor content to disk
   resolveLocalImage?: (basePath: string, relativePath: string) => Promise<string | null>;
+}
+
+export function isScratchPath(path: string | undefined): boolean {
+  return !!path?.startsWith(SCRATCH_PATH_PREFIX);
 }
 
 /** The format actually used to render this tab (override beats detection). */
@@ -124,9 +129,9 @@ export class TabManager {
     if (active) active.scrollTop = this.content.scrollTop;
     return {
       version: 1,
-      activePath: active?.path === STDIN_PATH ? undefined : active?.path,
+      activePath: active?.path === STDIN_PATH || isScratchPath(active?.path) ? undefined : active?.path,
       tabs: this.tabs
-        .filter((tab) => tab.path !== STDIN_PATH)
+        .filter((tab) => tab.path !== STDIN_PATH && !isScratchPath(tab.path))
         .map((tab) => ({
           path: tab.path,
           forcedFormat: tab.forcedFormat,
@@ -234,6 +239,22 @@ export class TabManager {
       format,
       mode: format === "text" ? "raw" : "rendered",
       scrollTop: 0,
+    });
+    return this.activate(this.tabs.length - 1);
+  }
+
+  /** Open pasted/unsaved Markdown in a new editable scratch tab. */
+  openScratchMarkdown(content: string): void | Promise<void> {
+    const existing = this.tabs.filter((t) => isScratchPath(t.path)).length;
+    const n = existing + 1;
+    this.tabs.push({
+      path: `${SCRATCH_PATH_PREFIX}${Date.now()}-${n}.md>`,
+      title: n === 1 ? "Pasted.md" : `Pasted ${n}.md`,
+      content,
+      format: "markdown",
+      mode: "edit",
+      scrollTop: 0,
+      editDirty: true,
     });
     return this.activate(this.tabs.length - 1);
   }
@@ -464,10 +485,9 @@ export class TabManager {
           t.editDirty = false;
           return doExit();
         }
-        return saved.then(() => {
-          t.content = nextContent;
-          t.editDirty = false;
-          t.pendingDiskContent = undefined;
+        return saved.then((savedPath) => {
+          if (savedPath === null) return;
+          this.applySavedContent(t, nextContent, savedPath);
           this.renderTabbar();
           this.hooks.onChange();
           return doExit();
@@ -492,13 +512,46 @@ export class TabManager {
     const editorValue = this.activeEditorValue();
     if (!t || editorValue === null || !t.editDirty) return false;
     const nextContent = editorValue;
-    await this.hooks.onSave?.(t.path, nextContent);
-    t.content = nextContent;
-    t.editDirty = false;
-    t.pendingDiskContent = undefined;
+    const savedPath = await this.hooks.onSave?.(t.path, nextContent);
+    if (savedPath === null) return false;
+    this.applySavedContent(t, nextContent, savedPath);
     this.renderTabbar();
     this.hooks.onChange();
     return true;
+  }
+
+  private applySavedContent(t: Tab, content: string, savedPath?: string | void): void {
+    if (typeof savedPath === "string" && savedPath) {
+      const currentIndex = this.tabs.indexOf(t);
+      const existingIndex = this.tabs.findIndex((tab) => tab !== t && tab.path === savedPath);
+      if (existingIndex >= 0) {
+        const existing = this.tabs[existingIndex];
+        existing.content = content;
+        existing.editDirty = false;
+        existing.pendingDiskContent = undefined;
+        existing.format = detectFormat(savedPath);
+        existing.forcedFormat = undefined;
+        existing.forcedLang = undefined;
+        existing.mode = t.mode;
+        existing.scrollTop = t.scrollTop;
+        if (currentIndex >= 0) {
+          const [closed] = this.tabs.splice(currentIndex, 1);
+          this.hooks.onTabClosed(closed.path);
+        }
+        this.activeIndex = currentIndex >= 0 && currentIndex < existingIndex
+          ? existingIndex - 1
+          : existingIndex;
+        return;
+      }
+      t.path = savedPath;
+      t.title = basename(savedPath);
+      t.format = detectFormat(savedPath);
+      t.forcedFormat = undefined;
+      t.forcedLang = undefined;
+    }
+    t.content = content;
+    t.editDirty = false;
+    t.pendingDiskContent = undefined;
   }
 
   /** Preserve the active editor buffer before a repaint/tab switch destroys
@@ -879,6 +932,7 @@ export class TabManager {
             if (seq !== this.repaintSeq) return;
             try {
               const { parseData, serializeData } = await import("./data/parse");
+              const { renderStructuredComments } = await import("./data/comments");
               const { renderTree } = await import("./data/tree");
               if (seq !== this.repaintSeq) return;
 
@@ -909,12 +963,16 @@ export class TabManager {
                 return;
               }
 
-              currentTreeView = renderTree(result.value, prevPane, {
+              renderStructuredComments(result.comments, prevPane);
+              const treeWrap = document.createElement("div");
+              treeWrap.className = "tree";
+              prevPane.appendChild(treeWrap);
+              currentTreeView = renderTree(result.value, treeWrap, {
                 defaultDepth: 2,
                 editable: true,
                 onEdit: (val) => {
                   try {
-                    const serialized = serializeData(val, lang);
+                    const serialized = serializeData(val, lang, result.comments);
                     curText = serialized;
                     suppressPreview = true;
                     if (this.currentEditor) {

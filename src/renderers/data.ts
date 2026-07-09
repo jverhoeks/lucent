@@ -2,6 +2,7 @@ import { parseData } from "../data/parse";
 import { renderTree, TreeView } from "../data/tree";
 import { dataLangOf } from "../format";
 import type { Renderer, RenderCtx } from "../types";
+import { renderStructuredComments } from "../data/comments";
 
 /** Above this source length the tree view falls back to raw text.
  *
@@ -63,7 +64,9 @@ export const dataRenderer: Renderer = {
     const expandAll = button("Expand all", () => tree.expandAll());
     const collapseAll = button("Collapse all", () => tree.collapseAll());
     toolbar.append(expandAll, collapseAll);
-    container.append(toolbar, wrap);
+    container.appendChild(toolbar);
+    renderStructuredComments(result.comments, container);
+    container.appendChild(wrap);
   },
 };
 

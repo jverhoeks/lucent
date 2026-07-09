@@ -31,6 +31,12 @@ export type Format = "markdown" | "data" | "log" | "text";
 export type Mode = "rendered" | "raw" | "edit";
 export type DataLang = "json" | "yaml" | "toml" | "ini";
 
+export interface StructuredComment {
+  text: string;
+  line: number;
+  inline: boolean;
+}
+
 export interface SearchQuery {
   text: string;
   caseSensitive: boolean;
@@ -89,5 +95,6 @@ export interface DataNode {
 export interface DataParseResult {
   ok: boolean;
   value?: DataValue;
+  comments?: StructuredComment[];
   error?: { message: string; line?: number };
 }

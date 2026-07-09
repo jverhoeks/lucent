@@ -1,15 +1,17 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { parse as parseIni, stringify as stringifyIni } from "ini";
-import type { DataParseResult, DataLang, DataValue } from "../types";
+import type { DataParseResult, DataLang, DataValue, StructuredComment } from "../types";
 import { parseValueToModel } from "./parse-value";
+import { extractStructuredComments, prependStructuredComments, stripJsonComments } from "./comments";
 
 export function parseData(text: string, lang: DataLang): DataParseResult {
+  const comments = extractStructuredComments(text, lang);
   try {
     let parsed: unknown;
     switch (lang) {
       case "json":
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(stripJsonComments(text));
         break;
       case "yaml":
         parsed = parseYaml(text);
@@ -23,9 +25,9 @@ export function parseData(text: string, lang: DataLang): DataParseResult {
       default:
         throw new Error(`unsupported data language: ${lang}`);
     }
-    return { ok: true, value: parseValueToModel(parsed) };
+    return { ok: true, value: parseValueToModel(parsed), comments };
   } catch (e) {
-    return { ok: false, error: { message: (e as Error).message } };
+    return { ok: false, comments, error: { message: (e as Error).message } };
   }
 }
 
@@ -51,18 +53,28 @@ function modelToValue(v: DataValue): unknown {
 }
 
 /** Serialize a DataValue back to a string in the given format. */
-export function serializeData(value: DataValue, lang: DataLang): string {
+export function serializeData(
+  value: DataValue,
+  lang: DataLang,
+  comments: StructuredComment[] = [],
+): string {
   const raw = modelToValue(value);
+  let output: string;
   switch (lang) {
     case "json":
-      return JSON.stringify(raw, null, 2) + "\n";
+      output = JSON.stringify(raw, null, 2) + "\n";
+      break;
     case "yaml":
-      return stringifyYaml(raw, { indent: 2, lineWidth: 120 });
+      output = stringifyYaml(raw, { indent: 2, lineWidth: 120 });
+      break;
     case "toml":
-      return stringifyToml(raw as Record<string, unknown>) + "\n";
+      output = stringifyToml(raw as Record<string, unknown>) + "\n";
+      break;
     case "ini":
-      return stringifyIni(raw as Record<string, unknown>) + "\n";
+      output = stringifyIni(raw as Record<string, unknown>) + "\n";
+      break;
     default:
       throw new Error(`unsupported data language: ${lang}`);
   }
+  return prependStructuredComments(output, comments, lang);
 }

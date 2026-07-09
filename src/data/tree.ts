@@ -591,7 +591,8 @@ function findScroller(el: HTMLElement): HTMLElement {
 /** Find a node by path string within a DataValue tree. */
 function findNode(root: DataValue, path: string): DataNode | null {
   if (!path || path === "root") return null;
-  const parts = path.split(/(?=[.[])/);
+  const normalized = path.replace(/^root(?=\.|\[)/, "");
+  const parts = normalized.split(/(?=[.[])/).filter(Boolean);
   let current: DataValue = root;
   for (const part of parts) {
     const key = part.replace(/^\./, "").replace(/\[(\d+)\]$/, "$1");

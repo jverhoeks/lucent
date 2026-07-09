@@ -3,7 +3,7 @@ import { TabManager } from "../src/tabs";
 import { basename } from "../src/format";
 import { DEFAULT_SETTINGS } from "../src/types";
 
-function makeManager(onSave?: (path: string, content: string) => Promise<void>) {
+function makeManager(onSave?: (path: string, content: string) => Promise<string | null | void>) {
   const tabbar = document.createElement("nav");
   const content = document.createElement("main");
   document.body.append(tabbar, content);
@@ -155,6 +155,40 @@ describe("TabManager", () => {
 
     await expect(mgr.saveActive()).rejects.toThrow("disk full");
     expect(mgr.hasDirtyTabs()).toBe(true);
+  });
+
+  it("merges a saved scratch document into an already-open destination tab", async () => {
+    const { mgr, closed } = makeManager(async () => "/d/a.md");
+    await mgr.openOrActivate("/d/a.md", "# Existing");
+    await mgr.openScratchMarkdown("# Pasted");
+
+    await expect(mgr.saveActive()).resolves.toBe(true);
+
+    expect(mgr.count()).toBe(1);
+    expect(mgr.getActivePath()).toBe("/d/a.md");
+    expect(mgr.getActiveRawText()).toBe("# Pasted");
+    expect(mgr.hasDirtyTabs()).toBe(false);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toMatch(/^<scratch:/);
+  });
+
+  it("preserves structured comments when editing through the preview tree", async () => {
+    const saved: string[] = [];
+    const { mgr, content } = makeManager(async (_path, text) => { saved.push(text); });
+    await mgr.openOrActivate("/d/config.yaml", "# config\nenabled: true # rollout\n");
+    mgr.toggleEdit();
+
+    await vi.waitFor(() => expect(content.querySelector(".data-comments")).toBeTruthy());
+    const row = content.querySelector<HTMLElement>('[data-path="root.enabled"]')!;
+    row.click();
+    const input = row.querySelector<HTMLInputElement>(".tree-edit-input")!;
+    input.value = "false";
+    input.dispatchEvent(new FocusEvent("blur"));
+
+    await expect(mgr.saveActive()).resolves.toBe(true);
+    expect(saved[0]).toContain("# [line 1] config");
+    expect(saved[0]).toContain("# [line 2, inline] rollout");
+    expect(saved[0]).toContain("enabled: false");
   });
 
   it("preserves an inactive dirty draft when the file changes on disk", async () => {

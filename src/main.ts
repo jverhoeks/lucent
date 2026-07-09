@@ -1,5 +1,5 @@
 import "./styles.css";
-import { TabManager } from "./tabs";
+import { isScratchPath, TabManager } from "./tabs";
 import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
@@ -8,6 +8,7 @@ import {
   copyMermaidPng,
   copyMermaidWhiteboard,
   copyMermaidDrawio,
+  copyMermaidLucid,
   copyMermaidExcalidraw,
   mermaidSvgMarkup,
   mermaidPngBytes,
@@ -85,26 +86,6 @@ export async function collectTextDropPaths(
   return { paths, skipped };
 }
 
-/** Convert data between formats for download. */
-async function convertData(source: string, from: string, to: string): Promise<string> {
-  if (from === to) return source;
-  let parsed: unknown;
-  switch (from) {
-    case "json": parsed = JSON.parse(source); break;
-    case "yaml": { const { parse } = await import("yaml"); parsed = parse(source); break; }
-    case "toml": { const { parse } = await import("smol-toml"); parsed = parse(source); break; }
-    case "ini": { const { parse } = await import("ini"); parsed = parse(source); break; }
-    default: throw new Error(`Unsupported source format: ${from}`);
-  }
-  switch (to) {
-    case "json": return JSON.stringify(parsed, null, 2);
-    case "yaml": { const { stringify } = await import("yaml"); return stringify(parsed, { indent: 2 }); }
-    case "toml": { const { stringify } = await import("smol-toml"); return stringify(parsed as any); }
-    case "ini": { const { stringify } = await import("ini"); return stringify(parsed as any); }
-    default: throw new Error(`Unsupported target format: ${to}`);
-  }
-}
-
 export function initApp(adapter: PlatformAdapter): void {
   injectSprite();
   const tabbar = document.getElementById("tabbar")!;
@@ -141,9 +122,22 @@ export function initApp(adapter: PlatformAdapter): void {
 
   const manager = new TabManager(tabbar, content, settings, {
     onChange: () => { refreshToolbar(); rebindSearch(); refreshOutline(); scheduleSessionSave(); },
-    onTabClosed: (path) => void adapter.unwatchFile(path),
+    onTabClosed: (path) => { if (!isScratchPath(path)) void adapter.unwatchFile(path); },
     onCloseAll: () => void adapter.unwatchAll(),
     onSave: async (path, content) => {
+      if (isScratchPath(path)) {
+        const destination = await adapter.saveDialog({
+          defaultPath: "Pasted.md",
+          filters: [
+            { name: "Markdown", extensions: ["md", "markdown"] },
+            { name: "Text", extensions: ["txt"] },
+          ],
+        });
+        if (!destination) return null;
+        await adapter.saveTextFile(destination, content);
+        await adapter.watchFile(destination);
+        return destination;
+      }
       await adapter.saveTextFile(path, content);
     },
     resolveLocalImage: adapter.localImageUrl
@@ -196,6 +190,7 @@ export function initApp(adapter: PlatformAdapter): void {
   function refreshToolbar() {
     const has = manager.count() > 0;
     for (const id of [
+      "btn-paste-new",
       "btn-search",
       "btn-toggle",
       "btn-tail",
@@ -205,7 +200,9 @@ export function initApp(adapter: PlatformAdapter): void {
       "btn-copy-md",
       "btn-copy-rich",
     ]) {
-      btn(id).disabled = !has;
+      btn(id).disabled = id === "btn-paste-new"
+        ? typeof navigator.clipboard?.readText !== "function"
+        : !has;
     }
     tabstrip.hidden = !has;
 
@@ -392,6 +389,28 @@ export function initApp(adapter: PlatformAdapter): void {
     else if (typeof sel === "string") await openPath(sel);
   });
 
+  async function pasteIntoNewDoc(): Promise<void> {
+    if (typeof navigator.clipboard?.readText !== "function") {
+      showBanner("Clipboard read is not available");
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        showBanner("Clipboard is empty");
+        return;
+      }
+      await manager.openScratchMarkdown(text);
+      showBanner("Pasted into new document");
+    } catch (err) {
+      showBanner(`Couldn't read clipboard — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  btn("btn-paste-new").addEventListener("click", () => {
+    void pasteIntoNewDoc();
+  });
+
   btn("btn-search").addEventListener("click", () => {
     if (manager.count() === 0) return;
     searchBar.toggle();
@@ -399,6 +418,14 @@ export function initApp(adapter: PlatformAdapter): void {
   });
 
   window.addEventListener("keydown", (e) => {
+    const target = e.target;
+    const inEditable = target instanceof Element
+      && !!target.closest("input, textarea, select, [contenteditable='true']");
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "v" && !inEditable) {
+      e.preventDefault();
+      void pasteIntoNewDoc();
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
       if (manager.count() === 0) return;
       e.preventDefault();
@@ -504,7 +531,8 @@ export function initApp(adapter: PlatformAdapter): void {
         } else {
           const from = manager.getActiveDataLang();
           if (!from) throw new Error("Structured output requires a JSON, YAML, TOML, or INI source");
-          content = await convertData(src, from, fmt);
+          const { convertStructuredData } = await import("./data/convert");
+          content = convertStructuredData(src, from, fmt as DataLang);
           const mimeMap: Record<string, string> = {
             json: "application/json", yaml: "text/yaml", toml: "text/toml", ini: "text/plain",
           };
@@ -665,6 +693,8 @@ export function initApp(adapter: PlatformAdapter): void {
             await copyMermaidWhiteboard(svg);
           } else if (kind === "dio") {
             await copyMermaidDrawio(svg);
+          } else if (kind === "luc") {
+            await copyMermaidLucid(svg);
           } else if (kind === "exc") {
             await copyMermaidExcalidraw(svg);
           } else if (kind === "png") {

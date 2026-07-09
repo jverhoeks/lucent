@@ -5,7 +5,7 @@ import type { DropCallback, FileChangedCallback, FileRemovedCallback, PlatformAd
 function mountAppShell(): void {
   document.body.innerHTML = `
     <header id="toolbar">
-      <div class="group"><button id="btn-open"></button><button id="btn-next"></button></div>
+      <div class="group"><button id="btn-open"></button><button id="btn-paste-new"></button><button id="btn-next"></button></div>
       <button id="btn-edit"></button><button id="btn-save"></button>
       <button id="btn-toggle"></button><button id="btn-tail"></button>
       <button id="btn-search"></button><button id="btn-close-all"></button>
@@ -31,6 +31,13 @@ describe("main event and toolbar integration", () => {
   beforeEach(() => {
     localStorage.clear();
     mountAppShell();
+    Object.assign(navigator, {
+      clipboard: {
+        readText: vi.fn(async () => ""),
+        writeText: vi.fn(async () => {}),
+        write: vi.fn(async () => {}),
+      },
+    });
     vi.stubGlobal("ResizeObserver", class {
       observe() {}
       unobserve() {}
@@ -147,5 +154,52 @@ describe("main event and toolbar integration", () => {
     }));
     expect(saveTextFile.mock.calls[0][0]).toBe("/output.yaml");
     expect(saveTextFile.mock.calls[0][1]).toContain("name: lucent");
+  });
+
+  it("pastes clipboard text into a dirty new document and saves it with Save As", async () => {
+    const saveTextFile = vi.fn(async () => {});
+    const saveDialog = vi.fn(async () => "/notes/pasted.md");
+    vi.mocked(navigator.clipboard.readText).mockResolvedValue("# From clipboard");
+    const adapter: PlatformAdapter = {
+      platform: "web",
+      readFile: vi.fn(async (path) => ({ path, content: "" })),
+      saveTextFile,
+      saveBinaryFile: vi.fn(async () => {}),
+      fileSize: vi.fn(async () => 32),
+      logOpen: vi.fn(async () => 0),
+      logWindow: vi.fn(async () => []),
+      logSearch: vi.fn(async () => []),
+      listSiblingViewable: vi.fn(async () => []),
+      listViewableRecursive: vi.fn(async (path) => [path]),
+      probeIsText: vi.fn(async () => true),
+      resolveSibling: vi.fn(async (_base, rel) => rel),
+      writeTempFile: vi.fn(async () => "/tmp/export.html"),
+      openDialog: vi.fn(async () => null),
+      saveDialog,
+      watchFile: vi.fn(async () => {}),
+      unwatchFile: vi.fn(async () => {}),
+      unwatchAll: vi.fn(async () => {}),
+      openUrl: vi.fn(async () => {}),
+      openPath: vi.fn(async () => {}),
+      onFileChanged: vi.fn(),
+      onFileRemoved: vi.fn(),
+      onDrop: vi.fn(),
+      onOpenFiles: vi.fn(async () => {}),
+      getStartupFiles: vi.fn(async () => []),
+    };
+
+    initApp(adapter);
+    document.getElementById("btn-paste-new")!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector("#tabbar .tab-label")?.textContent).toContain("Pasted.md");
+      expect(document.querySelector("#content")?.textContent).toContain("From clipboard");
+    });
+
+    document.getElementById("btn-save")!.click();
+
+    await vi.waitFor(() => expect(saveTextFile).toHaveBeenCalledWith("/notes/pasted.md", "# From clipboard"));
+    expect(saveDialog).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "Pasted.md" }));
+    expect(adapter.watchFile).toHaveBeenCalledWith("/notes/pasted.md");
+    expect(document.querySelector("#tabbar .tab-label")?.textContent).toBe("pasted.md");
   });
 });

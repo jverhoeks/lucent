@@ -113,6 +113,11 @@ export async function copyMermaidDrawio(svg: SVGSVGElement): Promise<void> {
   await navigator.clipboard.writeText(svgToDrawioXml(svg));
 }
 
+/** Copy the diagram as mxGraph XML for Lucidchart's draw.io import path. */
+export async function copyMermaidLucid(svg: SVGSVGElement): Promise<void> {
+  await navigator.clipboard.writeText(svgToDrawioXml(svg));
+}
+
 /** Copy the diagram as an Excalidraw clipboard payload (JSON on plain text,
  *  which is how Excalidraw reads its own `excalidraw/clipboard` blob). */
 export async function copyMermaidExcalidraw(svg: SVGSVGElement): Promise<void> {

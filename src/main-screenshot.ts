@@ -57,7 +57,7 @@ const DATA = `{
   "service": "lucent",
   "version": "0.3.0",
   "features": ["markdown", "mermaid", "data-tree", "logs", "editor"],
-  "export": { "images": ["svg", "png"], "shapes": ["whiteboard", "drawio", "excalidraw"] },
+  "export": { "images": ["svg", "png"], "shapes": ["whiteboard", "drawio", "lucidchart", "excalidraw"] },
   "private": true
 }
 `;

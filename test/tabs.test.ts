@@ -33,6 +33,30 @@ describe("basename", () => {
 describe("TabManager", () => {
   beforeEach(() => document.body.replaceChildren());
 
+  it("shows a loading tab and content placeholder while a file is opening", async () => {
+    const { mgr, tabbar, content } = makeManager();
+    mgr.beginOpen("/d/slow.md");
+    expect(mgr.isActiveLoading()).toBe(true);
+    const tab = tabbar.querySelector(".tab.loading");
+    expect(tab).not.toBeNull();
+    expect(tab?.querySelector(".tab-spinner")).not.toBeNull();
+    expect(content.querySelector(".tab-loading")).not.toBeNull();
+
+    await mgr.openOrActivate("/d/slow.md", "# Done");
+    expect(mgr.isActiveLoading()).toBe(false);
+    expect(tabbar.querySelector(".tab.loading")).toBeNull();
+    expect(content.querySelector(".doc")).not.toBeNull();
+  });
+
+  it("removes a failed-open placeholder tab", () => {
+    const { mgr, tabbar } = makeManager();
+    mgr.beginOpen("/d/missing.md");
+    expect(mgr.count()).toBe(1);
+    mgr.cancelOpen("/d/missing.md");
+    expect(mgr.count()).toBe(0);
+    expect(tabbar.querySelectorAll(".tab").length).toBe(0);
+  });
+
   it("opens documents into tabs and tracks the active one", async () => {
     const { mgr, tabbar } = makeManager();
     await mgr.openOrActivate("/d/a.md", "# A");
@@ -295,5 +319,43 @@ describe("TabManager", () => {
     expect(diff.hidden).toBe(false);
     expect(diff.textContent).toContain("- disk");
     expect(diff.textContent).toContain("+ mine");
+  });
+
+  it("reloads the on-disk version when the conflict bar requests it", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openOrActivate("/d/a.md", "one\ntwo\n");
+    mgr.toggleEdit();
+    const textarea = content.querySelector(".split-textarea") as HTMLTextAreaElement;
+    textarea.value = "one\nmine\n";
+    textarea.dispatchEvent(new Event("input"));
+
+    mgr.updateContent("/d/a.md", "one\ndisk\n");
+    content.querySelector<HTMLButtonElement>(".conflict-reload")!.click();
+
+    expect(textarea.value).toBe("one\ndisk\n");
+    expect(mgr.getActiveRawText()).toBe("one\ndisk\n");
+    expect(content.querySelector<HTMLElement>(".edit-conflict")?.hidden).toBe(true);
+  });
+
+  it("saves the editor buffer when overwriting with mine", async () => {
+    const saved: string[] = [];
+    const { mgr, content } = makeManager(async (_path, body) => {
+      saved.push(body);
+      return _path;
+    });
+    await mgr.openOrActivate("/d/a.md", "one\ntwo\n");
+    mgr.toggleEdit();
+    const textarea = content.querySelector(".split-textarea") as HTMLTextAreaElement;
+    textarea.value = "one\nmine\n";
+    textarea.dispatchEvent(new Event("input"));
+
+    mgr.updateContent("/d/a.md", "one\ndisk\n");
+    content.querySelector<HTMLButtonElement>(".conflict-accept")!.click();
+    await vi.waitFor(() => expect(saved).toEqual(["one\nmine\n"]));
+
+    expect(mgr.getActiveRawText()).toBe("one\nmine\n");
+    await vi.waitFor(() => {
+      expect(content.querySelector<HTMLElement>(".edit-conflict")?.hidden).toBe(true);
+    });
   });
 });

@@ -39,6 +39,8 @@ export interface Tab {
   lineCount?: number;
   /** Backend fetch callback for windowed tabs. */
   fetchWindow?: (start: number, count: number) => Promise<string[]>;
+  /** True while the file is being read from disk (placeholder tab). */
+  loading?: boolean;
 }
 
 export interface TabHooks {
@@ -117,6 +119,8 @@ export class TabManager {
   private currentEditor: EditorAPI | null = null;
   /** Debounce timer for live preview in edit mode. */
   private editPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Refreshes the split-pane preview after a conflict reload (set in edit mode). */
+  private requestEditPreview: (() => void) | null = null;
   /** The Renderer from the previous repaint (for lifecycle cleanup). */
   private currentRenderer: Renderer | null = null;
 
@@ -128,6 +132,19 @@ export class TabManager {
   ) {
     this.applyStyle(style);
     this.renderTabbar();
+    this.content.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest(".conflict-diff")) {
+        e.preventDefault();
+        this.toggleConflictDiff();
+      } else if (target.closest(".conflict-accept")) {
+        e.preventDefault();
+        void this.acceptConflictMine();
+      } else if (target.closest(".conflict-reload")) {
+        e.preventDefault();
+        this.reloadConflictFromDisk();
+      }
+    });
   }
 
   count(): number {
@@ -275,11 +292,52 @@ export class TabManager {
     return this.repaint(false);
   }
 
+  /** True when the active tab is still waiting on a file read. */
+  isActiveLoading(): boolean {
+    return !!this.active()?.loading;
+  }
+
+  /** Show a placeholder tab while `path` is being opened. */
+  beginOpen(path: string): void {
+    const existing = this.tabs.findIndex((t) => t.path === path);
+    if (existing >= 0) {
+      this.tabs[existing].loading = true;
+      void this.activate(existing);
+      return;
+    }
+    const format = detectFormat(path);
+    this.tabs.push({
+      path,
+      title: basename(path),
+      content: "",
+      format,
+      mode: format === "text" ? "raw" : "rendered",
+      scrollTop: 0,
+      loading: true,
+    });
+    void this.activate(this.tabs.length - 1);
+  }
+
+  /** Drop a failed open: remove an empty placeholder or clear the loading flag. */
+  cancelOpen(path: string): void {
+    const i = this.tabs.findIndex((t) => t.path === path);
+    if (i < 0) return;
+    const tab = this.tabs[i];
+    if (tab.loading && !tab.editDirty && tab.content === "") {
+      this.closeTab(i);
+      return;
+    }
+    tab.loading = false;
+    if (i === this.activeIndex) void this.repaint(false);
+    else this.renderTabbar();
+  }
+
   /** Open a file in a new tab, or activate (and refresh) an already-open one. */
   openOrActivate(path: string, content: string): void | Promise<void> {
     const existing = this.tabs.findIndex((t) => t.path === path);
     if (existing >= 0) {
       this.tabs[existing].content = content;
+      this.tabs[existing].loading = false;
       return this.activate(existing);
     }
     const format = detectFormat(path);
@@ -334,6 +392,7 @@ export class TabManager {
       this.tabs[existing].windowed = true;
       this.tabs[existing].lineCount = lineCount;
       this.tabs[existing].fetchWindow = fetchWindow;
+      this.tabs[existing].loading = false;
       this.activate(existing);
       return;
     }
@@ -347,6 +406,7 @@ export class TabManager {
       windowed: true,
       lineCount,
       fetchWindow,
+      loading: false,
     });
     this.activate(this.tabs.length - 1);
   }
@@ -391,12 +451,72 @@ export class TabManager {
   }
 
   /** Signal a file-changed-on-disk conflict during edit mode. */
-  private externalEditConflict(_t: Tab, diskContent: string): void {
-    const conflictBar = this.content.querySelector(".edit-conflict") as HTMLElement | null;
-    if (conflictBar) {
-      conflictBar.hidden = false;
-      conflictBar.dataset.diskContent = diskContent;
+  private externalEditConflict(_t: Tab, _diskContent: string): void {
+    this.showConflictBar();
+  }
+
+  private conflictBar(): HTMLElement | null {
+    return this.content.querySelector<HTMLElement>(".edit-conflict");
+  }
+
+  private showConflictBar(): void {
+    const bar = this.conflictBar();
+    if (bar) bar.hidden = false;
+  }
+
+  private dismissConflictBar(): void {
+    const bar = this.conflictBar();
+    if (!bar) return;
+    bar.hidden = true;
+    const diff = bar.querySelector<HTMLElement>(".conflict-diff-view");
+    if (diff) {
+      diff.hidden = true;
+      diff.textContent = "";
     }
+  }
+
+  private toggleConflictDiff(): void {
+    const t = this.active();
+    const disk = t?.pendingDiskContent;
+    if (!t || disk === undefined) return;
+    const diff = this.conflictBar()?.querySelector<HTMLElement>(".conflict-diff-view");
+    if (!diff) return;
+    if (diff.hidden) {
+      const mine = this.activeEditorValue() ?? t.content;
+      diff.textContent = buildConflictDiff(mine, disk);
+    }
+    diff.hidden = !diff.hidden;
+  }
+
+  /** Keep the editor buffer and write it over the newer on-disk version. */
+  private async acceptConflictMine(): Promise<void> {
+    const t = this.active();
+    if (!t || t.pendingDiskContent === undefined) return;
+    const editorValue = this.activeEditorValue();
+    if (editorValue !== null) t.content = editorValue;
+    if (!t.editDirty && editorValue !== null) t.editDirty = true;
+    const saved = await this.saveActive();
+    if (!saved) return;
+    this.dismissConflictBar();
+  }
+
+  /** Discard local edits and load the on-disk version into the editor. */
+  private reloadConflictFromDisk(): void {
+    const t = this.active();
+    const disk = t?.pendingDiskContent;
+    if (!t || disk === undefined) return;
+    t.content = disk;
+    t.editDirty = false;
+    t.pendingDiskContent = undefined;
+    if (this.currentEditor) this.currentEditor.setValue(disk);
+    else {
+      const textarea = this.content.querySelector<HTMLTextAreaElement>(".split-textarea");
+      if (textarea) textarea.value = disk;
+    }
+    this.requestEditPreview?.();
+    this.dismissConflictBar();
+    this.renderTabbar();
+    this.hooks.onChange();
   }
 
   /** Apply fresh content from a disk change, if that document is open. */
@@ -484,7 +604,7 @@ export class TabManager {
     this.hooks.onTabClosed(closed.path);
     if (this.tabs.length === 0) {
       this.activeIndex = -1;
-      this.content.replaceChildren();
+      this.showWelcome();
     } else {
       this.activeIndex = Math.min(index, this.tabs.length - 1);
       this.renderTabbar();
@@ -503,7 +623,7 @@ export class TabManager {
     this.destroyEditor();
     this.tabs = [];
     this.activeIndex = -1;
-    this.content.replaceChildren();
+    this.showWelcome();
     this.hooks.onCloseAll();
     this.renderTabbar();
     this.hooks.onChange();
@@ -577,9 +697,10 @@ export class TabManager {
     const nextContent = editorValue;
     const savedPath = await this.hooks.onSave?.(t.path, nextContent);
     if (savedPath === null) return false;
-    this.applySavedContent(t, nextContent, savedPath);
+    const merged = this.applySavedContent(t, nextContent, savedPath);
     this.renderTabbar();
     this.hooks.onChange();
+    if (merged) await this.repaint(true);
     return true;
   }
 
@@ -590,13 +711,15 @@ export class TabManager {
     const nextContent = this.activeEditorValue() ?? t.content;
     const savedPath = await this.hooks.onSaveAs(t.path, nextContent);
     if (savedPath === null) return false;
-    this.applySavedContent(t, nextContent, savedPath);
+    const merged = this.applySavedContent(t, nextContent, savedPath);
     this.renderTabbar();
     this.hooks.onChange();
+    if (merged) await this.repaint(true);
     return true;
   }
 
-  private applySavedContent(t: Tab, content: string, savedPath?: string | void): void {
+  /** Returns true when a scratch save merged into an already-open tab. */
+  private applySavedContent(t: Tab, content: string, savedPath?: string | void): boolean {
     if (typeof savedPath === "string" && savedPath) {
       const currentIndex = this.tabs.indexOf(t);
       const existingIndex = this.tabs.findIndex((tab) => tab !== t && tab.path === savedPath);
@@ -617,7 +740,7 @@ export class TabManager {
         this.activeIndex = currentIndex >= 0 && currentIndex < existingIndex
           ? existingIndex - 1
           : existingIndex;
-        return;
+        return true;
       }
       t.path = savedPath;
       t.title = basename(savedPath);
@@ -627,7 +750,11 @@ export class TabManager {
     }
     t.content = content;
     t.editDirty = false;
-    t.pendingDiskContent = undefined;
+    if (t.pendingDiskContent !== undefined) {
+      t.pendingDiskContent = undefined;
+      this.dismissConflictBar();
+    }
+    return false;
   }
 
   /** Preserve the active editor buffer before a repaint/tab switch destroys
@@ -650,6 +777,7 @@ export class TabManager {
     this.currentEditor = null;
     this.currentDataTree?.destroy();
     this.currentDataTree = null;
+    this.requestEditPreview = null;
     if (this.editPreviewTimer !== null) {
       clearTimeout(this.editPreviewTimer);
       this.editPreviewTimer = null;
@@ -769,7 +897,8 @@ export class TabManager {
     this.content.classList.remove("editing");
 
     const t = this.active();
-    if (!t) { this.content.replaceChildren(); return; }
+    if (!t) { this.showWelcome(); return; }
+    if (t.loading) { this.showTabLoading(t); return; }
 
     // Warm the render cache for neighbouring Markdown tabs during idle time so
     // switching to them paints from cache instead of a fresh worker render.
@@ -859,6 +988,18 @@ export class TabManager {
 
   /** Build the split editor and its live Markdown/data preview. */
   private renderEditMode(t: Tab, restoreScroll: boolean): void {
+      const conflictBar = document.createElement("div");
+      conflictBar.className = "edit-conflict";
+      conflictBar.hidden = true;
+      conflictBar.innerHTML = `
+        <span>⚠ File changed on disk</span>
+        <button type="button" class="conflict-diff">View diff</button>
+        <button type="button" class="conflict-accept">Overwrite with mine</button>
+        <button type="button" class="conflict-reload">Reload from disk</button>
+        <pre class="conflict-diff-view" hidden></pre>
+      `;
+      if (t.pendingDiskContent !== undefined) conflictBar.hidden = false;
+
       const split = document.createElement("div");
       split.className = "split-view";
       const edPane = document.createElement("div");
@@ -868,7 +1009,7 @@ export class TabManager {
       const prevPane = document.createElement("div");
       prevPane.className = "split-pane split-preview";
       split.append(edPane, divider, prevPane);
-      this.content.replaceChildren(split);
+      this.content.replaceChildren(conflictBar, split);
       this.content.classList.add("editing");
 
       // ---- Drag the split divider (synchronous, no imports) ----
@@ -923,22 +1064,6 @@ export class TabManager {
         syncBtn.title = syncScrollEnabled ? "Sync scrolling (on)" : "Sync scrolling (off)";
       });
 
-      // ---- Conflict indicator bar ----
-      const conflictBar = document.createElement("div");
-      conflictBar.className = "edit-conflict";
-      conflictBar.hidden = true;
-      conflictBar.innerHTML = `
-        <span>⚠ File changed on disk</span>
-        <button class="conflict-diff">View diff</button>
-        <button class="conflict-accept">Overwrite with mine</button>
-        <button class="conflict-reload">Reload from disk</button>
-        <pre class="conflict-diff-view" hidden></pre>
-      `;
-      if (t.pendingDiskContent !== undefined) {
-        conflictBar.hidden = false;
-        conflictBar.dataset.diskContent = t.pendingDiskContent;
-      }
-
       // ---- Show a plain textarea instantly, then upgrade to CodeMirror ----
       const textarea = document.createElement("textarea");
       textarea.className = "split-textarea";
@@ -948,7 +1073,7 @@ export class TabManager {
       const seq = this.repaintSeq;
       const fmt = effectiveFormat(t);
       let curText = t.content;
-      let schedulePreview: () => void;
+      let schedulePreview: () => void = () => {};
 
       if (fmt === "markdown") {
         // ---- Helper: wrap rendered HTML in a `.doc` container ----
@@ -1103,45 +1228,10 @@ export class TabManager {
         syncScroll(textarea, prevPane);
       });
 
-      // ---- Append conflict bar below split ----
-      split.after(conflictBar);
-
-      conflictBar.querySelector(".conflict-accept")?.addEventListener("click", () => {
-        if (conflictBar.dataset.diskContent !== undefined) {
-          conflictBar.hidden = true;
-          delete conflictBar.dataset.diskContent;
-          t.pendingDiskContent = undefined;
-        }
-      });
-
-      conflictBar.querySelector(".conflict-diff")?.addEventListener("click", () => {
-        const diff = conflictBar.querySelector<HTMLElement>(".conflict-diff-view");
-        const diskContent = conflictBar.dataset.diskContent;
-        if (!diff || diskContent === undefined) return;
-        const mine = this.currentEditor?.getValue() ?? textarea.value;
-        diff.textContent = buildConflictDiff(mine, diskContent);
-        diff.hidden = !diff.hidden;
-      });
-
-      conflictBar.querySelector(".conflict-reload")?.addEventListener("click", () => {
-        const diskContent = conflictBar.dataset.diskContent;
-        if (diskContent !== undefined) {
-          t.content = diskContent;
-          curText = diskContent;
-          t.editDirty = false;
-          t.pendingDiskContent = undefined;
-          conflictBar.hidden = true;
-          delete conflictBar.dataset.diskContent;
-          schedulePreview();
-          if (this.currentEditor) {
-            this.currentEditor.setValue(diskContent);
-          } else {
-            textarea.value = diskContent;
-          }
-          this.renderTabbar();
-          this.hooks.onChange();
-        }
-      });
+      this.requestEditPreview = () => {
+        curText = this.activeEditorValue() ?? textarea.value;
+        schedulePreview();
+      };
 
       // ---- Textarea input (same for all formats) ----
       textarea.addEventListener("input", () => {
@@ -1236,6 +1326,61 @@ export class TabManager {
   }
 
   /** Replace the content area with the raw text plus a render-failure note. */
+  /** Placeholder while the active tab's file is still being read. */
+  private showTabLoading(t: Tab): void {
+    this.currentVlog?.destroy();
+    this.currentVlog = null;
+    this.currentLog = null;
+    this.currentVlogLines = null;
+    this.currentRenderer?.destroy?.();
+    this.currentRenderer = null;
+    this.content.replaceChildren();
+    const panel = document.createElement("div");
+    panel.className = "tab-loading";
+    panel.setAttribute("role", "status");
+    panel.setAttribute("aria-live", "polite");
+    panel.setAttribute("aria-label", `Opening ${t.title}`);
+    const spinner = document.createElement("span");
+    spinner.className = "tab-loading-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    const title = document.createElement("p");
+    title.className = "tab-loading-title";
+    title.textContent = `Opening ${t.title}`;
+    const hint = document.createElement("p");
+    hint.className = "tab-loading-hint";
+    hint.textContent = "Reading from disk…";
+    panel.append(spinner, title, hint);
+    this.content.appendChild(panel);
+  }
+
+  /** Empty-state screen shown when no documents are open. */
+  private showWelcome(): void {
+    this.currentVlog?.destroy();
+    this.currentVlog = null;
+    this.currentLog = null;
+    this.currentVlogLines = null;
+    this.currentRenderer?.destroy?.();
+    this.currentRenderer = null;
+    this.content.replaceChildren();
+    const welcome = document.createElement("div");
+    welcome.className = "welcome";
+    welcome.innerHTML = `
+      <div class="welcome-mark" aria-hidden="true">◇</div>
+      <h1 class="welcome-title">Lucent</h1>
+      <p class="welcome-lead">Open a file to read Markdown, structured data, or logs — rendered cleanly, with editing when you need it.</p>
+      <div class="welcome-actions">
+        <button type="button" class="welcome-btn primary" data-welcome="open">Open file…</button>
+        <button type="button" class="welcome-btn" data-welcome="paste">Paste into new document</button>
+      </div>
+      <ul class="welcome-shortcuts">
+        <li><kbd>⌘/Ctrl</kbd>+<kbd>P</kbd> quick switch</li>
+        <li><kbd>⌘/Ctrl</kbd>+<kbd>F</kbd> find in document</li>
+        <li>Drop files anywhere to open</li>
+      </ul>
+    `;
+    this.content.appendChild(welcome);
+  }
+
   private showRenderError(t: Tab, err: unknown): void {
     const wrap = document.createElement("div");
     wrap.className = "render-error";
@@ -1254,12 +1399,13 @@ export class TabManager {
     this.tabs.forEach((t, i) => {
       const active = i === this.activeIndex;
       const tab = document.createElement("div");
-      tab.className = "tab" + (active ? " active" : "");
+      tab.className = "tab" + (active ? " active" : "") + (t.loading ? " loading" : "");
       tab.title = t.path;
       // a11y: expose tab semantics + selected state, and make tabs focusable
       // with roving tabindex (only the active tab is in the tab order).
       tab.setAttribute("role", "tab");
       tab.setAttribute("aria-selected", String(active));
+      tab.setAttribute("aria-busy", String(!!t.loading));
       tab.tabIndex = active ? 0 : -1;
       tab.addEventListener("auxclick", (e) => {
         if (e.button === 1) { e.preventDefault(); this.closeTab(i); }
@@ -1276,13 +1422,20 @@ export class TabManager {
         }
       });
 
+      if (t.loading) {
+        const spinner = document.createElement("span");
+        spinner.className = "tab-spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        tab.append(spinner);
+      }
+
       const label = document.createElement("span");
       label.className = "tab-label";
       label.textContent = t.editDirty ? "● " + t.title : t.title;
       label.addEventListener("click", () => this.activate(i));
 
       const close = document.createElement("button");
-      close.className = "tab-close";
+      close.className = "close-btn";
       close.textContent = "×";
       close.title = "Close tab";
       close.setAttribute("aria-label", `Close ${t.title}`);

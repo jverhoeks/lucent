@@ -22,6 +22,7 @@ import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
 import { detectFormat, siblingIndex, basename } from "./format";
+import { guessPasteScratch } from "./paste-guess";
 import { injectSprite, setButtonIcon } from "./icons";
 import { readingTimeLabel } from "./reading-time";
 import { loadSession, saveSession } from "./session";
@@ -62,32 +63,12 @@ const DOWNLOAD_OPTIONS: Record<string, string> = {
   ini: "INI (.ini)",
 };
 
-function guessPasteScratch(text: string): { format: Format; extension: string; title: string; forcedLang?: DataLang } {
-  const trimmed = text.trim();
-  if (/^```mermaid\b/i.test(trimmed) || /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/i.test(trimmed)) {
-    return { format: "markdown", extension: "md", title: "Pasted diagram.md" };
-  }
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    return { format: "data", extension: "json", title: "Pasted.json", forcedLang: "json" };
-  }
-  if (/^\s*(---\s*\n)?[\w.-]+\s*:/m.test(text)) {
-    return { format: "data", extension: "yaml", title: "Pasted.yaml", forcedLang: "yaml" };
-  }
-  if (/^\s*\[[^\]\n]+\]\s*$/m.test(text) && /^\s*[\w.-]+\s*=/m.test(text)) {
-    return { format: "data", extension: "toml", title: "Pasted.toml", forcedLang: "toml" };
-  }
-  if (/^\s*(\[[^\]\n]+\]|[\w.-]+\s*=)/m.test(text)) {
-    return { format: "data", extension: "ini", title: "Pasted.ini", forcedLang: "ini" };
-  }
-  const lines = text.split(/\r?\n/);
-  const logLike = lines.length >= 3 && lines.slice(0, 20).some((line) =>
-    /\b(error|warn|info|debug|trace)\b/i.test(line) || /^\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d/.test(line)
+/** True when the event target is inside a field that should receive normal paste. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest(
+    "input, textarea, select, [contenteditable], .cm-editor, .cm-content, .cm-line",
   );
-  if (logLike) return { format: "log", extension: "log", title: "Pasted.log" };
-  if (/^#\s|\n#\s|```|^\s*[-*]\s/m.test(text)) {
-    return { format: "markdown", extension: "md", title: "Pasted.md" };
-  }
-  return { format: "text", extension: "txt", title: "Pasted.txt" };
 }
 
 async function isTextFile(path: string, adapter: DropProbeAdapter): Promise<boolean> {
@@ -249,6 +230,7 @@ export function initApp(adapter: PlatformAdapter): void {
 
   function refreshToolbar() {
     const has = manager.count() > 0;
+    const loading = manager.isActiveLoading();
     for (const id of [
       "btn-paste-new",
       "btn-search",
@@ -262,8 +244,8 @@ export function initApp(adapter: PlatformAdapter): void {
       btn(id).disabled = id === "btn-paste-new"
         ? typeof navigator.clipboard?.readText !== "function"
         : id === "btn-save-as"
-          ? !has || manager.isActiveWindowed()
-          : !has;
+          ? !has || manager.isActiveWindowed() || loading
+          : !has || loading;
     }
     tabstrip.hidden = !has;
 
@@ -284,13 +266,14 @@ export function initApp(adapter: PlatformAdapter): void {
     const editBtn = btn("btn-edit");
     const saveBtn = btn("btn-save");
     const fmt = manager.getActiveFormat();
-    editBtn.disabled = !has || (fmt !== "markdown" && fmt !== "data");
+    editBtn.disabled = loading || !has || (fmt !== "markdown" && fmt !== "data");
     setButtonIcon(editBtn, isEdit ? "ic-check" : "ic-pencil", isEdit ? "Done" : "Edit");
     editBtn.classList.toggle("toggled", isEdit);
     saveBtn.hidden = !isEdit;
     saveBtn.disabled = !manager.isEditing();
 
     refreshDownloadOptions(has, fmt);
+    dlSelect.disabled = loading;
 
     // Reading-time estimate — Markdown only; hidden for data/log/text tabs.
     const readingTime = document.getElementById("reading-time");
@@ -463,29 +446,41 @@ export function initApp(adapter: PlatformAdapter): void {
   const WINDOW_THRESHOLD = 5 * 1024 * 1024;
 
   async function openPath(path: string, quiet = false) {
-    if (!quiet) showBanner(`Loading ${basename(path)} …`);
-    if (detectFormat(path) === "log") {
-      try {
-        const size = await adapter.fileSize(path);
-        if (size > WINDOW_THRESHOLD) {
-          const lineCount = await adapter.logOpen(path);
-          manager.openWindowedLog(
-            path,
-            lineCount,
-            (start, count) => adapter.logWindow(path, start, count),
-          );
-          await adapter.watchFile(path);
-          return;
+    if (!quiet) manager.beginOpen(path);
+    try {
+      if (detectFormat(path) === "log") {
+        try {
+          const size = await adapter.fileSize(path);
+          if (size > WINDOW_THRESHOLD) {
+            const lineCount = await adapter.logOpen(path);
+            manager.openWindowedLog(
+              path,
+              lineCount,
+              (start, count) => adapter.logWindow(path, start, count),
+            );
+            await adapter.watchFile(path);
+            rememberRecentFile(path);
+            return;
+          }
+        } catch {
+          // fall through
         }
-      } catch {
-        // fall through
+      }
+      const fileContent = await readPath(path, quiet);
+      if (fileContent === null) {
+        if (!quiet) manager.cancelOpen(path);
+        return;
+      }
+      manager.openOrActivate(path, fileContent);
+      await adapter.watchFile(path);
+      rememberRecentFile(path);
+    } catch (err) {
+      if (!quiet) manager.cancelOpen(path);
+      if (!quiet) {
+        const msg = (err as AppError)?.message ?? String(err);
+        showBanner(`Couldn't open ${basename(path)} — ${msg}`);
       }
     }
-    const fileContent = await readPath(path, quiet);
-    if (fileContent === null) return;
-    manager.openOrActivate(path, fileContent);
-    await adapter.watchFile(path);
-    rememberRecentFile(path);
   }
 
   async function openMany(paths: string[]) {
@@ -524,7 +519,7 @@ export function initApp(adapter: PlatformAdapter): void {
       }
       const guess = guessPasteScratch(text);
       await manager.openScratch(text, guess);
-      showBanner("Pasted into new document");
+      showBanner(`Pasted into ${guess.title}`);
     } catch (err) {
       showBanner(`Couldn't read clipboard — ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -541,9 +536,7 @@ export function initApp(adapter: PlatformAdapter): void {
   });
 
   window.addEventListener("keydown", (e) => {
-    const target = e.target;
-    const inEditable = target instanceof Element
-      && !!target.closest("input, textarea, select, [contenteditable='true']");
+    const inEditable = isEditableTarget(e.target);
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "v" && !inEditable) {
       e.preventDefault();
       void pasteIntoNewDoc();
@@ -799,8 +792,12 @@ export function initApp(adapter: PlatformAdapter): void {
         let mime = "text/plain";
         const ext = fmt;
         if (fmt === "html") {
+          const exportTheme = (document.getElementById("content")?.dataset.theme as StyleSettings["theme"])
+            || settings.theme;
           content = (await import("./export")).buildStandaloneHtml(
             manager.getActiveDisplayedHtml(),
+            false,
+            exportTheme === "system" ? "light" : exportTheme,
           );
           mime = "text/html";
         } else if (fmt === "md") {
@@ -856,15 +853,20 @@ export function initApp(adapter: PlatformAdapter): void {
 
   const selFont = document.getElementById("sel-font") as HTMLSelectElement;
   const inpSize = document.getElementById("inp-size") as HTMLInputElement;
+  const sizeValue = document.getElementById("size-value");
   const selTheme = document.getElementById("sel-theme") as HTMLSelectElement;
   selFont.value = settings.fontFamily;
   inpSize.value = String(settings.fontSizePx);
   selTheme.value = settings.theme;
+  if (sizeValue) sizeValue.textContent = `${settings.fontSizePx}px`;
 
   function updateStyle(patch: Partial<StyleSettings>) {
     settings = { ...settings, ...patch };
     manager.applyStyle(settings);
     saveSettings(settings);
+    if ("fontSizePx" in patch && sizeValue) {
+      sizeValue.textContent = `${settings.fontSizePx}px`;
+    }
     refreshToolbar();
     if ("theme" in patch) {
       applyCodeTheme(settings.theme);
@@ -923,6 +925,14 @@ export function initApp(adapter: PlatformAdapter): void {
 
   content.addEventListener("click", async (e) => {
     const target = e.target as HTMLElement;
+
+    const welcomeBtn = target.closest<HTMLElement>("[data-welcome]");
+    if (welcomeBtn) {
+      const action = welcomeBtn.dataset.welcome;
+      if (action === "open") btn("btn-open").click();
+      else if (action === "paste") void pasteIntoNewDoc();
+      return;
+    }
 
     const linesBtn = target.closest(".code-lines");
     if (linesBtn) {

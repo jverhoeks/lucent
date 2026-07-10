@@ -21,9 +21,9 @@ describe("buildStandaloneHtml", () => {
     expect(html).not.toContain("window.print()");
   });
 
-  it("sets light theme and sans font on the content element", () => {
-    const html = buildStandaloneHtml("<p>x</p>");
-    expect(html).toContain('data-theme="light"');
+  it("sets theme and sans font on the content element", () => {
+    const html = buildStandaloneHtml("<p>x</p>", false, "dark");
+    expect(html).toContain('data-theme="dark"');
     expect(html).toContain('data-font="sans"');
   });
 

@@ -338,8 +338,144 @@ body {
   min-width: 110px;
 }
 
+.popover-row .size-value {
+  min-width: 2.5em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+
 #toolbar .popover-row input[type="range"] {
   width: 110px;
+}
+
+/* ---- Tab open loading (content pane) ---- */
+.tab-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  min-height: 40vh;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.tab-loading-spinner {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--btn-border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: tabSpin 0.7s linear infinite;
+}
+
+.tab-loading-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tab-loading-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ---- Welcome (empty state) ---- */
+.welcome {
+  max-width: 34rem;
+  margin: 10vh auto 0;
+  padding: 0 1rem 3rem;
+  text-align: center;
+}
+
+.welcome-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 1rem;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.welcome-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.welcome-lead {
+  margin: 0 auto 1.5rem;
+  max-width: 28rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-bottom: 1.75rem;
+}
+
+.welcome-btn {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0.55rem 1rem;
+  border-radius: 9px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: var(--btn-shadow);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.welcome-btn:hover {
+  background: var(--btn-hover);
+  border-color: var(--accent);
+}
+
+.welcome-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.welcome-btn.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.welcome-shortcuts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.welcome-shortcuts kbd {
+  display: inline-block;
+  min-width: 1.1em;
+  padding: 0.1em 0.35em;
+  border: 1px solid var(--btn-border);
+  border-radius: 4px;
+  background: var(--surface);
+  font: 11px var(--mono);
+  color: var(--text);
 }
 
 /* ---- Tab strip ---- */
@@ -395,6 +531,25 @@ body {
   background: var(--btn-bg);
   color: var(--text);
   font-weight: 500;
+}
+
+#tabbar .tab.loading {
+  color: var(--text-muted);
+}
+
+#tabbar .tab-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--btn-border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: tabSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes tabSpin {
+  to { transform: rotate(360deg); }
 }
 
 #tabbar .tab .close-btn {
@@ -903,6 +1058,19 @@ body.exporting .doc .code-header {
    Restored: the split-editor CSS was dropped in the web/app split (f0f9c31)
    and #159's restore didn't cover it, so `.split-view` had no `display: flex`
    and the panes stacked vertically. */
+#content.editing {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+#content.editing .split-view {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
 .split-view {
   display: flex;
   width: 100%;
@@ -1033,6 +1201,21 @@ body.exporting .doc .code-header {
   border-bottom: 1px solid #ffc107;
   font-size: 12px;
   color: #856404;
+  flex: 0 0 auto;
+}
+
+.conflict-bar[hidden],
+.edit-conflict[hidden] {
+  display: none !important;
+}
+
+.conflict-diff-view[hidden] {
+  display: none !important;
+}
+
+.conflict-diff-view:not([hidden]) {
+  display: block;
+  flex-basis: 100%;
 }
 
 .conflict-bar button,
@@ -1263,6 +1446,17 @@ body.drag-over::after {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ---- Download format selector ---- */

@@ -37,7 +37,7 @@ async function renderDocumentHtml(rawText: string, theme: Theme = "light"): Prom
 }
 
 /** Wrap rendered HTML into a self-contained document with inlined CSS. */
-export function buildStandaloneHtml(bodyHtml: string, autoPrint = false): string {
+export function buildStandaloneHtml(bodyHtml: string, autoPrint = false, theme: Theme = "light"): string {
   const printScript = autoPrint
     ? `<script>window.addEventListener("load", () => window.print());</script>`
     : "";
@@ -53,7 +53,7 @@ ${appCss}</style>
 ${printScript}
 </head>
 <body>
-<main id="content" data-theme="light" data-font="sans">
+<main id="content" data-theme="${theme}" data-font="sans">
 <article class="doc">${bodyHtml}</article>
 </main>
 </body>
@@ -67,7 +67,7 @@ export async function exportHtml(rawText: string, adapter: PlatformAdapter): Pro
   if (!path) return;
   const theme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
   const body = await renderDocumentHtml(rawText, theme);
-  await adapter.saveTextFile(path, buildStandaloneHtml(body));
+  await adapter.saveTextFile(path, buildStandaloneHtml(body, false, theme));
 }
 
 function nextFrame(): Promise<void> {
@@ -82,7 +82,7 @@ function nextFrame(): Promise<void> {
 async function exportPdfViaBrowser(rawText: string, adapter: PlatformAdapter): Promise<void> {
   const theme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
   const body = await renderDocumentHtml(rawText, theme);
-  const path = await adapter.writeTempFile("markdown-export.html", buildStandaloneHtml(body, true));
+  const path = await adapter.writeTempFile("markdown-export.html", buildStandaloneHtml(body, true, theme));
   await adapter.openPath(path);
 }
 

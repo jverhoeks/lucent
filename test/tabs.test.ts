@@ -3,7 +3,10 @@ import { TabManager } from "../src/tabs";
 import { basename } from "../src/format";
 import { DEFAULT_SETTINGS } from "../src/types";
 
-function makeManager(onSave?: (path: string, content: string) => Promise<string | null | void>) {
+function makeManager(
+  onSave?: (path: string, content: string) => Promise<string | null | void>,
+  onSaveAs?: (path: string, content: string) => Promise<string | null | void>,
+) {
   const tabbar = document.createElement("nav");
   const content = document.createElement("main");
   document.body.append(tabbar, content);
@@ -14,6 +17,7 @@ function makeManager(onSave?: (path: string, content: string) => Promise<string 
     onTabClosed: (p) => closed.push(p),
     onCloseAll: () => closedAll++,
     onSave,
+    onSaveAs,
   });
   return { mgr, tabbar, content, closed, closedAll: () => closedAll };
 }
@@ -172,6 +176,75 @@ describe("TabManager", () => {
     expect(closed[0]).toMatch(/^<scratch:/);
   });
 
+  it("saves the active rendered tab to a chosen path", async () => {
+    const saved: Array<[string, string]> = [];
+    const { mgr } = makeManager(undefined, async (path, content) => {
+      saved.push([path, content]);
+      return "/d/copy.md";
+    });
+    await mgr.openOrActivate("/d/a.md", "# A");
+
+    await expect(mgr.saveActiveAs()).resolves.toBe(true);
+
+    expect(saved).toEqual([["/d/a.md", "# A"]]);
+    expect(mgr.getActivePath()).toBe("/d/copy.md");
+    expect(mgr.getActiveRawText()).toBe("# A");
+  });
+
+  it("snapshots dirty scratch draft content from the live editor", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openScratchMarkdown("# Original");
+    const textarea = content.querySelector(".split-textarea") as HTMLTextAreaElement;
+    textarea.value = "# Edited";
+    textarea.dispatchEvent(new Event("input"));
+
+    const snapshot = mgr.snapshotSession();
+
+    expect(snapshot.activePath).toMatch(/^<scratch:/);
+    expect(snapshot.tabs[0]).toMatchObject({
+      title: "Pasted.md",
+      content: "# Edited",
+      format: "markdown",
+      mode: "edit",
+      editDirty: true,
+    });
+  });
+
+  it("opens typed scratch drafts with matching title and render format", async () => {
+    const { mgr } = makeManager();
+    await mgr.openScratch("error one\nwarn two\ninfo three", {
+      format: "log",
+      extension: "log",
+      title: "Pasted.log",
+    });
+
+    expect(mgr.getActivePath()).toMatch(/\.log>$/);
+    expect(mgr.getActiveFormat()).toBe("log");
+    expect(mgr.snapshotSession().tabs[0]).toMatchObject({
+      title: "Pasted.log",
+      format: "log",
+      content: "error one\nwarn two\ninfo three",
+    });
+  });
+
+  it("restores scratch draft tabs from a session snapshot", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.restoreSessionTab({
+      path: "<scratch:restored.md>",
+      title: "Pasted.md",
+      content: "# Restored",
+      format: "markdown",
+      mode: "edit",
+      scrollTop: 0,
+      editDirty: true,
+    });
+
+    expect(mgr.count()).toBe(1);
+    expect(mgr.getActivePath()).toBe("<scratch:restored.md>");
+    expect(content.querySelector<HTMLTextAreaElement>(".split-textarea")?.value).toBe("# Restored");
+    expect(mgr.hasDirtyTabs()).toBe(true);
+  });
+
   it("preserves structured comments when editing through the preview tree", async () => {
     const saved: string[] = [];
     const { mgr, content } = makeManager(async (_path, text) => { saved.push(text); });
@@ -186,8 +259,8 @@ describe("TabManager", () => {
     input.dispatchEvent(new FocusEvent("blur"));
 
     await expect(mgr.saveActive()).resolves.toBe(true);
-    expect(saved[0]).toContain("# [line 1] config");
-    expect(saved[0]).toContain("# [line 2, inline] rollout");
+    expect(saved[0]).toContain("# config");
+    expect(saved[0]).toContain("enabled: false # rollout");
     expect(saved[0]).toContain("enabled: false");
   });
 
@@ -205,5 +278,22 @@ describe("TabManager", () => {
 
     expect(mgr.getActiveRawText()).toBe("# draft");
     expect(content.querySelector<HTMLElement>(".edit-conflict")?.hidden).toBe(false);
+  });
+
+  it("shows a diff for file-changed-on-disk conflicts", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openOrActivate("/d/a.md", "one\ntwo\n");
+    mgr.toggleEdit();
+    const textarea = content.querySelector(".split-textarea") as HTMLTextAreaElement;
+    textarea.value = "one\nmine\n";
+    textarea.dispatchEvent(new Event("input"));
+
+    mgr.updateContent("/d/a.md", "one\ndisk\n");
+    content.querySelector<HTMLButtonElement>(".conflict-diff")!.click();
+
+    const diff = content.querySelector<HTMLElement>(".conflict-diff-view")!;
+    expect(diff.hidden).toBe(false);
+    expect(diff.textContent).toContain("- disk");
+    expect(diff.textContent).toContain("+ mine");
   });
 });

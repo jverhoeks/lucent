@@ -13,7 +13,8 @@ import {
   mermaidSvgMarkup,
   mermaidPngBytes,
 } from "./mermaid-export";
-import { exportHtml, exportPdf } from "./export";
+import { exportPdf } from "./export";
+import { svgToDrawioXml, svgsToDrawioFile } from "./export-drawio";
 import { AppError, StyleSettings, Format, DataLang } from "./types";
 import { SearchController } from "./search/controller";
 import { createSearchProvider } from "./search/factory";
@@ -21,10 +22,11 @@ import { SearchBar } from "./search/bar";
 import { getCurrentTree } from "./renderers/data";
 import { initStdin } from "./stdin";
 import { detectFormat, siblingIndex, basename } from "./format";
-import { injectSprite, setButtonIcon, iconMarkup } from "./icons";
+import { injectSprite, setButtonIcon } from "./icons";
 import { readingTimeLabel } from "./reading-time";
 import { loadSession, saveSession } from "./session";
 import { DocumentOutline } from "./outline";
+import { loadRecentFiles, rememberRecentFile, type RecentFile } from "./recent";
 import type { PlatformAdapter } from "./platform/types";
 
 /** Trigger a browser file download from a string of content. */
@@ -49,6 +51,44 @@ type DropProbeAdapter = Pick<
   PlatformAdapter,
   "fileSize" | "listViewableRecursive" | "probeIsText"
 >;
+
+const DOWNLOAD_OPTIONS: Record<string, string> = {
+  md: "Markdown (.md)",
+  html: "HTML (.html)",
+  pdf: "PDF (.pdf)",
+  json: "JSON (.json)",
+  yaml: "YAML (.yaml)",
+  toml: "TOML (.toml)",
+  ini: "INI (.ini)",
+};
+
+function guessPasteScratch(text: string): { format: Format; extension: string; title: string; forcedLang?: DataLang } {
+  const trimmed = text.trim();
+  if (/^```mermaid\b/i.test(trimmed) || /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/i.test(trimmed)) {
+    return { format: "markdown", extension: "md", title: "Pasted diagram.md" };
+  }
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return { format: "data", extension: "json", title: "Pasted.json", forcedLang: "json" };
+  }
+  if (/^\s*(---\s*\n)?[\w.-]+\s*:/m.test(text)) {
+    return { format: "data", extension: "yaml", title: "Pasted.yaml", forcedLang: "yaml" };
+  }
+  if (/^\s*\[[^\]\n]+\]\s*$/m.test(text) && /^\s*[\w.-]+\s*=/m.test(text)) {
+    return { format: "data", extension: "toml", title: "Pasted.toml", forcedLang: "toml" };
+  }
+  if (/^\s*(\[[^\]\n]+\]|[\w.-]+\s*=)/m.test(text)) {
+    return { format: "data", extension: "ini", title: "Pasted.ini", forcedLang: "ini" };
+  }
+  const lines = text.split(/\r?\n/);
+  const logLike = lines.length >= 3 && lines.slice(0, 20).some((line) =>
+    /\b(error|warn|info|debug|trace)\b/i.test(line) || /^\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d/.test(line)
+  );
+  if (logLike) return { format: "log", extension: "log", title: "Pasted.log" };
+  if (/^#\s|\n#\s|```|^\s*[-*]\s/m.test(text)) {
+    return { format: "markdown", extension: "md", title: "Pasted.md" };
+  }
+  return { format: "text", extension: "txt", title: "Pasted.txt" };
+}
 
 async function isTextFile(path: string, adapter: DropProbeAdapter): Promise<boolean> {
   try {
@@ -96,6 +136,8 @@ export function initApp(adapter: PlatformAdapter): void {
   let restoringSession = false;
   let sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let outline: DocumentOutline | null = null;
+  const isWeb = adapter.platform === "web";
+  const diagnostics: Array<{ time: string; message: string }> = [];
 
   const btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
 
@@ -126,24 +168,42 @@ export function initApp(adapter: PlatformAdapter): void {
     onCloseAll: () => void adapter.unwatchAll(),
     onSave: async (path, content) => {
       if (isScratchPath(path)) {
-        const destination = await adapter.saveDialog({
-          defaultPath: "Pasted.md",
-          filters: [
-            { name: "Markdown", extensions: ["md", "markdown"] },
-            { name: "Text", extensions: ["txt"] },
-          ],
-        });
-        if (!destination) return null;
-        await adapter.saveTextFile(destination, content);
-        await adapter.watchFile(destination);
-        return destination;
+        return saveTextAs(path, content);
       }
       await adapter.saveTextFile(path, content);
     },
+    onSaveAs: (path, content) => saveTextAs(path, content),
     resolveLocalImage: adapter.localImageUrl
       ? (basePath, relativePath) => adapter.localImageUrl!(basePath, relativePath)
       : async () => null,
   });
+
+  async function saveTextAs(path: string, content: string): Promise<string | null> {
+    const defaultPath = isScratchPath(path) ? "Pasted.md" : basename(path) || "document.txt";
+    if (isWeb) {
+      const ext = defaultPath.split(".").pop()?.toLowerCase();
+      const mime = ext === "md" || ext === "markdown" ? "text/markdown"
+        : ext === "json" ? "application/json"
+          : ext === "yaml" || ext === "yml" ? "text/yaml"
+            : ext === "html" || ext === "htm" ? "text/html"
+              : "text/plain";
+      downloadFile(content, defaultPath, mime);
+      return defaultPath;
+    }
+    const destination = await adapter.saveDialog({
+      defaultPath,
+      filters: [
+        { name: "Markdown", extensions: ["md", "markdown"] },
+        { name: "Text", extensions: ["txt", "log", "text"] },
+        { name: "Data", extensions: ["json", "yaml", "yml", "toml", "ini"] },
+      ],
+    });
+    if (!destination) return null;
+    await adapter.saveTextFile(destination, content);
+    await adapter.watchFile(destination);
+    rememberRecentFile(destination);
+    return destination;
+  }
 
   const outlineElement = document.getElementById("outline");
   if (outlineElement) {
@@ -195,14 +255,15 @@ export function initApp(adapter: PlatformAdapter): void {
       "btn-toggle",
       "btn-tail",
       "btn-next",
-      "btn-export-html",
-      "btn-export-pdf",
+      "btn-save-as",
       "btn-copy-md",
       "btn-copy-rich",
     ]) {
       btn(id).disabled = id === "btn-paste-new"
         ? typeof navigator.clipboard?.readText !== "function"
-        : !has;
+        : id === "btn-save-as"
+          ? !has || manager.isActiveWindowed()
+          : !has;
     }
     tabstrip.hidden = !has;
 
@@ -216,7 +277,7 @@ export function initApp(adapter: PlatformAdapter): void {
 
     const tail = btn("btn-tail");
     const isLog = manager.getActiveFormat() === "log";
-    tail.hidden = !isLog || isEdit;
+    tail.hidden = isWeb || !isLog || isEdit;
     tail.classList.toggle("toggled", manager.isFollowing());
     tail.setAttribute("aria-pressed", String(manager.isFollowing()));
 
@@ -229,22 +290,7 @@ export function initApp(adapter: PlatformAdapter): void {
     saveBtn.hidden = !isEdit;
     saveBtn.disabled = !manager.isEditing();
 
-    // Download / conversion controls are available on both platforms.
-    const dlSelect = document.querySelector<HTMLSelectElement>(".download-format");
-    const dlBtn = document.getElementById("btn-download") as HTMLButtonElement | null;
-    if (dlSelect && dlBtn) {
-      dlSelect.hidden = !has;
-      dlBtn.hidden = !has;
-      for (const option of Array.from(dlSelect.options)) {
-        if (["json", "yaml", "toml", "ini"].includes(option.value)) {
-          option.disabled = fmt !== "data";
-        } else if (option.value === "md") {
-          option.disabled = fmt !== "markdown";
-        }
-      }
-      if (dlSelect.selectedOptions[0]?.disabled) dlSelect.value = "";
-      dlBtn.disabled = !dlSelect.value;
-    }
+    refreshDownloadOptions(has, fmt);
 
     // Reading-time estimate — Markdown only; hidden for data/log/text tabs.
     const readingTime = document.getElementById("reading-time");
@@ -255,7 +301,44 @@ export function initApp(adapter: PlatformAdapter): void {
     }
   }
 
+  const diagnosticPattern = /couldn('|’)t|failed|blocked|removed|unavailable|error/i;
+
+  function renderDiagnostics(): void {
+    const list = document.getElementById("diagnostics-list");
+    if (!list) return;
+    list.replaceChildren();
+    if (diagnostics.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "diagnostics-empty";
+      empty.textContent = "No diagnostics";
+      list.appendChild(empty);
+      return;
+    }
+    for (const entry of diagnostics) {
+      const row = document.createElement("div");
+      row.className = "diagnostics-row";
+      const time = document.createElement("span");
+      time.className = "diagnostics-time";
+      time.textContent = entry.time;
+      const message = document.createElement("span");
+      message.className = "diagnostics-message";
+      message.textContent = entry.message;
+      row.append(time, message);
+      list.appendChild(row);
+    }
+  }
+
+  function recordDiagnostic(msg: string): void {
+    diagnostics.unshift({
+      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      message: msg,
+    });
+    diagnostics.splice(50);
+    renderDiagnostics();
+  }
+
   function showBanner(msg: string) {
+    if (diagnosticPattern.test(msg)) recordDiagnostic(msg);
     banner.textContent = msg;
     banner.hidden = false;
     setTimeout(() => (banner.hidden = true), 4000);
@@ -293,8 +376,10 @@ export function initApp(adapter: PlatformAdapter): void {
    * a browser download is triggered. Returns false if the user cancels the
    * dialog (so the caller skips the "saved ✓" flash).
    */
-  async function downloadMermaid(svg: SVGSVGElement, kind: "svg" | "png"): Promise<boolean> {
-    const filename = `${diagramBaseName()}.${kind}`;
+  async function downloadMermaid(svg: SVGSVGElement, kind: "svg" | "png" | "dio" | "luc"): Promise<boolean> {
+    const filename = kind === "dio" || kind === "luc"
+      ? `${diagramBaseName()}.drawio`
+      : `${diagramBaseName()}.${kind}`;
     if (kind === "svg") {
       const markup = mermaidSvgMarkup(svg);
       if (adapter.platform === "tauri") {
@@ -306,6 +391,21 @@ export function initApp(adapter: PlatformAdapter): void {
         await adapter.saveTextFile(path, markup);
       } else {
         downloadFile(markup, filename, "image/svg+xml");
+      }
+    } else if (kind === "dio" || kind === "luc") {
+      const xml = svgToDrawioXml(svg);
+      if (adapter.platform === "tauri") {
+        const path = await adapter.saveDialog({
+          defaultPath: filename,
+          filters: [{
+            name: kind === "luc" ? "Lucid/draw.io XML" : "draw.io XML",
+            extensions: ["drawio", "xml"],
+          }],
+        });
+        if (!path) return false;
+        await adapter.saveTextFile(path, xml);
+      } else {
+        downloadFile(xml, filename, "application/xml");
       }
     } else {
       const bytes = await mermaidPngBytes(svg);
@@ -324,6 +424,27 @@ export function initApp(adapter: PlatformAdapter): void {
         a.click();
         URL.revokeObjectURL(url);
       }
+    }
+    return true;
+  }
+
+  async function downloadAllMermaidDrawio(): Promise<boolean> {
+    const svgs = Array.from(content.querySelectorAll<SVGSVGElement>("pre.mermaid svg"));
+    if (svgs.length === 0) {
+      showBanner("No Mermaid diagrams to export");
+      return false;
+    }
+    const xml = svgsToDrawioFile(svgs);
+    const filename = `${diagramBaseName()}-diagrams.drawio`;
+    if (adapter.platform === "tauri") {
+      const path = await adapter.saveDialog({
+        defaultPath: filename,
+        filters: [{ name: "draw.io XML", extensions: ["drawio", "xml"] }],
+      });
+      if (!path) return false;
+      await adapter.saveTextFile(path, xml);
+    } else {
+      downloadFile(xml, filename, "application/xml");
     }
     return true;
   }
@@ -364,6 +485,7 @@ export function initApp(adapter: PlatformAdapter): void {
     if (fileContent === null) return;
     manager.openOrActivate(path, fileContent);
     await adapter.watchFile(path);
+    rememberRecentFile(path);
   }
 
   async function openMany(paths: string[]) {
@@ -400,7 +522,8 @@ export function initApp(adapter: PlatformAdapter): void {
         showBanner("Clipboard is empty");
         return;
       }
-      await manager.openScratchMarkdown(text);
+      const guess = guessPasteScratch(text);
+      await manager.openScratch(text, guess);
       showBanner("Pasted into new document");
     } catch (err) {
       showBanner(`Couldn't read clipboard — ${err instanceof Error ? err.message : String(err)}`);
@@ -432,10 +555,22 @@ export function initApp(adapter: PlatformAdapter): void {
       searchBar.open();
       rebindSearch();
     }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      openQuickSwitch();
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
       if (manager.count() > 0) { e.preventDefault(); manager.closeActiveTab(); }
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      if (e.shiftKey) {
+        if (manager.count() === 0 || manager.isActiveWindowed()) return;
+        e.preventDefault();
+        void manager.saveActiveAs().catch((err) =>
+          showBanner(`Save As failed — ${err instanceof Error ? err.message : String(err)}`)
+        );
+        return;
+      }
       if (manager.isEditing()) {
         e.preventDefault();
         void manager.saveActive().catch((err) =>
@@ -459,41 +594,186 @@ export function initApp(adapter: PlatformAdapter): void {
       showBanner(`Save failed — ${err instanceof Error ? err.message : String(err)}`)
     );
   });
+  btn("btn-save-as").addEventListener("click", () => {
+    void manager.saveActiveAs().catch((err) =>
+      showBanner(`Save As failed — ${err instanceof Error ? err.message : String(err)}`)
+    );
+  });
   btn("btn-tail").addEventListener("click", () => manager.toggleFollow());
   btn("btn-close-all").addEventListener("click", () => manager.closeAll());
 
+  const diagnosticsPanel = document.createElement("div");
+  diagnosticsPanel.id = "diagnostics-panel";
+  diagnosticsPanel.hidden = true;
+  diagnosticsPanel.innerHTML = `
+    <div class="diagnostics-panel-inner" role="dialog" aria-label="Diagnostics">
+      <div class="diagnostics-head">
+        <strong>Diagnostics</strong>
+        <button type="button" id="btn-diagnostics-close" aria-label="Close diagnostics">×</button>
+      </div>
+      <div id="diagnostics-list"></div>
+    </div>
+  `;
+  document.body.appendChild(diagnosticsPanel);
+  renderDiagnostics();
+  btn("btn-diagnostics").addEventListener("click", () => {
+    diagnosticsPanel.hidden = !diagnosticsPanel.hidden;
+    renderDiagnostics();
+  });
+  document.getElementById("btn-diagnostics-close")?.addEventListener("click", () => {
+    diagnosticsPanel.hidden = true;
+  });
+
+  type QuickItem =
+    | { kind: "tab"; path: string; title: string; detail: string; dirty: boolean; active: boolean }
+    | { kind: "recent"; path: string; title: string; detail: string };
+
+  const quick = document.createElement("div");
+  quick.id = "quick-switcher";
+  quick.hidden = true;
+  quick.innerHTML = `
+    <div class="quick-panel" role="dialog" aria-label="Quick switch">
+      <input class="quick-input" type="text" aria-label="Quick switch" placeholder="Open tab or recent file" />
+      <div class="quick-list" role="listbox"></div>
+    </div>
+  `;
+  document.body.appendChild(quick);
+  const quickInput = quick.querySelector<HTMLInputElement>(".quick-input")!;
+  const quickList = quick.querySelector<HTMLElement>(".quick-list")!;
+  let quickItems: QuickItem[] = [];
+  let quickSelected = 0;
+
+  function quickSourceItems(): QuickItem[] {
+    const tabs = manager.getOpenTabs().map((tab): QuickItem => ({
+      kind: "tab",
+      path: tab.path,
+      title: tab.title,
+      detail: tab.active ? "Open tab - active" : "Open tab",
+      dirty: tab.dirty,
+      active: tab.active,
+    }));
+    const openPaths = new Set(tabs.map((tab) => tab.path));
+    const recent = loadRecentFiles()
+      .filter((file: RecentFile) => !openPaths.has(file.path))
+      .map((file): QuickItem => ({
+        kind: "recent",
+        path: file.path,
+        title: file.title,
+        detail: "Recent file",
+      }));
+    return [...tabs, ...recent];
+  }
+
+  function renderQuick(): void {
+    const q = quickInput.value.trim().toLowerCase();
+    quickItems = quickSourceItems().filter((item) =>
+      !q || item.title.toLowerCase().includes(q) || item.path.toLowerCase().includes(q),
+    );
+    quickSelected = Math.min(quickSelected, Math.max(0, quickItems.length - 1));
+    quickList.replaceChildren();
+    if (quickItems.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "quick-empty";
+      empty.textContent = "No matches";
+      quickList.appendChild(empty);
+      return;
+    }
+    quickItems.forEach((item, index) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "quick-item" + (index === quickSelected ? " selected" : "");
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", String(index === quickSelected));
+      row.innerHTML = `
+        <span class="quick-title"></span>
+        <span class="quick-detail"></span>
+        <span class="quick-path"></span>
+      `;
+      row.querySelector(".quick-title")!.textContent =
+        `${item.kind === "tab" && item.dirty ? "* " : ""}${item.title}`;
+      row.querySelector(".quick-detail")!.textContent = item.detail;
+      row.querySelector(".quick-path")!.textContent = item.path;
+      row.addEventListener("mouseenter", () => { quickSelected = index; renderQuick(); });
+      row.addEventListener("click", () => { void chooseQuick(index); });
+      quickList.appendChild(row);
+    });
+  }
+
+  function openQuickSwitch(): void {
+    quick.hidden = false;
+    quickInput.value = "";
+    quickSelected = 0;
+    renderQuick();
+    quickInput.focus();
+  }
+
+  function closeQuickSwitch(): void {
+    quick.hidden = true;
+  }
+
+  async function chooseQuick(index = quickSelected): Promise<void> {
+    const item = quickItems[index];
+    if (!item) return;
+    closeQuickSwitch();
+    if (item.kind === "tab") {
+      await manager.activatePath(item.path);
+    } else {
+      await openPath(item.path);
+    }
+  }
+
+  quickInput.addEventListener("input", () => {
+    quickSelected = 0;
+    renderQuick();
+  });
+  quickInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeQuickSwitch();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      quickSelected = Math.min(quickSelected + 1, Math.max(0, quickItems.length - 1));
+      renderQuick();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      quickSelected = Math.max(quickSelected - 1, 0);
+      renderQuick();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      void chooseQuick();
+    }
+  });
+  quick.addEventListener("mousedown", (e) => {
+    if (e.target === quick) closeQuickSwitch();
+  });
+
   // ---- Platform-specific toolbar ----
-  // Web: hide Next (no directory concept) and the duplicate native export buttons.
-  const isWeb = adapter.platform === "web";
+  // Web: hide controls that rely on directory watching or live filesystem tails.
   const btnNext = btn("btn-next");
   if (isWeb) {
     btnNext.hidden = true;
-    btn("btn-export-html").hidden = true;
-    btn("btn-export-pdf").hidden = true;
+    btn("btn-tail").hidden = true;
   }
 
-  const group = btnNext.closest(".group")!;
-  const dlSelect = document.createElement("select");
-  dlSelect.className = "download-format";
-  dlSelect.title = "Download or convert format";
-  dlSelect.innerHTML = `
-      <option value="">Download as…</option>
-      <option value="md">Markdown (.md)</option>
-      <option value="html">HTML (.html)</option>
-      <option value="pdf">PDF (.pdf)</option>
-      <option value="json">JSON (.json)</option>
-      <option value="yaml">YAML (.yaml)</option>
-      <option value="toml">TOML (.toml)</option>
-      <option value="ini">INI (.ini)</option>
-    `;
-  const dlBtn = document.createElement("button");
-  dlBtn.id = "btn-download";
-  dlBtn.className = "primary";
-  dlBtn.setAttribute("aria-label", "Download or convert");
-  dlBtn.setAttribute("data-tip", "Download or convert");
-  dlBtn.innerHTML = iconMarkup("ic-download");
-  dlBtn.disabled = true;
-  dlBtn.addEventListener("click", async () => {
+  const dlSelect = document.querySelector<HTMLSelectElement>(".download-format")!;
+
+  function refreshDownloadOptions(has: boolean, fmt: Format | undefined): void {
+    const previous = dlSelect.value;
+    dlSelect.replaceChildren(new Option("Download as…", ""));
+    if (has) {
+      if (fmt === "markdown") dlSelect.add(new Option(DOWNLOAD_OPTIONS.md, "md"));
+      dlSelect.add(new Option(DOWNLOAD_OPTIONS.html, "html"));
+      dlSelect.add(new Option(DOWNLOAD_OPTIONS.pdf, "pdf"));
+      if (fmt === "data") {
+        for (const value of ["json", "yaml", "toml", "ini"]) {
+          dlSelect.add(new Option(DOWNLOAD_OPTIONS[value], value));
+        }
+      }
+    }
+    dlSelect.value = Array.from(dlSelect.options).some((option) => option.value === previous) ? previous : "";
+  }
+
+  async function downloadSelectedFormat(): Promise<void> {
     const fmt = dlSelect.value;
     if (!fmt) return;
     const src = manager.getActiveRawText();
@@ -552,17 +832,11 @@ export function initApp(adapter: PlatformAdapter): void {
       showBanner(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     dlSelect.value = "";
-    dlBtn.disabled = true;
-  });
+  }
+
   dlSelect.addEventListener("change", () => {
-    dlBtn.disabled = !dlSelect.value;
+    void downloadSelectedFormat();
   });
-  group.appendChild(dlSelect);
-  group.appendChild(dlBtn);
-
-  dlSelect.hidden = true;
-  dlBtn.hidden = true;
-
   btn("btn-next").addEventListener("click", async () => {
     const cur = manager.getActivePath();
     if (!cur) return;
@@ -577,8 +851,6 @@ export function initApp(adapter: PlatformAdapter): void {
     }
   });
 
-  btn("btn-export-html").addEventListener("click", () => exportHtml(manager.getActiveRawText(), adapter));
-  btn("btn-export-pdf").addEventListener("click", () => exportPdf(manager.getActiveRawText(), adapter));
   btn("btn-copy-md").addEventListener("click", () => copyAsMarkdown(manager.getActiveRawText()));
   btn("btn-copy-rich").addEventListener("click", () => copyAsRichText(manager.getActiveDisplayedHtml({ forCopy: true })));
 
@@ -680,27 +952,45 @@ export function initApp(adapter: PlatformAdapter): void {
 
     const mermaidBtn = target.closest<HTMLElement>(".mermaid-btn");
     if (mermaidBtn) {
-      const svg = mermaidBtn.closest(".mermaid")?.querySelector("svg") as SVGSVGElement | null;
+      const block = mermaidBtn.closest<HTMLElement>(".mermaid");
+      const svg = block?.querySelector("svg") as SVGSVGElement | null;
       const label = mermaidBtn.querySelector(".mermaid-btn-label");
-      if (svg && label) {
+      if (label) {
         const kind = mermaidBtn.dataset.kind;
         const prev = label.textContent;
         try {
           let done = true;
-          if (mermaidBtn.dataset.act === "download") {
-            done = await downloadMermaid(svg, kind === "png" ? "png" : "svg");
-          } else if (kind === "wb") {
+          if (kind === "src") {
+            await navigator.clipboard.writeText(block?.dataset.mermaidSrc ?? "");
+          } else if (kind === "edit") {
+            const source = block?.dataset.mermaidSrc ?? "";
+            if (!source) throw new Error("Mermaid source is unavailable");
+            await manager.openScratch(`\`\`\`mermaid\n${source.replace(/\n$/, "")}\n\`\`\`\n`, {
+              format: "markdown",
+              extension: "md",
+              title: "Mermaid diagram.md",
+            });
+          } else if (kind === "all") {
+            done = await downloadAllMermaidDrawio();
+          } else if (svg && mermaidBtn.dataset.act === "download") {
+            done = await downloadMermaid(
+              svg,
+              kind === "png" ? "png" : kind === "dio" ? "dio" : kind === "luc" ? "luc" : "svg",
+            );
+          } else if (svg && kind === "wb") {
             await copyMermaidWhiteboard(svg);
-          } else if (kind === "dio") {
+          } else if (svg && kind === "dio") {
             await copyMermaidDrawio(svg);
-          } else if (kind === "luc") {
+          } else if (svg && kind === "luc") {
             await copyMermaidLucid(svg);
-          } else if (kind === "exc") {
+          } else if (svg && kind === "exc") {
             await copyMermaidExcalidraw(svg);
-          } else if (kind === "png") {
+          } else if (svg && kind === "png") {
             await copyMermaidPng(svg);
-          } else {
+          } else if (svg) {
             await copyMermaidSvg(svg);
+          } else {
+            throw new Error("Mermaid diagram is unavailable");
           }
           if (done) {
             label.textContent = "✓";
@@ -824,8 +1114,12 @@ export function initApp(adapter: PlatformAdapter): void {
       const session = loadSession();
       restoringSession = true;
       for (const tab of session.tabs) {
-        await openPath(tab.path, true);
-        manager.restoreSessionTab(tab);
+        if (isScratchPath(tab.path)) {
+          manager.restoreSessionTab(tab);
+        } else {
+          await openPath(tab.path, true);
+          manager.restoreSessionTab(tab);
+        }
       }
       if (session.activePath) await manager.activatePath(session.activePath);
       restoringSession = false;

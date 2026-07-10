@@ -206,14 +206,21 @@ export const webAdapter: PlatformAdapter = {
     return new Promise((resolve) => {
       const input = document.createElement("input");
       input.type = "file";
+      input.style.position = "fixed";
+      input.style.left = "-10000px";
+      input.style.top = "0";
       input.multiple = options?.multiple ?? false;
       input.accept = options?.filters
         ?.flatMap((filter) => filter.extensions.map((ext) => `.${ext}`))
         .join(",") ?? "";
+      const finish = (value: string | string[] | null) => {
+        input.remove();
+        resolve(value);
+      };
       input.addEventListener("change", async () => {
         const files = input.files;
         if (!files || files.length === 0) {
-          resolve(null);
+          finish(null);
           return;
         }
         const paths: string[] = [];
@@ -227,10 +234,12 @@ export const webAdapter: PlatformAdapter = {
             console.warn("Skipping unreadable file:", file.name, err);
           }
         }
-        resolve(options?.multiple ? paths : (paths[0] ?? null));
+        finish(options?.multiple ? paths : (paths[0] ?? null));
       });
+      input.addEventListener("cancel", () => finish(null), { once: true });
       // Reset so the same file can be re-selected
       input.value = "";
+      document.body.appendChild(input);
       input.click();
     });
   },

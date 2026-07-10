@@ -68,15 +68,14 @@ describe("parseData", () => {
   it("retains comments when a tree edit serializes YAML", () => {
     const parsed = parseData("# config\nenabled: true # rollout\n", "yaml");
     const out = serializeData(parsed.value!, "yaml", parsed.comments);
-    expect(out).toContain("# [line 1] config");
-    expect(out).toContain("# [line 2, inline] rollout");
+    expect(out).toBe("# config\nenabled: true # rollout\n");
     expect(parseData(out, "yaml").comments).toEqual(parsed.comments);
   });
 
   it("retains nonstandard comments when serializing JSON", () => {
     const parsed = parseData("// config\n{\"enabled\": true}\n", "json");
     const out = serializeData(parsed.value!, "json", parsed.comments);
-    expect(out).toContain("// [line 1] config");
+    expect(out).toContain("// config");
     expect(out).toContain('"enabled": true');
     expect(parseData(out, "json").comments).toEqual(parsed.comments);
   });

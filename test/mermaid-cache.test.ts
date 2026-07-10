@@ -50,6 +50,15 @@ describe("mermaid SVG cache (#90)", () => {
     const pre = pres(c2)[0];
     expect(pre.querySelector("svg")).toBeTruthy();      // svg injected from cache
     expect(pre.style.visibility).not.toBe("hidden");    // and revealed (not left blank)
+    expect(pre.dataset.mermaidSrc).toBe(src);           // source is still available for toolbar actions
+  });
+
+  it("adds source, edit, and export-all actions to rendered diagrams", async () => {
+    const c = mermaidDoc("graph TD; A-->B;");
+    await runPostRender(c, "light");
+
+    const kinds = Array.from(c.querySelectorAll<HTMLElement>(".mermaid-btn")).map((btn) => btn.dataset.kind);
+    expect(kinds).toEqual(expect.arrayContaining(["src", "edit", "all", "dio", "luc"]));
   });
 
   it("re-renders when the theme changes (theme is part of the key)", async () => {

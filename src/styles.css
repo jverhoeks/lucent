@@ -1022,8 +1022,10 @@ body.exporting .doc .code-header {
 }
 
 /* ---- Conflict bar ---- */
-.conflict-bar {
+.conflict-bar,
+.edit-conflict {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
@@ -1033,7 +1035,8 @@ body.exporting .doc .code-header {
   color: #856404;
 }
 
-.conflict-bar button {
+.conflict-bar button,
+.edit-conflict button {
   background: var(--btn-bg);
   border: 1px solid var(--btn-border);
   border-radius: 6px;
@@ -1043,8 +1046,24 @@ body.exporting .doc .code-header {
   transition: background 0.15s;
 }
 
-.conflict-bar button:hover {
+.conflict-bar button:hover,
+.edit-conflict button:hover {
   background: var(--btn-hover);
+}
+
+.conflict-diff-view {
+  grid-column: 1 / -1;
+  max-height: 180px;
+  overflow: auto;
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 8px;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text);
+  font: 12px var(--mono);
+  white-space: pre-wrap;
 }
 
 /* ---- Drag & drop ---- */
@@ -1064,6 +1083,165 @@ body.drag-over::after {
   border-radius: 14px;
   pointer-events: none;
   animation: fadeIn 0.12s ease-out;
+}
+
+/* ---- Quick switcher ---- */
+#quick-switcher {
+  position: fixed;
+  inset: 0;
+  z-index: 9997;
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+}
+
+#quick-switcher[hidden] {
+  display: none;
+}
+
+.quick-panel {
+  width: min(720px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 18px 60px color-mix(in srgb, #000 24%, transparent);
+}
+
+.quick-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px var(--sans);
+}
+
+.quick-list {
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding: 6px;
+}
+
+.quick-item {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.quick-item.selected {
+  background: var(--accent-soft);
+}
+
+.quick-title,
+.quick-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-title {
+  font-weight: 600;
+}
+
+.quick-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.quick-path {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font: 12px var(--mono);
+}
+
+.quick-empty {
+  padding: 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ---- Diagnostics ---- */
+#diagnostics-panel {
+  position: fixed;
+  top: calc(var(--toolbar-h) + 8px);
+  right: 12px;
+  z-index: 9996;
+  width: min(460px, calc(100vw - 24px));
+}
+
+#diagnostics-panel[hidden] {
+  display: none;
+}
+
+.diagnostics-panel-inner {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 14px 42px color-mix(in srgb, #000 20%, transparent);
+}
+
+.diagnostics-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.diagnostics-head button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+}
+
+#diagnostics-list {
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+}
+
+.diagnostics-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.diagnostics-row:nth-child(odd) {
+  background: var(--accent-soft);
+}
+
+.diagnostics-time {
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.diagnostics-message {
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-empty {
+  padding: 18px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 /* ---- Banner ---- */

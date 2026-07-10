@@ -46,6 +46,7 @@ export interface TabHooks {
   onTabClosed: (path: string) => void; // stop watching one closed document
   onCloseAll: () => void; // stop watching everything
   onSave?: (path: string, content: string) => Promise<string | null | void>; // save editor content to disk
+  onSaveAs?: (path: string, content: string) => Promise<string | null | void>; // save editor content to a chosen path
   resolveLocalImage?: (basePath: string, relativePath: string) => Promise<string | null>;
 }
 
@@ -67,6 +68,26 @@ function fmtToEditorLang(t: Tab): EditorLang | undefined {
     if (lang === "yaml") return "yaml";
   }
   return undefined;
+}
+
+function buildConflictDiff(mine: string, disk: string): string {
+  const mineLines = mine.split(/\r?\n/);
+  const diskLines = disk.split(/\r?\n/);
+  const max = Math.max(mineLines.length, diskLines.length);
+  const rows: string[] = [];
+  for (let i = 0; i < max; i++) {
+    const mineLine = mineLines[i] ?? "";
+    const diskLine = diskLines[i] ?? "";
+    if (mineLine === diskLine) continue;
+    rows.push(`L${i + 1}`);
+    if (diskLines[i] !== undefined) rows.push(`- ${diskLine}`);
+    if (mineLines[i] !== undefined) rows.push(`+ ${mineLine}`);
+    if (rows.length > 120) {
+      rows.push("… diff truncated");
+      break;
+    }
+  }
+  return rows.length ? rows.join("\n") : "No textual differences";
 }
 
 export class TabManager {
@@ -124,27 +145,57 @@ export class TabManager {
   getActiveRawText(): string {
     return this.active()?.content ?? "";
   }
+  getOpenTabs(): Array<{ path: string; title: string; dirty: boolean; active: boolean }> {
+    return this.tabs.map((tab, index) => ({
+      path: tab.path,
+      title: tab.title,
+      dirty: !!tab.editDirty,
+      active: index === this.activeIndex,
+    }));
+  }
   snapshotSession(): SessionState {
+    this.captureActiveDraft();
     const active = this.active();
     if (active) active.scrollTop = this.content.scrollTop;
     return {
       version: 1,
-      activePath: active?.path === STDIN_PATH || isScratchPath(active?.path) ? undefined : active?.path,
+      activePath: active?.path === STDIN_PATH ? undefined : active?.path,
       tabs: this.tabs
-        .filter((tab) => tab.path !== STDIN_PATH && !isScratchPath(tab.path))
+        .filter((tab) => tab.path !== STDIN_PATH)
         .map((tab) => ({
           path: tab.path,
+          title: isScratchPath(tab.path) ? tab.title : undefined,
+          content: isScratchPath(tab.path) ? tab.content : undefined,
+          format: isScratchPath(tab.path) ? tab.format : undefined,
           forcedFormat: tab.forcedFormat,
           forcedLang: tab.forcedLang,
-          mode: tab.mode === "raw" ? "raw" : "rendered",
+          mode: isScratchPath(tab.path) ? tab.mode : tab.mode === "raw" ? "raw" : "rendered",
           scrollTop: tab.scrollTop,
           follow: tab.follow,
+          editDirty: isScratchPath(tab.path) ? tab.editDirty : undefined,
         })),
     };
   }
 
   restoreSessionTab(saved: SessionTab): void | Promise<void> {
-    const tab = this.tabs.find((candidate) => candidate.path === saved.path);
+    let tab = this.tabs.find((candidate) => candidate.path === saved.path);
+    if (!tab && isScratchPath(saved.path) && typeof saved.content === "string") {
+      tab = {
+        path: saved.path,
+        title: saved.title || basename(saved.path),
+        content: saved.content,
+        format: saved.format ?? "markdown",
+        forcedFormat: saved.forcedFormat,
+        forcedLang: saved.forcedLang,
+        mode: saved.mode,
+        scrollTop: saved.scrollTop,
+        follow: saved.follow,
+        editDirty: saved.editDirty ?? true,
+      };
+      this.tabs.push(tab);
+      this.activeIndex = this.tabs.length - 1;
+      this.renderTabbar();
+    }
     if (!tab) return;
     tab.forcedFormat = saved.forcedFormat;
     tab.forcedLang = saved.forcedLang;
@@ -243,20 +294,32 @@ export class TabManager {
     return this.activate(this.tabs.length - 1);
   }
 
-  /** Open pasted/unsaved Markdown in a new editable scratch tab. */
-  openScratchMarkdown(content: string): void | Promise<void> {
+  /** Open pasted/unsaved content in a new editable scratch tab. */
+  openScratch(
+    content: string,
+    opts: { format?: Format; title?: string; extension?: string; forcedLang?: DataLang } = {},
+  ): void | Promise<void> {
     const existing = this.tabs.filter((t) => isScratchPath(t.path)).length;
     const n = existing + 1;
+    const format = opts.format ?? "markdown";
+    const extension = opts.extension ?? (format === "markdown" ? "md" : format === "log" ? "log" : "txt");
+    const title = opts.title ?? (n === 1 ? `Pasted.${extension}` : `Pasted ${n}.${extension}`);
     this.tabs.push({
-      path: `${SCRATCH_PATH_PREFIX}${Date.now()}-${n}.md>`,
-      title: n === 1 ? "Pasted.md" : `Pasted ${n}.md`,
+      path: `${SCRATCH_PATH_PREFIX}${Date.now()}-${n}.${extension}>`,
+      title,
       content,
-      format: "markdown",
+      format,
+      forcedLang: opts.forcedLang,
       mode: "edit",
       scrollTop: 0,
       editDirty: true,
     });
     return this.activate(this.tabs.length - 1);
+  }
+
+  /** Open pasted/unsaved Markdown in a new editable scratch tab. */
+  openScratchMarkdown(content: string): void | Promise<void> {
+    return this.openScratch(content, { format: "markdown", extension: "md" });
   }
 
   /** Open a huge log in windowed mode (no full content read). */
@@ -513,6 +576,19 @@ export class TabManager {
     if (!t || editorValue === null || !t.editDirty) return false;
     const nextContent = editorValue;
     const savedPath = await this.hooks.onSave?.(t.path, nextContent);
+    if (savedPath === null) return false;
+    this.applySavedContent(t, nextContent, savedPath);
+    this.renderTabbar();
+    this.hooks.onChange();
+    return true;
+  }
+
+  /** Save the active tab to a user-chosen path. Returns true if saved. */
+  async saveActiveAs(): Promise<boolean> {
+    const t = this.active();
+    if (!t || t.windowed || !this.hooks.onSaveAs) return false;
+    const nextContent = this.activeEditorValue() ?? t.content;
+    const savedPath = await this.hooks.onSaveAs(t.path, nextContent);
     if (savedPath === null) return false;
     this.applySavedContent(t, nextContent, savedPath);
     this.renderTabbar();
@@ -853,8 +929,10 @@ export class TabManager {
       conflictBar.hidden = true;
       conflictBar.innerHTML = `
         <span>⚠ File changed on disk</span>
+        <button class="conflict-diff">View diff</button>
         <button class="conflict-accept">Overwrite with mine</button>
         <button class="conflict-reload">Reload from disk</button>
+        <pre class="conflict-diff-view" hidden></pre>
       `;
       if (t.pendingDiskContent !== undefined) {
         conflictBar.hidden = false;
@@ -1034,6 +1112,15 @@ export class TabManager {
           delete conflictBar.dataset.diskContent;
           t.pendingDiskContent = undefined;
         }
+      });
+
+      conflictBar.querySelector(".conflict-diff")?.addEventListener("click", () => {
+        const diff = conflictBar.querySelector<HTMLElement>(".conflict-diff-view");
+        const diskContent = conflictBar.dataset.diskContent;
+        if (!diff || diskContent === undefined) return;
+        const mine = this.currentEditor?.getValue() ?? textarea.value;
+        diff.textContent = buildConflictDiff(mine, diskContent);
+        diff.hidden = !diff.hidden;
       });
 
       conflictBar.querySelector(".conflict-reload")?.addEventListener("click", () => {

@@ -36,4 +36,37 @@ describe("session persistence", () => {
       { path: "/a.md", mode: "rendered", scrollTop: 0 },
     ]);
   });
+
+  it("round-trips scratch draft content", () => {
+    saveSession({
+      version: 1,
+      activePath: "<scratch:1.md>",
+      tabs: [
+        {
+          path: "<scratch:1.md>",
+          title: "Pasted.md",
+          content: "# Draft",
+          format: "markdown",
+          mode: "edit",
+          scrollTop: 12,
+          editDirty: true,
+        },
+      ],
+    });
+    expect(loadSession()).toEqual({
+      version: 1,
+      activePath: "<scratch:1.md>",
+      tabs: [
+        {
+          path: "<scratch:1.md>",
+          title: "Pasted.md",
+          content: "# Draft",
+          format: "markdown",
+          mode: "edit",
+          scrollTop: 12,
+          editDirty: true,
+        },
+      ],
+    });
+  });
 });

@@ -18,11 +18,14 @@ export const ICON_PATHS: Record<string, string> = {
   "ic-check": '<path d="M20 6 9 17l-5-5"/>',
   "ic-save":
     '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
+  "ic-save-as":
+    '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M12 18v-6"/><path d="M9 15h6"/>',
   "ic-eye":
     '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
   "ic-code": '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
   "ic-tail": '<path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M5 21h14"/>',
   "ic-search": '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  "ic-info": '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   "ic-copy":
     '<rect width="13" height="13" x="9" y="9" rx="2"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/>',
   "ic-richtext":

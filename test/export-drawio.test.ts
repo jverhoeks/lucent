@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { drawioFromGraph } from "../src/export-drawio";
+import { drawioFromGraph, svgsToDrawioFile } from "../src/export-drawio";
 import type { DiagramGraph } from "../src/mermaid-whiteboard";
 
 function parse(xml: string): Document {
@@ -83,6 +83,18 @@ describe("drawioFromGraph", () => {
     const value = parse(drawioFromGraph(g))
       .querySelector('mxCell[vertex="1"]')?.getAttribute("value");
     expect(value).toBe("Start<b> the</b><i> engine</i>");
+  });
+
+  it("wraps multiple SVG conversions as draw.io file pages", () => {
+    const svgA = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
+    const svgB = document.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
+
+    const doc = parse(svgsToDrawioFile([svgA, svgB], ["First", "Second & next"]));
+
+    expect(doc.querySelector("mxfile")).toBeTruthy();
+    expect(Array.from(doc.querySelectorAll("diagram")).map((d) => d.getAttribute("name")))
+      .toEqual(["First", "Second & next"]);
+    expect(doc.querySelectorAll("mxGraphModel")).toHaveLength(2);
   });
 
   it("emits loose texts as text vertices", () => {

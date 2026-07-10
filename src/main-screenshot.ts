@@ -113,7 +113,7 @@ style.textContent = `
   .mermaid-actions { opacity: 1 !important; }
   #banner { display: none !important; }
   .download-format, #btn-download { display: none !important; }
-  #btn-next, #btn-export-html, #btn-export-pdf { display: inline-flex !important; }
+  #btn-next { display: inline-flex !important; }
 `;
 document.head.appendChild(style);
 

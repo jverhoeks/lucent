@@ -296,21 +296,24 @@ export class TreeView {
   /** Delete a node from the tree by its path. Rebuilds view. */
   private deleteNode(path: string): void {
     if (path === "root") return;
-    const parentPath = ancestorPaths(path).slice(-2)[0] ?? "";
-    const key = path.split(".").pop() ?? path.split("[").pop() ?? "";
-    const parent = findNode(this.rootValue, parentPath);
-    if (!parent) return;
-    const pv = parent.value;
+    const ancestors = ancestorPaths(path);
+    const parentPath = ancestors.length >= 2 ? ancestors[ancestors.length - 2] : "root";
+    const lastTok = path.split(/(?=[.[])/).pop() ?? "";
+    const key = lastTok.replace(/^\./, "").replace(/^\[(\d+)\]$/, "$1");
+    const parentNode = parentPath === "root"
+      ? { key: "root", value: this.rootValue }
+      : findNode(this.rootValue, parentPath);
+    if (!parentNode) return;
+    const pv = parentNode.value;
 
     if (pv.kind === "array") {
-      const idx = parseInt(key.replace(/\]$/, ""), 10);
+      const idx = parseInt(key, 10);
       if (!isNaN(idx)) pv.items.splice(idx, 1);
       pv.items.forEach((item, i) => {
         item.key = String(i);
       });
     } else if (pv.kind === "object") {
-      const cleanKey = key.replace(/^\./, "");
-      const idx = pv.entries.findIndex((e) => e.key === cleanKey);
+      const idx = pv.entries.findIndex((e) => e.key === key);
       if (idx >= 0) pv.entries.splice(idx, 1);
     }
     this.fireEdit();
@@ -573,9 +576,36 @@ function ancestorPaths(path: string): string[] {
   return out.filter(Boolean);
 }
 
+/** Escape a string for use inside a double-quoted CSS attribute selector. */
 function cssEscape(s: string): string {
-  if (typeof window !== "undefined" && window.CSS && CSS.escape) return CSS.escape(s);
-  return s.replace(/["\\]/g, "\\$&").replace(/[\n\r\f]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `);
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(s);
+  const len = s.length;
+  let index = -1;
+  let result = "";
+  const first = s.charCodeAt(0);
+  const isIdent = (code: number) =>
+    code === 0x002d
+    || code === 0x005f
+    || (code >= 0x0030 && code <= 0x0039)
+    || (code >= 0x0041 && code <= 0x005a)
+    || (code >= 0x0061 && code <= 0x007a);
+  while (++index < len) {
+    const code = s.charCodeAt(index);
+    if (
+      code === 0x0000
+      || (code >= 0x0001 && code <= 0x001f)
+      || code === 0x007f
+      || (index === 0 && code >= 0x0030 && code <= 0x0039)
+      || (index === 1 && code >= 0x0030 && code <= 0x0039 && first === 0x002d)
+      || (index === 0 && code === 0x002d && len === 1)
+      || (code < 0x0080 && !isIdent(code))
+    ) {
+      result += `\\${code.toString(16)} `;
+      continue;
+    }
+    result += s.charAt(index);
+  }
+  return result;
 }
 
 function findScroller(el: HTMLElement): HTMLElement {

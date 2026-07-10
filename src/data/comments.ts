@@ -263,6 +263,40 @@ export function prependStructuredComments(
   return `${header}\n${output}`;
 }
 
+function lineCommentMarker(target: DataLang): string {
+  return target === "json" ? "//" : target === "ini" ? ";" : "#";
+}
+
+/** Reinsert comments into a same-format serialization. Full-line comments go
+ * before their original line; inline comments are appended to that line. When a
+ * structural edit changes line counts, positions are clamped to the output. */
+export function restoreStructuredComments(
+  output: string,
+  comments: StructuredComment[],
+  target: DataLang,
+): string {
+  if (!comments.length) return output;
+  const marker = lineCommentMarker(target);
+  const trailingNewline = output.endsWith("\n");
+  const lines = output.replace(/\n$/, "").split("\n");
+  const sorted = [...comments].sort((a, b) => a.line - b.line || Number(a.inline) - Number(b.inline));
+  let offset = 0;
+
+  for (const comment of sorted) {
+    const text = `${marker} ${comment.text}`.trimEnd();
+    if (comment.inline) {
+      const index = Math.max(0, Math.min(lines.length - 1, comment.line - 1 + offset));
+      lines[index] = `${lines[index].trimEnd()} ${text}`;
+    } else {
+      const index = Math.max(0, Math.min(lines.length, comment.line - 1 + offset));
+      lines.splice(index, 0, text);
+      offset++;
+    }
+  }
+
+  return `${lines.join("\n")}${trailingNewline ? "\n" : ""}`;
+}
+
 /** Visible comment list shared by rendered and edit-preview trees. */
 export function renderStructuredComments(
   comments: StructuredComment[] | undefined,

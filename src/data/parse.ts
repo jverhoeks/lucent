@@ -3,7 +3,7 @@ import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { parse as parseIni, stringify as stringifyIni } from "ini";
 import type { DataParseResult, DataLang, DataValue, StructuredComment } from "../types";
 import { parseValueToModel } from "./parse-value";
-import { extractStructuredComments, prependStructuredComments, stripJsonComments } from "./comments";
+import { extractStructuredComments, restoreStructuredComments, stripJsonComments } from "./comments";
 
 export function parseData(text: string, lang: DataLang): DataParseResult {
   const comments = extractStructuredComments(text, lang);
@@ -76,5 +76,5 @@ export function serializeData(
     default:
       throw new Error(`unsupported data language: ${lang}`);
   }
-  return prependStructuredComments(output, comments, lang);
+  return restoreStructuredComments(output, comments, lang);
 }

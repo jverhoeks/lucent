@@ -184,13 +184,14 @@ function resolveTheme(theme: Theme): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-type MermaidKind = "svg" | "png" | "wb" | "dio" | "luc" | "exc";
+type MermaidKind = "svg" | "png" | "wb" | "dio" | "luc" | "exc" | "src" | "edit" | "all";
 
 /** One action group. "Copy" offers SVG + PNG + Whiteboard + draw.io +
- *  Lucidchart + Excalidraw; "Download" offers SVG + PNG (the editable payloads are
- *  clipboard-only). */
+ *  Lucidchart + Excalidraw; "Download" offers SVG + PNG + draw.io/Lucid XML. */
 function mermaidActionGroup(act: "copy" | "download", iconId: string, verb: string): string {
-  const LABEL: Record<MermaidKind, string> = { svg: "SVG", png: "PNG", wb: "WB", dio: "DIO", luc: "LC", exc: "EX" };
+  const LABEL: Record<MermaidKind, string> = {
+    svg: "SVG", png: "PNG", wb: "WB", dio: "DIO", luc: "LC", exc: "EX", src: "SRC", edit: "Edit", all: "All",
+  };
   const TITLE: Record<MermaidKind, string> = {
     svg: `${verb} as SVG`,
     png: `${verb} as PNG`,
@@ -198,12 +199,17 @@ function mermaidActionGroup(act: "copy" | "download", iconId: string, verb: stri
     dio: `${verb} to draw.io`,
     luc: `${verb} for Lucidchart`,
     exc: `${verb} to Excalidraw`,
+    src: "Copy Mermaid source",
+    edit: "Edit Mermaid source in a new document",
+    all: "Download all diagrams as draw.io XML",
   };
   const btn = (kind: MermaidKind) =>
     `<button class="mermaid-btn" type="button" data-act="${act}" data-kind="${kind}" ` +
     `title="${TITLE[kind]}" aria-label="${TITLE[kind]}">` +
     `<span class="mermaid-btn-label">${LABEL[kind]}</span></button>`;
-  const extra = act === "copy" ? btn("wb") + btn("dio") + btn("luc") + btn("exc") : "";
+  const extra = act === "copy"
+    ? btn("src") + btn("edit") + btn("wb") + btn("dio") + btn("luc") + btn("exc")
+    : btn("dio") + btn("luc") + btn("all");
   return (
     `<div class="mermaid-group" role="group" aria-label="${verb}">` +
     `<span class="mermaid-group-icon" title="${verb}" aria-hidden="true">${iconMarkup(iconId)}</span>` +
@@ -262,6 +268,7 @@ export async function runPostRender(container: HTMLElement, theme: Theme): Promi
     const cached = mermaidSvgCache.get(key);
     if (cached && !seenThisPass.has(key)) {
       n.innerHTML = cached;
+      if (source) n.dataset.mermaidSrc = source;
       n.setAttribute("data-processed", "true");
       n.style.visibility = ""; // reveal — markdown.ts hid it pre-paint
       seenThisPass.add(key);
@@ -308,6 +315,7 @@ export async function runPostRender(container: HTMLElement, theme: Theme): Promi
           mermaidSvgCache.delete(oldest);
         }
       }
+      if (source) n.dataset.mermaidSrc = source;
       decorateMermaid(n);
     }
   } catch {

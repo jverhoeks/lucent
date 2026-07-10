@@ -170,3 +170,12 @@ export function drawioFromGraph(g: DiagramGraph): string {
 export function svgToDrawioXml(svg: SVGSVGElement): string {
   return drawioFromGraph(extractGraph(svg));
 }
+
+/** A valid uncompressed diagrams.net file with one page per rendered SVG. */
+export function svgsToDrawioFile(svgs: SVGSVGElement[], names?: string[]): string {
+  const diagrams = svgs.map((svg, index) => {
+    const name = names?.[index] || `Diagram ${index + 1}`;
+    return `<diagram id="diagram-${index + 1}" name="${xmlEscape(name)}">${svgToDrawioXml(svg)}</diagram>`;
+  });
+  return `<mxfile host="Lucent">${diagrams.join("")}</mxfile>`;
+}

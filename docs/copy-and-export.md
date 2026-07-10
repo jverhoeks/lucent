@@ -48,10 +48,10 @@ Hover a fenced code block for its header controls:
 Hover a rendered [Mermaid](https://mermaid.js.org/) diagram and two button
 groups appear:
 
-- **Copy** — SVG · PNG · **WB** (Whiteboard) · **DIO** (draw.io) · **EX** (Excalidraw)
-- **Download** — SVG · PNG
+- **Copy** — SVG · PNG · source · edit source · **WB** (Whiteboard) · **DIO** (draw.io) · **LC** (Lucidchart) · **EX** (Excalidraw)
+- **Download** — SVG · PNG · **DIO** / **LC** `.drawio` XML · all diagrams as a multi-page `.drawio` file
 
-SVG and PNG are flat images. The **WB / DIO / EX** targets are the interesting
+SVG and PNG are flat images. The **WB / DIO / LC / EX** targets are the interesting
 part: instead of an image, Lucent reconstructs the diagram as **native, editable
 shapes, text, and connectors** in the destination tool — so you can keep editing
 it there.
@@ -60,7 +60,9 @@ it there.
 | --- | --- | --- | --- |
 | **SVG** (copy) | SVG markup as plain text | an editor, or save as `.svg` | WebKit can't put `image/svg+xml` on the clipboard, so it's copied as text. |
 | **PNG** (copy) | raster image | any image field | — |
-| **SVG / PNG** (download) | file | — | Saves the diagram to disk. |
+| **SRC / Edit** | Mermaid source | clipboard or a new Lucent scratch document | Use this when you want to revise a rendered diagram without hunting through the source file. |
+| **SVG / PNG / DIO / LC** (download) | file | — | Saves the diagram to disk; DIO/LC write editable `.drawio` XML for draw.io or Lucid import. |
+| **All** (download) | multi-page `.drawio` file | draw.io / Lucid import | Exports every rendered Mermaid diagram in the current document. |
 | **WB** — Atlassian Whiteboard | native whiteboard clipboard (`text/html`) | an [Atlassian Whiteboard](https://www.atlassian.com/software/confluence/whiteboards) | Nodes, labels, and connectors come in as real, editable objects. |
 | **DIO** — draw.io | mxGraph XML | a [draw.io / diagrams.net](https://www.drawio.com/) canvas | Open-format XML that draw.io recognizes on paste. |
 | **LC** — Lucidchart | mxGraph XML | Lucidchart's draw.io import path | Same editable graph payload as draw.io, labeled for Lucid workflows. |
@@ -86,10 +88,11 @@ format and Lucent converts on the way out:
 - **JSON / YAML / TOML / INI** — for structured-data files, convert *between*
   formats (e.g. open a YAML config, download it as JSON).
 
-YAML, TOML, INI, and JSON-style `//` / `/* ... */` comments are retained as a
-source-ordered comment header when converting between formats. JSON output uses
-nonstandard `//` comments when needed. Downloading in the original format
-preserves the source exactly.
+YAML, TOML, INI, and JSON-style `//` / `/* ... */` comments are retained. When
+editing a data tree and saving back to the same format, comments are restored
+near their original lines, including inline comments. Cross-format conversion
+uses a source-ordered comment header because paths and line layout change.
+Downloading in the original format preserves the source exactly.
 
 HTML and PDF reuse the same self-contained export. On the web, PDF opens a
 print-ready page in a new tab; desktop uses the native PDF exporter.

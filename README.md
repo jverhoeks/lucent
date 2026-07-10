@@ -28,18 +28,19 @@ split-screen editor for when you want to write too.
 - **Diagrams & math** — [Mermaid](https://mermaid.js.org/) diagrams and
   [KaTeX](https://katex.org/) math render inline, and follow the theme.
 - **Mermaid diagrams you can take with you** — hover any diagram for a toolbar:
-  **copy** or **download** as SVG / PNG, or **copy as editable shapes** straight
-  into [Atlassian Whiteboard](https://www.atlassian.com/software/confluence/whiteboards),
-  [draw.io](https://www.drawio.com/), Lucidchart, or
-  [Excalidraw](https://excalidraw.com/) —
+  **copy**, **edit the source**, **download**, or export every diagram as
+  draw.io XML; copy editable shapes straight into
+  [Atlassian Whiteboard](https://www.atlassian.com/software/confluence/whiteboards),
+  [draw.io](https://www.drawio.com/), Lucidchart, or [Excalidraw](https://excalidraw.com/) -
   native shapes, text, and connectors, not a flat image. See
   [Copy & export](docs/copy-and-export.md).
 - **Structured data as a tree** — JSON, YAML, TOML, and INI render as a
   navigable, collapsible tree instead of raw text. YAML, TOML, INI, and
   JSON-style `//` / `/* ... */` comments remain visible with their source line
   context.
-- **Logs, made readable** — level highlighting, tail / follow for live files,
-  in-view search, and inline decoding of embedded (even base64-encoded) JSON.
+- **Logs, made readable** — level highlighting, desktop tail / follow for live
+  files, in-view search, and inline decoding of embedded (even base64-encoded)
+  JSON.
 - **Markdown and structured-data editor** — opt-in split-screen
   [CodeMirror](https://codemirror.net/) editing for Markdown and JSON / YAML /
   TOML / INI, with a live rendered preview or collapsible tree beside the
@@ -56,16 +57,19 @@ split-screen editor for when you want to write too.
 - **Raw ⇄ rendered** toggle, drag-and-drop, and a plain-text mode for any file.
 - **Adjustable & persistent** — font family, size, and **light / sepia / dark**
   theme (code and diagrams follow the theme), plus **find** (`Cmd/Ctrl+F`) with
-  case and regex — all remembered between launches.
-- **Export & copy** — one-click **PDF** (native, fixed A4 page) and
-  **standalone HTML** (fully self-contained), plus copy the document as Markdown
-  or as rich text (paste into Docs / Confluence / Word with formatting intact).
+  case and regex, and quick switching across open/recent files (`Cmd/Ctrl+P`) —
+  all remembered between launches.
+- **Export & copy** — download **PDF** (native, fixed A4 page) and
+  **standalone HTML** (fully self-contained) from the **Download as…** menu,
+  plus copy the document as Markdown or as rich text (paste into Docs /
+  Confluence / Word with formatting intact).
 - **Download and convert as another type** — the desktop and web builds both
   provide **Download as…**. Export rendered content as Markdown, standalone
   HTML, or PDF, and convert structured files between JSON, YAML, TOML, and INI.
   Comments are preserved between comment-capable formats, including
-  nonstandard JSON comments. Desktop uses native Save dialogs; the browser
-  downloads the result directly.
+  nonstandard JSON `//` and `/* ... */` comments. Same-format tree edits restore
+  comments near their original lines. Desktop uses native Save dialogs; the
+  browser downloads the result directly.
 - **Opens `.md` for you** — registers as a `.md` file handler on the OS, so
   double-clicking a Markdown file opens it in Lucent.
 - **Private by design** — `markdown-it` runs with raw-HTML passthrough disabled,

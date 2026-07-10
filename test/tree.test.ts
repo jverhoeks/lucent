@@ -61,4 +61,20 @@ describe("renderTree / TreeView", () => {
     tree.expandAll();
     expect(root.querySelector('[data-path="root.nested.deep"]')).toBeTruthy(); // now expanded
   });
+
+  it("finds rows whose keys contain CSS-special characters", () => {
+    const tricky: DataValue = {
+      kind: "object",
+      entries: [
+        { key: 'a:b]', value: { kind: "scalar", type: "string", text: "ok" } },
+        { key: "nested", value: {
+          kind: "object",
+          entries: [{ key: "x (1)", value: { kind: "scalar", type: "number", text: "7" } }],
+        }},
+      ],
+    };
+    const tree = renderTree(tricky, root, { defaultDepth: 99 });
+    expect(tree.rowElement("root.a:b]")).toBeTruthy();
+    expect(tree.rowElement("root.nested.x (1)")).toBeTruthy();
+  });
 });

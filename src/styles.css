@@ -924,7 +924,19 @@ body {
 }
 
 @media (max-width: 720px) {
-  #outline { display: none; }
+  #outline:not(.outline-pinned) {
+    display: none;
+  }
+
+  #outline.outline-pinned {
+    position: fixed;
+    top: var(--toolbar-h, 48px);
+    left: 0;
+    bottom: 0;
+    z-index: 9990;
+    width: min(280px, 85vw);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  }
 }
 
 /* ---- Rendered Markdown document (.doc) ---- */
@@ -2080,7 +2092,7 @@ pre.mermaid {
   right: 8px;
   display: flex;
   gap: 8px;
-  opacity: 0;
+  opacity: 0.45;
   transition: opacity 0.12s;
 }
 

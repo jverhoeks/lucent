@@ -57,7 +57,11 @@ describe("mermaid SVG cache (#90)", () => {
     const c = mermaidDoc("graph TD; A-->B;");
     await runPostRender(c, "light");
 
-    const kinds = Array.from(c.querySelectorAll<HTMLElement>(".mermaid-btn")).map((btn) => btn.dataset.kind);
+    const selects = Array.from(c.querySelectorAll<HTMLSelectElement>(".mermaid-select"));
+    expect(selects).toHaveLength(2);
+    const kinds = selects.flatMap((sel) =>
+      Array.from(sel.options).map((opt) => opt.value).filter(Boolean),
+    );
     expect(kinds).toEqual(expect.arrayContaining(["src", "edit", "all", "dio", "luc"]));
   });
 

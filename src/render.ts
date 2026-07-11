@@ -186,46 +186,35 @@ function resolveTheme(theme: Theme): Theme {
 
 type MermaidKind = "svg" | "png" | "wb" | "dio" | "luc" | "exc" | "src" | "edit" | "all";
 
-/** One action group. "Copy" offers SVG + PNG + Whiteboard + draw.io +
- *  Lucidchart + Excalidraw; "Download" offers SVG + PNG + draw.io/Lucid XML. */
+/** One compact action group: icon + format select (fires on change). */
 function mermaidActionGroup(act: "copy" | "download", iconId: string, verb: string): string {
   const LABEL: Record<MermaidKind, string> = {
-    svg: "SVG", png: "PNG", wb: "WB", dio: "DIO", luc: "LC", exc: "EX", src: "SRC", edit: "Edit", all: "All",
+    svg: "SVG", png: "PNG", wb: "Whiteboard", dio: "draw.io", luc: "Lucidchart",
+    exc: "Excalidraw", src: "Source", edit: "Edit in new doc", all: "All as draw.io",
   };
-  const TITLE: Record<MermaidKind, string> = {
-    svg: `${verb} as SVG`,
-    png: `${verb} as PNG`,
-    wb: `${verb} to Whiteboard`,
-    dio: `${verb} to draw.io`,
-    luc: `${verb} for Lucidchart`,
-    exc: `${verb} to Excalidraw`,
-    src: "Copy Mermaid source",
-    edit: "Edit Mermaid source in a new document",
-    all: "Download all diagrams as draw.io XML",
-  };
-  const btn = (kind: MermaidKind) =>
-    `<button class="mermaid-btn" type="button" data-act="${act}" data-kind="${kind}" ` +
-    `title="${TITLE[kind]}" aria-label="${TITLE[kind]}">` +
-    `<span class="mermaid-btn-label">${LABEL[kind]}</span></button>`;
-  const extra = act === "copy"
-    ? btn("src") + btn("edit") + btn("wb") + btn("dio") + btn("luc") + btn("exc")
-    : btn("dio") + btn("luc") + btn("all");
+  const kinds: MermaidKind[] = act === "copy"
+    ? ["svg", "png", "src", "edit", "wb", "dio", "luc", "exc"]
+    : ["svg", "png", "dio", "luc", "all"];
+  const options = kinds
+    .map((k) => `<option value="${k}">${LABEL[k]}</option>`)
+    .join("");
   return (
     `<div class="mermaid-group" role="group" aria-label="${verb}">` +
     `<span class="mermaid-group-icon" title="${verb}" aria-hidden="true">${iconMarkup(iconId)}</span>` +
-    btn("svg") +
-    btn("png") +
-    extra +
+    `<select class="mermaid-select" data-act="${act}" aria-label="${verb}">` +
+    `<option value="" disabled selected>${verb}…</option>` +
+    options +
+    `</select>` +
     `</div>`
   );
 }
 
 /**
- * Add a hover toolbar to a rendered mermaid block: a "Copy" group and a
- * "Download" group, each offering SVG + PNG. Only blocks that actually produced
+ * Add a hover toolbar to a rendered mermaid block: "Copy" and "Download"
+ * selects. Only blocks that actually produced
  * an <svg> get a toolbar (a parse error leaves the mermaid-annotated source
  * instead). Idempotent — re-rendering won't stack bars. Click handling lives in
- * main.ts's `#content` delegation (`.mermaid-btn`).
+ * main.ts's `#content` delegation (`.mermaid-select` change).
  */
 function decorateMermaid(node: HTMLElement): void {
   if (!node.querySelector("svg") || node.querySelector(".mermaid-actions")) return;

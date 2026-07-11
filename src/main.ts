@@ -1078,59 +1078,7 @@ export function initApp(adapter: PlatformAdapter): void {
       return;
     }
 
-    const mermaidBtn = target.closest<HTMLElement>(".mermaid-btn");
-    if (mermaidBtn) {
-      const block = mermaidBtn.closest<HTMLElement>(".mermaid");
-      const svg = block?.querySelector("svg") as SVGSVGElement | null;
-      const label = mermaidBtn.querySelector(".mermaid-btn-label");
-      if (label) {
-        const kind = mermaidBtn.dataset.kind;
-        const prev = label.textContent;
-        try {
-          let done = true;
-          if (kind === "src") {
-            await navigator.clipboard.writeText(block?.dataset.mermaidSrc ?? "");
-          } else if (kind === "edit") {
-            const source = block?.dataset.mermaidSrc ?? "";
-            if (!source) throw new Error("Mermaid source is unavailable");
-            await manager.openScratch(`\`\`\`mermaid\n${source.replace(/\n$/, "")}\n\`\`\`\n`, {
-              format: "markdown",
-              extension: "md",
-              title: "Mermaid diagram.md",
-            });
-          } else if (kind === "all") {
-            done = await downloadAllMermaidDrawio();
-          } else if (svg && mermaidBtn.dataset.act === "download") {
-            done = await downloadMermaid(
-              svg,
-              kind === "png" ? "png" : kind === "dio" ? "dio" : kind === "luc" ? "luc" : "svg",
-            );
-          } else if (svg && kind === "wb") {
-            await copyMermaidWhiteboard(svg);
-          } else if (svg && kind === "dio") {
-            await copyMermaidDrawio(svg);
-          } else if (svg && kind === "luc") {
-            await copyMermaidLucid(svg);
-          } else if (svg && kind === "exc") {
-            await copyMermaidExcalidraw(svg);
-          } else if (svg && kind === "png") {
-            await copyMermaidPng(svg);
-          } else if (svg) {
-            await copyMermaidSvg(svg);
-          } else {
-            throw new Error("Mermaid diagram is unavailable");
-          }
-          if (done) {
-            label.textContent = "✓";
-            setTimeout(() => (label.textContent = prev), 1200);
-          }
-        } catch {
-          label.textContent = "✗";
-          setTimeout(() => (label.textContent = prev), 1200);
-        }
-      }
-      return;
-    }
+
 
     const saveSourceBtn = target.closest(".code-save");
     if (saveSourceBtn) {
@@ -1191,6 +1139,65 @@ export function initApp(adapter: PlatformAdapter): void {
       await openPath(target);
     } catch {
       showBanner(`Couldn't open ${href}`);
+    }
+  });
+
+  async function runMermaidAction(
+    block: HTMLElement | null,
+    act: "copy" | "download",
+    kind: string,
+  ): Promise<boolean> {
+    const svg = block?.querySelector("svg") as SVGSVGElement | null;
+    if (kind === "src") {
+      await navigator.clipboard.writeText(block?.dataset.mermaidSrc ?? "");
+      return true;
+    }
+    if (kind === "edit") {
+      const source = block?.dataset.mermaidSrc ?? "";
+      if (!source) throw new Error("Mermaid source is unavailable");
+      await manager.openScratch(`\`\`\`mermaid\n${source.replace(/\n$/, "")}\n\`\`\`\n`, {
+        format: "markdown",
+        extension: "md",
+        title: "Mermaid diagram.md",
+      });
+      return true;
+    }
+    if (kind === "all") return downloadAllMermaidDrawio();
+    if (svg && act === "download") {
+      return downloadMermaid(
+        svg,
+        kind === "png" ? "png" : kind === "dio" ? "dio" : kind === "luc" ? "luc" : "svg",
+      );
+    }
+    if (!svg) throw new Error("Mermaid diagram is unavailable");
+    if (kind === "wb") await copyMermaidWhiteboard(svg);
+    else if (kind === "dio") await copyMermaidDrawio(svg);
+    else if (kind === "luc") await copyMermaidLucid(svg);
+    else if (kind === "exc") await copyMermaidExcalidraw(svg);
+    else if (kind === "png") await copyMermaidPng(svg);
+    else await copyMermaidSvg(svg);
+    return true;
+  }
+
+  content.addEventListener("change", async (e) => {
+    const select = (e.target as HTMLElement).closest<HTMLSelectElement>(".mermaid-select");
+    if (!select?.value) return;
+    const kind = select.value;
+    const act = select.dataset.act as "copy" | "download";
+    const block = select.closest<HTMLElement>(".mermaid");
+    const placeholder = select.options[0];
+    const prev = placeholder.textContent;
+    try {
+      const done = await runMermaidAction(block, act, kind);
+      if (done) {
+        placeholder.textContent = "✓";
+        setTimeout(() => (placeholder.textContent = prev), 1200);
+      }
+    } catch {
+      placeholder.textContent = "✗";
+      setTimeout(() => (placeholder.textContent = prev), 1200);
+    } finally {
+      select.value = "";
     }
   });
 

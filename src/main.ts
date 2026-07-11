@@ -117,6 +117,7 @@ export function initApp(adapter: PlatformAdapter): void {
   let restoringSession = false;
   let sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let outline: DocumentOutline | null = null;
+  let outlinePinned = false;
   const isWeb = adapter.platform === "web";
   const diagnostics: Array<{ time: string; message: string }> = [];
 
@@ -197,9 +198,18 @@ export function initApp(adapter: PlatformAdapter): void {
   }
 
   function refreshOutline(): void {
-    outline?.refresh(
-      manager.getActiveFormat() === "markdown" && manager.getActiveMode() === "rendered",
-    );
+    const enabled = manager.getActiveFormat() === "markdown" && manager.getActiveMode() === "rendered";
+    outline?.refresh(enabled);
+    const outlineEl = document.getElementById("outline");
+    if (outlineEl) outlineEl.classList.toggle("outline-pinned", outlinePinned);
+    const outlineBtn = document.getElementById("btn-outline");
+    if (outlineBtn) {
+      const hasOutline = enabled && outlineEl && !outlineEl.hidden;
+      outlineBtn.hidden = !enabled;
+      outlineBtn.disabled = !hasOutline;
+      outlineBtn.classList.toggle("toggled", outlinePinned && hasOutline);
+      outlineBtn.setAttribute("aria-pressed", String(outlinePinned && hasOutline));
+    }
   }
 
   function persistSession(): void {

@@ -498,6 +498,81 @@ body {
   color: var(--text);
 }
 
+.welcome-drop {
+  margin: 0 auto 1.5rem;
+  max-width: 28rem;
+  padding: 1rem 1.25rem;
+  border: 1.5px dashed var(--btn-border);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.welcome-recent {
+  margin: 0 auto 1.5rem;
+  max-width: 28rem;
+  text-align: left;
+}
+
+.welcome-recent-title {
+  margin: 0 0 0.5rem;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.welcome-recent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.welcome-recent-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  background: var(--btn-bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.welcome-recent-item:hover {
+  background: var(--btn-hover);
+  border-color: var(--accent);
+}
+
+.welcome-recent-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.welcome-recent-path {
+  font: 11px var(--mono);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-export[hidden],
+.toolbar-copy[hidden] {
+  display: none !important;
+}
+
 /* ---- Tab strip ---- */
 #tabstrip {
   display: flex;

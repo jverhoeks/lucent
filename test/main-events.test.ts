@@ -10,8 +10,10 @@ function mountAppShell(): void {
       <button id="btn-toggle"></button><button id="btn-tail"></button>
       <button id="btn-search"></button><button id="btn-diagnostics"></button><button id="btn-close-all"></button>
       <button id="btn-copy-md"></button><button id="btn-copy-rich"></button>
-      <select id="sel-viewas"><option value=""></option></select>
-      <select id="download-format" class="download-format"><option value=""></option></select>
+      <div class="toolbar-export" hidden>
+        <select id="sel-viewas"><option value=""></option></select>
+        <select id="download-format" class="download-format"><option value=""></option></select>
+      </div>
       <button id="btn-appearance"></button><div id="appearance-panel" hidden></div>
       <select id="sel-font"><option value="sans"></option><option value="serif"></option><option value="mono"></option></select>
       <input id="inp-size" type="range" />
@@ -151,7 +153,8 @@ describe("main event and toolbar integration", () => {
     initApp(adapter);
     const downloadSelect = document.querySelector<HTMLSelectElement>(".download-format")!;
     expect(downloadSelect).toBeTruthy();
-    expect(downloadSelect.disabled).toBe(false);
+    expect(downloadSelect.disabled).toBe(true);
+    expect(document.querySelector(".toolbar-export")?.hasAttribute("hidden")).toBe(true);
     expect(Array.from(downloadSelect.options).map((option) => option.value)).toEqual([
       "",
     ]);

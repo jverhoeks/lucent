@@ -157,6 +157,10 @@ export function initApp(adapter: PlatformAdapter): void {
     resolveLocalImage: adapter.localImageUrl
       ? (basePath, relativePath) => adapter.localImageUrl!(basePath, relativePath)
       : async () => null,
+    getRecentFiles: () => loadRecentFiles().map((file) => ({
+      path: file.path,
+      title: file.title,
+    })),
   });
 
   async function saveTextAs(path: string, content: string): Promise<string | null> {
@@ -273,7 +277,10 @@ export function initApp(adapter: PlatformAdapter): void {
     saveBtn.disabled = !manager.isEditing();
 
     refreshDownloadOptions(has, fmt);
-    dlSelect.disabled = loading;
+    dlSelect.disabled = loading || !has;
+    for (const sel of ["toolbar-export", "toolbar-copy"] as const) {
+      document.querySelector<HTMLElement>(`.${sel}`)?.toggleAttribute("hidden", !has);
+    }
 
     // Reading-time estimate — Markdown only; hidden for data/log/text tabs.
     const readingTime = document.getElementById("reading-time");
@@ -931,6 +938,7 @@ export function initApp(adapter: PlatformAdapter): void {
       const action = welcomeBtn.dataset.welcome;
       if (action === "open") btn("btn-open").click();
       else if (action === "paste") void pasteIntoNewDoc();
+      else if (action === "recent" && welcomeBtn.dataset.path) void openPath(welcomeBtn.dataset.path);
       return;
     }
 

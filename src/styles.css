@@ -1201,9 +1201,21 @@ body.exporting .doc .code-header {
   color: var(--accent);
 }
 
-/* ---- Sync scroll toggle ---- */
-#btn-sync-scroll {
+.preview-toolbar .sync-toggle {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+}
+
+.preview-toolbar .sync-toggle .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.conflict-message strong {
+  font-weight: 600;
 }
 
 /* ---- Conflict bar ---- */
@@ -1253,7 +1265,7 @@ body.exporting .doc .code-header {
 
 .conflict-diff-view {
   grid-column: 1 / -1;
-  max-height: 180px;
+  max-height: min(40vh, 320px);
   overflow: auto;
   width: 100%;
   margin: 6px 0 0;

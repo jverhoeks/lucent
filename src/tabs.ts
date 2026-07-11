@@ -9,6 +9,7 @@ import { StyleSettings, Theme, Format, DataLang, Renderer, Mode } from "./types"
 import type { EditorAPI, EditorLang } from "./editor";
 import type { TreeView } from "./data/tree";
 import type { SessionState, SessionTab } from "./session";
+import { iconMarkup } from "./icons";
 
 export const STDIN_PATH = "<stdin>";
 export const SCRATCH_PATH_PREFIX = "<scratch:";
@@ -990,14 +991,29 @@ export class TabManager {
   private renderEditMode(t: Tab, restoreScroll: boolean): void {
       const conflictBar = document.createElement("div");
       conflictBar.className = "edit-conflict";
+      conflictBar.setAttribute("role", "alert");
       conflictBar.hidden = true;
-      conflictBar.innerHTML = `
-        <span>⚠ File changed on disk</span>
-        <button type="button" class="conflict-diff">View diff</button>
-        <button type="button" class="conflict-accept">Overwrite with mine</button>
-        <button type="button" class="conflict-reload">Reload from disk</button>
-        <pre class="conflict-diff-view" hidden></pre>
-      `;
+      const conflictMsg = document.createElement("span");
+      conflictMsg.className = "conflict-message";
+      const conflictTitle = document.createElement("strong");
+      conflictTitle.textContent = t.title;
+      conflictMsg.append(conflictTitle, " changed on disk while you were editing.");
+      const diffBtn = document.createElement("button");
+      diffBtn.type = "button";
+      diffBtn.className = "conflict-diff";
+      diffBtn.textContent = "Show changes";
+      const acceptBtn = document.createElement("button");
+      acceptBtn.type = "button";
+      acceptBtn.className = "conflict-accept";
+      acceptBtn.textContent = "Keep my version";
+      const reloadBtn = document.createElement("button");
+      reloadBtn.type = "button";
+      reloadBtn.className = "conflict-reload";
+      reloadBtn.textContent = "Use file on disk";
+      const diffView = document.createElement("pre");
+      diffView.className = "conflict-diff-view";
+      diffView.hidden = true;
+      conflictBar.append(conflictMsg, diffBtn, acceptBtn, reloadBtn, diffView);
       if (t.pendingDiskContent !== undefined) conflictBar.hidden = false;
 
       const split = document.createElement("div");
@@ -1054,15 +1070,18 @@ export class TabManager {
       // editor's scroll event registered later once CodeMirror is ready.
 
       const syncBtn = document.createElement("button");
-      syncBtn.className = "sync-toggle toggled";
-      syncBtn.title = "Toggle sync scrolling";
-      syncBtn.textContent = "🔗";
-      syncBtn.addEventListener("click", () => {
-        syncScrollEnabled = !syncScrollEnabled;
-        syncBtn.classList.toggle("toggled", syncScrollEnabled);
-        syncBtn.textContent = syncScrollEnabled ? "🔗" : "🔗";
-        syncBtn.title = syncScrollEnabled ? "Sync scrolling (on)" : "Sync scrolling (off)";
-      });
+      syncBtn.type = "button";
+      syncBtn.className = "sync-toggle";
+      const setSyncButton = (on: boolean) => {
+        syncScrollEnabled = on;
+        syncBtn.classList.toggle("active", on);
+        syncBtn.setAttribute("aria-pressed", String(on));
+        syncBtn.innerHTML = iconMarkup(on ? "ic-link" : "ic-unlink");
+        syncBtn.title = on ? "Sync scrolling (on)" : "Sync scrolling (off)";
+        syncBtn.setAttribute("aria-label", syncBtn.title);
+      };
+      setSyncButton(true);
+      syncBtn.addEventListener("click", () => setSyncButton(!syncScrollEnabled));
 
       // ---- Show a plain textarea instantly, then upgrade to CodeMirror ----
       const textarea = document.createElement("textarea");

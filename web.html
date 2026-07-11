@@ -25,7 +25,7 @@
         <button id="btn-diagnostics" aria-label="Diagnostics" data-tip="Diagnostics"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-info"></use></svg></button>
       </div>
 
-      <div class="group">
+      <div class="group toolbar-export" hidden>
         <select id="sel-viewas" title="View as" aria-label="View as">
           <option value="">View as…</option>
           <option value="markdown">Markdown</option>
@@ -38,6 +38,9 @@
         <select id="download-format" class="download-format" title="Download as" aria-label="Download as">
           <option value="">Download as…</option>
         </select>
+      </div>
+
+      <div class="group">
         <div class="popover-host">
           <button id="btn-appearance" aria-label="Appearance" data-tip="Appearance" aria-haspopup="true" aria-expanded="false"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-type"></use></svg></button>
           <div id="appearance-panel" class="popover" role="dialog" aria-label="Appearance" hidden>
@@ -68,7 +71,7 @@
 
       <span id="reading-time" class="reading-time" aria-live="polite" hidden></span>
 
-      <div class="group">
+      <div class="group toolbar-copy" hidden>
         <button id="btn-copy-md" aria-label="Copy as Markdown" data-tip="Copy as Markdown"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-copy"></use></svg></button>
         <button id="btn-copy-rich" aria-label="Copy as rich text" data-tip="Copy as rich text"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-richtext"></use></svg></button>
       </div>

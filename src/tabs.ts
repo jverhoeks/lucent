@@ -44,6 +44,11 @@ export interface Tab {
   loading?: boolean;
 }
 
+export interface WelcomeRecent {
+  path: string;
+  title: string;
+}
+
 export interface TabHooks {
   onChange: () => void; // tabs/active changed — refresh toolbar enabled state
   onTabClosed: (path: string) => void; // stop watching one closed document
@@ -51,6 +56,8 @@ export interface TabHooks {
   onSave?: (path: string, content: string) => Promise<string | null | void>; // save editor content to disk
   onSaveAs?: (path: string, content: string) => Promise<string | null | void>; // save editor content to a chosen path
   resolveLocalImage?: (basePath: string, relativePath: string) => Promise<string | null>;
+  /** Recent files shown on the welcome screen (optional). */
+  getRecentFiles?: () => WelcomeRecent[];
 }
 
 export function isScratchPath(path: string | undefined): boolean {
@@ -1383,20 +1390,77 @@ export class TabManager {
     this.content.replaceChildren();
     const welcome = document.createElement("div");
     welcome.className = "welcome";
-    welcome.innerHTML = `
-      <div class="welcome-mark" aria-hidden="true">◇</div>
-      <h1 class="welcome-title">Lucent</h1>
-      <p class="welcome-lead">Open a file to read Markdown, structured data, or logs — rendered cleanly, with editing when you need it.</p>
-      <div class="welcome-actions">
-        <button type="button" class="welcome-btn primary" data-welcome="open">Open file…</button>
-        <button type="button" class="welcome-btn" data-welcome="paste">Paste into new document</button>
-      </div>
-      <ul class="welcome-shortcuts">
-        <li><kbd>⌘/Ctrl</kbd>+<kbd>P</kbd> quick switch</li>
-        <li><kbd>⌘/Ctrl</kbd>+<kbd>F</kbd> find in document</li>
-        <li>Drop files anywhere to open</li>
-      </ul>
-    `;
+    const mark = document.createElement("div");
+    mark.className = "welcome-mark";
+    mark.setAttribute("aria-hidden", "true");
+    mark.textContent = "◇";
+    const title = document.createElement("h1");
+    title.className = "welcome-title";
+    title.textContent = "Lucent";
+    const lead = document.createElement("p");
+    lead.className = "welcome-lead";
+    lead.textContent =
+      "Open a file to read Markdown, structured data, or logs — rendered cleanly, with editing when you need it.";
+    const actions = document.createElement("div");
+    actions.className = "welcome-actions";
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.className = "welcome-btn primary";
+    openBtn.dataset.welcome = "open";
+    openBtn.textContent = "Open file…";
+    const pasteBtn = document.createElement("button");
+    pasteBtn.type = "button";
+    pasteBtn.className = "welcome-btn";
+    pasteBtn.dataset.welcome = "paste";
+    pasteBtn.textContent = "Paste into new document";
+    actions.append(openBtn, pasteBtn);
+    const drop = document.createElement("div");
+    drop.className = "welcome-drop";
+    drop.setAttribute("aria-hidden", "true");
+    drop.textContent = "Drop files anywhere to open";
+    const recent = this.hooks.getRecentFiles?.() ?? [];
+    if (recent.length > 0) {
+      const recentBlock = document.createElement("div");
+      recentBlock.className = "welcome-recent";
+      const recentTitle = document.createElement("h2");
+      recentTitle.className = "welcome-recent-title";
+      recentTitle.textContent = "Recent";
+      const recentList = document.createElement("ul");
+      recentList.className = "welcome-recent-list";
+      for (const file of recent.slice(0, 5)) {
+        const item = document.createElement("li");
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "welcome-recent-item";
+        row.dataset.welcome = "recent";
+        row.dataset.path = file.path;
+        row.title = file.path;
+        const name = document.createElement("span");
+        name.className = "welcome-recent-name";
+        name.textContent = file.title;
+        const path = document.createElement("span");
+        path.className = "welcome-recent-path";
+        path.textContent = file.path;
+        row.append(name, path);
+        item.appendChild(row);
+        recentList.appendChild(item);
+      }
+      recentBlock.append(recentTitle, recentList);
+      welcome.append(mark, title, lead, actions, drop, recentBlock);
+    } else {
+      welcome.append(mark, title, lead, actions, drop);
+    }
+    const shortcuts = document.createElement("ul");
+    shortcuts.className = "welcome-shortcuts";
+    for (const text of [
+      "⌘/Ctrl+P quick switch",
+      "⌘/Ctrl+F find in document",
+    ]) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      shortcuts.appendChild(li);
+    }
+    welcome.appendChild(shortcuts);
     this.content.appendChild(welcome);
   }
 

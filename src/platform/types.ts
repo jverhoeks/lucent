@@ -39,6 +39,8 @@ export interface PlatformAdapter {
   listViewableRecursive(path: string): Promise<string[]>;
   probeIsText(path: string, maxBytes: number): Promise<boolean>;
   resolveSibling(base: string, rel: string): Promise<string>;
+  /** Resolve a shipped sample under `examples/` (Help guide links). */
+  resolveExample?(rel: string): Promise<string | null>;
   /** Resolve a Markdown-relative image to a displayable URL, or null when the
    * platform cannot access sibling files. */
   localImageUrl?(base: string, rel: string): Promise<string | null>;

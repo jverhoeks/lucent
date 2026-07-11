@@ -1,5 +1,6 @@
 import "./styles.css";
-import { isScratchPath, TabManager } from "./tabs";
+import { HELP_MARKDOWN, parseExampleLink } from "./help";
+import { isHelpPath, isScratchPath, TabManager } from "./tabs";
 import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
@@ -280,7 +281,8 @@ export function initApp(adapter: PlatformAdapter): void {
     const editBtn = btn("btn-edit");
     const saveBtn = btn("btn-save");
     const fmt = manager.getActiveFormat();
-    editBtn.disabled = loading || !has || (fmt !== "markdown" && fmt !== "data");
+    editBtn.disabled = loading || !has || isHelpPath(manager.getActivePath())
+      || (fmt !== "markdown" && fmt !== "data");
     setButtonIcon(editBtn, isEdit ? "ic-check" : "ic-pencil", isEdit ? "Done" : "Edit");
     editBtn.classList.toggle("toggled", isEdit);
     saveBtn.hidden = !isEdit;
@@ -510,11 +512,31 @@ export function initApp(adapter: PlatformAdapter): void {
     for (const p of paths) await openPath(p);
   }
 
+  function openHelp(): void {
+    void manager.openHelpDocument(HELP_MARKDOWN);
+  }
+
+  async function openExampleLink(href: string): Promise<void> {
+    const rel = parseExampleLink(href);
+    if (!rel || !adapter.resolveExample) {
+      showBanner("Examples are not available in this build.");
+      return;
+    }
+    const path = await adapter.resolveExample(rel);
+    if (!path) {
+      showBanner(`Example not found: ${rel}`);
+      return;
+    }
+    await openPath(path);
+  }
+
   const toolbarEl = document.getElementById("toolbar")!;
   const syncToolbarHeight = () =>
     document.documentElement.style.setProperty("--toolbar-h", `${toolbarEl.offsetHeight}px`);
   new ResizeObserver(syncToolbarHeight).observe(toolbarEl);
   syncToolbarHeight();
+
+  btn("btn-help").addEventListener("click", () => openHelp());
 
   btn("btn-open").addEventListener("click", async () => {
     const sel = await adapter.openDialog({
@@ -578,6 +600,10 @@ export function initApp(adapter: PlatformAdapter): void {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p") {
       e.preventDefault();
       openQuickSwitch();
+    }
+    if (e.key === "F1" || ((e.metaKey || e.ctrlKey) && e.key === "?")) {
+      e.preventDefault();
+      openHelp();
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
       if (manager.count() > 0) { e.preventDefault(); manager.closeActiveTab(); }
@@ -990,6 +1016,7 @@ export function initApp(adapter: PlatformAdapter): void {
       if (action === "next") btn("btn-next").click();
       else if (action === "tail") btn("btn-tail").click();
       else if (action === "diagnostics") diagnosticsBtn.click();
+      else if (action === "help") openHelp();
       setOverflowOpen(false);
     });
     document.addEventListener("click", (e) => {
@@ -1021,6 +1048,7 @@ export function initApp(adapter: PlatformAdapter): void {
       if (action === "open") btn("btn-open").click();
       else if (action === "paste") void pasteIntoNewDoc();
       else if (action === "recent" && welcomeBtn.dataset.path) void openPath(welcomeBtn.dataset.path);
+      else if (action === "help") openHelp();
       return;
     }
 
@@ -1128,6 +1156,13 @@ export function initApp(adapter: PlatformAdapter): void {
         behavior: "smooth",
         block: "start",
       });
+      return;
+    }
+
+    const exampleRel = parseExampleLink(href);
+    if (exampleRel) {
+      e.preventDefault();
+      void openExampleLink(href);
       return;
     }
 

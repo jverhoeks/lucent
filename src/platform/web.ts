@@ -192,6 +192,22 @@ export const webAdapter: PlatformAdapter = {
     throw Object.assign(new Error(`File not found: ${resolved}`), { kind: "not_found" });
   },
 
+  async resolveExample(rel: string): Promise<string | null> {
+    const clean = rel.replace(/^\/+/, "");
+    if (!clean || clean.includes("..")) return null;
+    const url = `/examples/${clean}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const content = await res.text();
+      const path = `/examples/${clean}`;
+      fileStore.set(path, { content, lastModified: Date.now() });
+      return path;
+    } catch {
+      return null;
+    }
+  },
+
   async localImageUrl(_base: string, _rel: string): Promise<string | null> {
     return null;
   },

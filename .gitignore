@@ -12,6 +12,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+public/examples
 *.local
 
 # Tauri updater signing key. The public key is embedded in tauri.conf.json;

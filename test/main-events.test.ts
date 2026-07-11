@@ -5,7 +5,7 @@ import type { DropCallback, FileChangedCallback, FileRemovedCallback, PlatformAd
 function mountAppShell(): void {
   document.body.innerHTML = `
     <header id="toolbar">
-      <div class="group"><button id="btn-open"></button><button id="btn-paste-new"></button><button id="btn-next"></button></div>
+      <div class="group"><button id="btn-open"></button><button id="btn-paste-new"></button><button id="btn-help"></button><button id="btn-next"></button></div>
       <button id="btn-edit"></button><button id="btn-save"></button><button id="btn-save-as"></button>
       <button id="btn-toggle"></button><button id="btn-tail"></button>
       <button id="btn-search"></button><button id="btn-diagnostics"></button><button id="btn-close-all"></button>

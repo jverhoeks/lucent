@@ -62,6 +62,14 @@ export const tauriAdapter: PlatformAdapter = {
     return invoke<string>("resolve_sibling", { base, rel });
   },
 
+  async resolveExample(rel: string): Promise<string | null> {
+    try {
+      return await invoke<string>("resolve_example", { rel });
+    } catch {
+      return null;
+    }
+  },
+
   async localImageUrl(base: string, rel: string): Promise<string | null> {
     try {
       return await invoke<string>("read_local_image", { base, rel });

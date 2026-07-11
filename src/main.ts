@@ -623,13 +623,27 @@ export function initApp(adapter: PlatformAdapter): void {
   document.body.appendChild(diagnosticsPanel);
   renderDiagnostics();
   const diagnosticsBtn = btn("btn-diagnostics");
-  diagnosticsBtn.addEventListener("click", () => {
+  diagnosticsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
     diagnosticsPanel.hidden = !diagnosticsPanel.hidden;
     diagnosticsBtn.setAttribute("aria-expanded", String(!diagnosticsPanel.hidden));
     renderDiagnostics();
   });
   document.getElementById("btn-diagnostics-close")?.addEventListener("click", () => {
     diagnosticsPanel.hidden = true;
+    diagnosticsBtn.setAttribute("aria-expanded", "false");
+  });
+  document.addEventListener("click", (e) => {
+    if (diagnosticsPanel.hidden) return;
+    const inner = diagnosticsPanel.querySelector(".diagnostics-panel-inner");
+    if (
+      inner
+      && !inner.contains(e.target as Node)
+      && !diagnosticsBtn.contains(e.target as Node)
+    ) {
+      diagnosticsPanel.hidden = true;
+      diagnosticsBtn.setAttribute("aria-expanded", "false");
+    }
   });
 
   type QuickItem =
@@ -643,6 +657,7 @@ export function initApp(adapter: PlatformAdapter): void {
     <div class="quick-panel" role="dialog" aria-label="Quick switch">
       <input class="quick-input" type="text" aria-label="Quick switch" placeholder="Open tab or recent file" />
       <div class="quick-list" role="listbox"></div>
+      <div class="quick-footer">↑↓ navigate · Enter open · Esc close</div>
     </div>
   `;
   document.body.appendChild(quick);
@@ -672,11 +687,34 @@ export function initApp(adapter: PlatformAdapter): void {
     return [...tabs, ...recent];
   }
 
+  function renderQuickRow(item: QuickItem, index: number): HTMLButtonElement {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "quick-item" + (index === quickSelected ? " selected" : "");
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(index === quickSelected));
+    row.innerHTML = `
+      <span class="quick-title"></span>
+      <span class="quick-detail"></span>
+      <span class="quick-path"></span>
+    `;
+    row.querySelector(".quick-title")!.textContent =
+      `${item.kind === "tab" && item.dirty ? "* " : ""}${item.title}`;
+    row.querySelector(".quick-detail")!.textContent = item.detail;
+    row.querySelector(".quick-path")!.textContent = item.path;
+    row.addEventListener("mouseenter", () => { quickSelected = index; renderQuick(); });
+    row.addEventListener("click", () => { void chooseQuick(index); });
+    return row;
+  }
+
   function renderQuick(): void {
     const q = quickInput.value.trim().toLowerCase();
-    quickItems = quickSourceItems().filter((item) =>
+    const filtered = quickSourceItems().filter((item) =>
       !q || item.title.toLowerCase().includes(q) || item.path.toLowerCase().includes(q),
     );
+    const tabs = filtered.filter((item) => item.kind === "tab");
+    const recents = filtered.filter((item) => item.kind === "recent");
+    quickItems = [...tabs, ...recents];
     quickSelected = Math.min(quickSelected, Math.max(0, quickItems.length - 1));
     quickList.replaceChildren();
     if (quickItems.length === 0) {
@@ -686,25 +724,20 @@ export function initApp(adapter: PlatformAdapter): void {
       quickList.appendChild(empty);
       return;
     }
-    quickItems.forEach((item, index) => {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "quick-item" + (index === quickSelected ? " selected" : "");
-      row.setAttribute("role", "option");
-      row.setAttribute("aria-selected", String(index === quickSelected));
-      row.innerHTML = `
-        <span class="quick-title"></span>
-        <span class="quick-detail"></span>
-        <span class="quick-path"></span>
-      `;
-      row.querySelector(".quick-title")!.textContent =
-        `${item.kind === "tab" && item.dirty ? "* " : ""}${item.title}`;
-      row.querySelector(".quick-detail")!.textContent = item.detail;
-      row.querySelector(".quick-path")!.textContent = item.path;
-      row.addEventListener("mouseenter", () => { quickSelected = index; renderQuick(); });
-      row.addEventListener("click", () => { void chooseQuick(index); });
-      quickList.appendChild(row);
-    });
+    let index = 0;
+    const addSection = (label: string, items: QuickItem[]) => {
+      if (items.length === 0) return;
+      const head = document.createElement("div");
+      head.className = "quick-section";
+      head.textContent = label;
+      quickList.appendChild(head);
+      for (const item of items) {
+        quickList.appendChild(renderQuickRow(item, index));
+        index++;
+      }
+    };
+    addSection("Open tabs", tabs);
+    addSection("Recent files", recents);
   }
 
   function openQuickSwitch(): void {

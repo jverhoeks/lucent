@@ -2,7 +2,8 @@ use crate::error::{AppError, ErrorKind};
 use memmap2::Mmap;
 use serde::Serialize;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tauri::Manager;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct FilePayload {
@@ -216,6 +217,47 @@ pub fn resolve_sibling(base: String, rel: String) -> Result<String, AppError> {
         ));
     }
     Ok(target.to_string_lossy().to_string())
+}
+
+fn example_search_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(resource) = app.path().resource_dir() {
+        roots.push(resource.join("examples"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            for ancestor in parent.ancestors().take(8) {
+                roots.push(ancestor.join("examples"));
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(cwd.join("examples"));
+        if let Some(parent) = cwd.parent() {
+            roots.push(parent.join("examples"));
+        }
+    }
+    roots
+}
+
+/// Resolve a bundled/sample file from the shipped `examples/` directory.
+#[tauri::command]
+pub fn resolve_example(app: tauri::AppHandle, rel: String) -> Result<String, AppError> {
+    if Path::new(&rel).is_absolute() || rel.contains("..") {
+        return Err(AppError::new(ErrorKind::Io, "Invalid example path"));
+    }
+    for base in example_search_roots(&app) {
+        let candidate = base.join(&rel);
+        if candidate.is_file() && is_viewable(&candidate) {
+            let abs = std::fs::canonicalize(&candidate)
+                .map_err(|e| AppError::new(ErrorKind::NotFound, e.to_string()))?;
+            return Ok(abs.to_string_lossy().to_string());
+        }
+    }
+    Err(AppError::new(
+        ErrorKind::NotFound,
+        format!("Example not found: {rel}"),
+    ))
 }
 
 /// Read an image referenced by a Markdown document as a data URL. Keeping this

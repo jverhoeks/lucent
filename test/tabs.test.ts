@@ -33,6 +33,16 @@ describe("basename", () => {
 describe("TabManager", () => {
   beforeEach(() => document.body.replaceChildren());
 
+  it("opens the built-in Help guide as a rendered tab", async () => {
+    const { mgr } = makeManager();
+    await mgr.openHelpDocument("# Help\n\nShortcuts.");
+    expect(mgr.getActivePath()).toBe("<help>");
+    expect(mgr.getActiveRawText()).toContain("Shortcuts");
+    expect(mgr.getActiveMode()).toBe("rendered");
+    await mgr.openHelpDocument("# Help\n\nUpdated.");
+    expect(mgr.count()).toBe(1);
+  });
+
   it("shows a loading tab and content placeholder while a file is opening", async () => {
     const { mgr, tabbar, content } = makeManager();
     mgr.beginOpen("/d/slow.md");

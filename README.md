@@ -45,12 +45,17 @@ split-screen editor for when you want to write too.
   [CodeMirror](https://codemirror.net/) editing for Markdown and JSON / YAML /
   TOML / INI, with a live rendered preview or collapsible tree beside the
   source. Save with `Cmd/Ctrl+S`; invalid structured data stays editable and
-  reports its parse error in the preview.
+  reports its parse error in the preview. If a file changes on disk while you
+  edit, a conflict bar lets you compare, keep your version, or reload from disk.
 - **View as** — reinterpret any file on the fly: Markdown, plain text, or a
   JSON / YAML / TOML / INI tree, regardless of extension.
 - **Tabs & multi-open** — open many files at once, page through a folder with
   **Next**, or launch from the shell: `lucent *.md`; tabs, scroll positions, and
-  format overrides return after relaunch.
+  format overrides return after relaunch. A welcome screen lists **recent files**
+  when you start with no tabs open.
+- **In-app Help** — `F1` or the toolbar **Help** button opens a rendered guide
+  with keyboard shortcuts, toolbar reference, and one-click links to every file
+  in [`examples/`](examples/). See [`docs/help.md`](docs/help.md).
 - **Document outline** — Markdown headings form a pinned, clickable outline
   without turning the headings themselves into links.
 - **Live reload** — edits on disk refresh the view automatically (scroll preserved).
@@ -79,9 +84,14 @@ split-screen editor for when you want to write too.
 - **Signed in-app updates** — desktop releases check for a newer GitHub Release,
   ask before downloading, verify its Tauri signature, install, and restart.
 
-See the [`examples/`](examples/) folder for a tour of everything Lucent renders,
-and [Copy & export](docs/copy-and-export.md) for every way to get content back
-out. Sample outputs from the kitchen-sink example:
+See the [`examples/`](examples/) folder (or **Help → example links** in the app)
+for a tour of everything Lucent renders. Documentation:
+
+- [User guide / Help](docs/help.md) — shortcuts, toolbar, examples (also built into the app)
+- [Copy & export](docs/copy-and-export.md) — clipboard, Mermaid targets, Download as…
+- [Docs index](docs/README.md)
+
+Sample outputs from the kitchen-sink example:
 [HTML export](docs/99-kitchen-sink.html) · [PDF export](docs/99-kitchen-sink.pdf).
 
 ## Roadmap
@@ -107,6 +117,10 @@ npm run tauri build    # produce a native app bundle (.app / .dmg on macOS)
 npm run dev            # web build in the browser (Vite dev server)
 npm run build:web      # static web bundle
 ```
+
+`npm run dev` / `npm run build` sync `examples/` into `public/examples/` so the
+web Help guide can open sample files. Desktop bundles ship `examples/` as app
+resources.
 
 ### Release downloads
 

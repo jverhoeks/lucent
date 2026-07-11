@@ -10,6 +10,7 @@ import type { EditorAPI, EditorLang } from "./editor";
 import type { TreeView } from "./data/tree";
 import type { SessionState, SessionTab } from "./session";
 import { iconMarkup } from "./icons";
+import { HELP_TAB_PATH, HELP_TAB_TITLE, isHelpPath } from "./help";
 
 export const STDIN_PATH = "<stdin>";
 export const SCRATCH_PATH_PREFIX = "<scratch:";
@@ -63,6 +64,8 @@ export interface TabHooks {
 export function isScratchPath(path: string | undefined): boolean {
   return !!path?.startsWith(SCRATCH_PATH_PREFIX);
 }
+
+export { isHelpPath };
 
 /** The format actually used to render this tab (override beats detection). */
 function effectiveFormat(t: Tab): Format {
@@ -186,7 +189,7 @@ export class TabManager {
       version: 1,
       activePath: active?.path === STDIN_PATH ? undefined : active?.path,
       tabs: this.tabs
-        .filter((tab) => tab.path !== STDIN_PATH)
+        .filter((tab) => tab.path !== STDIN_PATH && !isHelpPath(tab.path))
         .map((tab) => ({
           path: tab.path,
           title: isScratchPath(tab.path) ? tab.title : undefined,
@@ -386,6 +389,27 @@ export class TabManager {
   /** Open pasted/unsaved Markdown in a new editable scratch tab. */
   openScratchMarkdown(content: string): void | Promise<void> {
     return this.openScratch(content, { format: "markdown", extension: "md" });
+  }
+
+  /** Open (or focus) the built-in Help guide as a rendered Markdown tab. */
+  openHelpDocument(content: string): void | Promise<void> {
+    const existing = this.tabs.findIndex((t) => t.path === HELP_TAB_PATH);
+    if (existing >= 0) {
+      this.tabs[existing].content = content;
+      this.tabs[existing].format = "markdown";
+      this.tabs[existing].mode = "rendered";
+      this.tabs[existing].editDirty = false;
+      return this.activate(existing);
+    }
+    this.tabs.push({
+      path: HELP_TAB_PATH,
+      title: HELP_TAB_TITLE,
+      content,
+      format: "markdown",
+      mode: "rendered",
+      scrollTop: 0,
+    });
+    return this.activate(this.tabs.length - 1);
   }
 
   /** Open a huge log in windowed mode (no full content read). */
@@ -1413,7 +1437,12 @@ export class TabManager {
     pasteBtn.className = "welcome-btn";
     pasteBtn.dataset.welcome = "paste";
     pasteBtn.textContent = "Paste into new document";
-    actions.append(openBtn, pasteBtn);
+    const helpBtn = document.createElement("button");
+    helpBtn.type = "button";
+    helpBtn.className = "welcome-btn";
+    helpBtn.dataset.welcome = "help";
+    helpBtn.textContent = "Help";
+    actions.append(openBtn, pasteBtn, helpBtn);
     const drop = document.createElement("div");
     drop.className = "welcome-drop";
     drop.setAttribute("aria-hidden", "true");
@@ -1453,6 +1482,7 @@ export class TabManager {
     const shortcuts = document.createElement("ul");
     shortcuts.className = "welcome-shortcuts";
     for (const text of [
+      "F1 or ⌘/Ctrl+? help",
       "⌘/Ctrl+P quick switch",
       "⌘/Ctrl+F find in document",
     ]) {

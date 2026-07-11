@@ -1482,7 +1482,10 @@ export class TabManager {
     this.tabs.forEach((t, i) => {
       const active = i === this.activeIndex;
       const tab = document.createElement("div");
-      tab.className = "tab" + (active ? " active" : "") + (t.loading ? " loading" : "");
+      tab.className = "tab"
+        + (active ? " active" : "")
+        + (t.loading ? " loading" : "")
+        + (t.editDirty ? " dirty" : "");
       tab.title = t.path;
       // a11y: expose tab semantics + selected state, and make tabs focusable
       // with roving tabindex (only the active tab is in the tab order).
@@ -1514,7 +1517,7 @@ export class TabManager {
 
       const label = document.createElement("span");
       label.className = "tab-label";
-      label.textContent = t.editDirty ? "● " + t.title : t.title;
+      label.textContent = t.title;
       label.addEventListener("click", () => this.activate(i));
 
       const close = document.createElement("button");

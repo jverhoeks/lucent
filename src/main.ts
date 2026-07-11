@@ -202,14 +202,12 @@ export function initApp(adapter: PlatformAdapter): void {
     outline?.refresh(enabled);
     const outlineEl = document.getElementById("outline");
     if (outlineEl) outlineEl.classList.toggle("outline-pinned", outlinePinned);
-    const outlineBtn = document.getElementById("btn-outline");
-    if (outlineBtn) {
-      const hasOutline = enabled && outlineEl && !outlineEl.hidden;
-      outlineBtn.hidden = !enabled;
-      outlineBtn.disabled = !hasOutline;
-      outlineBtn.classList.toggle("toggled", outlinePinned && hasOutline);
-      outlineBtn.setAttribute("aria-pressed", String(outlinePinned && hasOutline));
-    }
+    const outlineBtn = btn("btn-outline");
+    const hasOutline = Boolean(enabled && outlineEl && !outlineEl.hidden);
+    outlineBtn.hidden = !enabled;
+    outlineBtn.disabled = !hasOutline;
+    outlineBtn.classList.toggle("toggled", outlinePinned && hasOutline);
+    outlineBtn.setAttribute("aria-pressed", String(outlinePinned && hasOutline));
   }
 
   function persistSession(): void {

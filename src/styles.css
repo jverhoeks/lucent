@@ -99,6 +99,8 @@ body {
 
 /* ---- Toolbar ---- */
 #toolbar {
+  position: relative;
+  z-index: 100;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -640,6 +642,8 @@ body {
 
 /* ---- Tab strip ---- */
 #tabstrip {
+  position: relative;
+  z-index: 90;
   display: flex;
   align-items: center;
   background: var(--surface);
@@ -771,6 +775,8 @@ body {
 
 /* ---- Search bar ---- */
 #searchbar {
+  position: relative;
+  z-index: 80;
   display: none;
   align-items: center;
   gap: 6px;
@@ -855,6 +861,8 @@ body {
 
 /* ---- Content ---- */
 #workspace {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -2090,27 +2098,33 @@ pre.mermaid {
   position: absolute;
   top: 8px;
   right: 8px;
+  z-index: 2;
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  max-width: calc(100% - 16px);
   opacity: 0.45;
   transition: opacity 0.12s;
+  pointer-events: none;
 }
 
 pre.mermaid:hover .mermaid-actions,
 .mermaid-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 
-/* Each group ("Copy" / "Download") is a pill holding an icon + SVG/PNG buttons. */
+/* Each group ("Copy" / "Download") is a compact icon + format select. */
 .mermaid-group {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 3px 6px;
+  gap: 4px;
+  padding: 3px 6px 3px 4px;
   background: var(--surface);
   border: 1px solid var(--btn-border);
   border-radius: 8px;
   box-shadow: var(--btn-shadow);
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .mermaid-group-icon {
@@ -2130,27 +2144,28 @@ pre.mermaid:hover .mermaid-actions,
   stroke-linejoin: round;
 }
 
-.mermaid-btn {
+.mermaid-select {
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.2;
   color: var(--text-muted);
   background: transparent;
   border: none;
   border-radius: 5px;
-  padding: 3px 6px;
+  padding: 2px 18px 2px 4px;
+  max-width: 9rem;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 2px center;
+  transition: background-color 0.12s, color 0.12s;
 }
 
-.mermaid-btn:hover {
+.mermaid-select:hover,
+.mermaid-select:focus-visible {
   color: var(--text);
-  background: var(--btn-hover);
-}
-
-.mermaid-btn-label {
-  display: inline-block;
-  min-width: 3ch;
-  text-align: center;
+  background-color: var(--btn-hover);
+  outline: none;
 }

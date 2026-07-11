@@ -294,6 +294,12 @@ export function initApp(adapter: PlatformAdapter): void {
   const diagnosticPattern = /couldn('|’)t|failed|blocked|removed|unavailable|error/i;
 
   function renderDiagnostics(): void {
+    const badge = document.getElementById("diagnostics-badge");
+    if (badge) {
+      const count = diagnostics.length;
+      badge.textContent = count > 9 ? "9+" : String(count);
+      badge.hidden = count === 0;
+    }
     const list = document.getElementById("diagnostics-list");
     if (!list) return;
     list.replaceChildren();
@@ -616,8 +622,10 @@ export function initApp(adapter: PlatformAdapter): void {
   `;
   document.body.appendChild(diagnosticsPanel);
   renderDiagnostics();
-  btn("btn-diagnostics").addEventListener("click", () => {
+  const diagnosticsBtn = btn("btn-diagnostics");
+  diagnosticsBtn.addEventListener("click", () => {
     diagnosticsPanel.hidden = !diagnosticsPanel.hidden;
+    diagnosticsBtn.setAttribute("aria-expanded", String(!diagnosticsPanel.hidden));
     renderDiagnostics();
   });
   document.getElementById("btn-diagnostics-close")?.addEventListener("click", () => {
@@ -913,6 +921,33 @@ export function initApp(adapter: PlatformAdapter): void {
         setOpen(false);
         appearanceBtn.focus();
       }
+    });
+  }
+
+  const overflowBtn = document.getElementById("btn-toolbar-overflow");
+  const overflowPanel = document.getElementById("toolbar-overflow-panel");
+  if (overflowBtn && overflowPanel) {
+    const setOverflowOpen = (open: boolean) => {
+      overflowPanel.hidden = !open;
+      overflowBtn.classList.toggle("toggled", open);
+      overflowBtn.setAttribute("aria-expanded", String(open));
+    };
+    overflowBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setOverflowOpen(overflowPanel.hidden);
+    });
+    overflowPanel.addEventListener("click", (e) => {
+      const item = (e.target as HTMLElement).closest<HTMLElement>("[data-overflow]");
+      if (!item) return;
+      const action = item.dataset.overflow;
+      if (action === "next") btn("btn-next").click();
+      else if (action === "tail") btn("btn-tail").click();
+      else if (action === "diagnostics") diagnosticsBtn.click();
+      setOverflowOpen(false);
+    });
+    document.addEventListener("click", (e) => {
+      if (overflowPanel.hidden) return;
+      if (!overflowPanel.contains(e.target as Node) && e.target !== overflowBtn) setOverflowOpen(false);
     });
   }
 

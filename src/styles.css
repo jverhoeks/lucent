@@ -774,8 +774,22 @@ body {
   background: var(--btn-bg);
   color: var(--text);
   outline: none;
-  width: 200px;
+  flex: 1;
+  min-width: 120px;
+  max-width: 360px;
   transition: border-color 0.15s;
+}
+
+#searchbar button.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+}
+
+#searchbar button.icon-btn .ic {
+  width: 14px;
+  height: 14px;
 }
 
 #searchbar input:focus {
@@ -1521,6 +1535,23 @@ body.drag-over::after {
 .quick-empty {
   padding: 16px;
   color: var(--text-muted);
+  text-align: center;
+}
+
+.quick-section {
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.quick-footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
   text-align: center;
 }
 

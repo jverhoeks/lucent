@@ -552,6 +552,10 @@ export function initApp(adapter: PlatformAdapter): void {
     void pasteIntoNewDoc();
   });
 
+  btn("btn-outline")?.addEventListener("click", () => {
+    outlinePinned = !outlinePinned;
+    refreshOutline();
+  });
   btn("btn-search").addEventListener("click", () => {
     if (manager.count() === 0) return;
     searchBar.toggle();

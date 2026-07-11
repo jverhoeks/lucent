@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectFormat, dataLangOf, basename, siblingIndex } from "../src/format";
+import { detectFormat, dataLangOf, effectiveDataLang, basename, siblingIndex } from "../src/format";
 
 describe("detectFormat", () => {
   it("maps markdown extensions", () => {
@@ -22,6 +22,23 @@ describe("detectFormat", () => {
     expect(dataLangOf("x.yml")).toBe("yaml");
     expect(dataLangOf("x.json")).toBe("json");
     expect(dataLangOf("x.md")).toBeNull();
+  });
+});
+
+describe("effectiveDataLang", () => {
+  it("prefers the file extension over a forced View-as language", () => {
+    expect(effectiveDataLang("/examples/data-sample.yaml", "json")).toBe("yaml");
+    expect(effectiveDataLang("/examples/data-sample.json", "yaml")).toBe("json");
+  });
+
+  it("uses forced language for extensionless paths", () => {
+    expect(effectiveDataLang("/notes/pasted", "yaml")).toBe("yaml");
+    expect(effectiveDataLang("config", "toml")).toBe("toml");
+  });
+
+  it("returns null when neither path nor override is recognised", () => {
+    expect(effectiveDataLang("Makefile")).toBeNull();
+    expect(effectiveDataLang("notes.txt")).toBeNull();
   });
 });
 

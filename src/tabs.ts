@@ -1,5 +1,5 @@
 import { loadHighlight } from "./highlight-loader";
-import { detectFormat, dataLangOf, basename } from "./format";
+import { detectFormat, dataLangOf, effectiveDataLang, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { resolveLocalImages } from "./renderers/markdown";
 import { prewarmMarkdown } from "./render";
@@ -76,7 +76,7 @@ function fmtToEditorLang(t: Tab): EditorLang | undefined {
   const fmt = effectiveFormat(t);
   if (fmt === "markdown") return "markdown";
   if (fmt === "data") {
-    const lang = t.forcedLang ?? dataLangOf(t.path);
+    const lang = effectiveDataLang(t.path, t.forcedLang);
     if (lang === "json") return "json";
     if (lang === "yaml") return "yaml";
   }
@@ -290,7 +290,7 @@ export class TabManager {
   getActiveDataLang(): DataLang | undefined {
     const t = this.active();
     if (!t || effectiveFormat(t) !== "data") return undefined;
-    return t.forcedLang ?? dataLangOf(t.path) ?? undefined;
+    return effectiveDataLang(t.path, t.forcedLang) ?? undefined;
   }
 
   setActiveForcedFormat(format: Format, lang?: DataLang): void | Promise<void> {
@@ -347,8 +347,11 @@ export class TabManager {
   openOrActivate(path: string, content: string): void | Promise<void> {
     const existing = this.tabs.findIndex((t) => t.path === path);
     if (existing >= 0) {
-      this.tabs[existing].content = content;
-      this.tabs[existing].loading = false;
+      const tab = this.tabs[existing];
+      tab.content = content;
+      tab.loading = false;
+      const native = dataLangOf(path);
+      if (native && tab.forcedLang && tab.forcedLang !== native) tab.forcedLang = undefined;
       return this.activate(existing);
     }
     const format = detectFormat(path);
@@ -1201,7 +1204,7 @@ export class TabManager {
                 return;
               }
 
-              const lang = t.forcedLang ?? dataLangOf(t.path);
+              const lang = effectiveDataLang(t.path, t.forcedLang);
               if (!lang) {
                 prevPane.textContent = "Could not detect a data format";
                 return;
@@ -1354,7 +1357,7 @@ export class TabManager {
     // Async upgrade: lazy-load highlight.js and re-highlight when available.
     // The plain text is already visible, so there is no flash — the highlighted
     // replacement lands in a future microtask.
-    const lang = effectiveFormat(t) === "data" ? (t.forcedLang ?? dataLangOf(t.path)) : null;
+    const lang = effectiveFormat(t) === "data" ? effectiveDataLang(t.path, t.forcedLang) : null;
     if (lang) {
       const mySeq = this.repaintSeq;
       loadHighlight().then((hljs) => {

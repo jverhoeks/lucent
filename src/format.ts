@@ -23,6 +23,13 @@ export function dataLangOf(path: string): DataLang | null {
   return DATA[ext(path)] ?? null;
 }
 
+/** Language used to parse/render structured data. A recognised file extension
+ *  always wins over a "View as…" override so e.g. `.yaml` is never parsed as
+ *  JSON because of a stale session flag. */
+export function effectiveDataLang(path: string, forcedLang?: DataLang): DataLang | null {
+  return dataLangOf(path) ?? forcedLang ?? null;
+}
+
 /** Final path segment, handling both `/` and `\` separators. */
 export function basename(path: string): string {
   return path.split(/[/\\]/).pop() ?? path;

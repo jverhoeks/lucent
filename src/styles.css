@@ -20,6 +20,15 @@
   --accent-soft-hover: rgba(37, 99, 235, 0.18);
   --btn-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.06);
   --btn-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.1);
+  --border: var(--bar-border);
+  --panel: var(--surface);
+  --warning-bg: #fff8e6;
+  --warning-border: #f0c040;
+  --warning-text: #7a5a00;
+  --banner-bg: #323232;
+  --banner-fg: #ffffff;
+  --editor-bg: #ffffff;
+  --editor-fg: #1a1a1a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,6 +49,13 @@
     --accent-soft-hover: rgba(94, 158, 255, 0.24);
     --btn-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.3);
     --btn-shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --warning-bg: #3d3520;
+    --warning-border: #8a7020;
+    --warning-text: #f5d98a;
+    --banner-bg: #2c2c2e;
+    --banner-fg: #f5f5f7;
+    --editor-bg: #1e1e1e;
+    --editor-fg: #e6e6e6;
   }
 }
 
@@ -52,10 +68,14 @@
 #content[data-theme="sepia"] {
   background: #f4ecd8;
   color: #433422;
+  --editor-bg: #faf6ee;
+  --editor-fg: #433422;
 }
 #content[data-theme="dark"] {
   background: #1e1e1e;
   color: #e6e6e6;
+  --editor-bg: #1e1e1e;
+  --editor-fg: #e6e6e6;
 }
 
 
@@ -1099,8 +1119,8 @@ body.exporting .doc .code-header {
   font-size: 14px;
   line-height: 1.55;
   padding: 16px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--editor-bg);
+  color: var(--editor-fg);
 }
 .split-editor .cm-editor {
   height: 100%;
@@ -1139,10 +1159,7 @@ body.exporting .doc .code-header {
 #content[data-theme="dark"] .split-editor {
   border-right-color: rgba(255, 255, 255, 0.1);
 }
-#content[data-theme="dark"] .split-textarea {
-  background: #1e1e1e;
-  color: #e6e6e6;
-}
+
 #content[data-theme="dark"] .split-divider {
   background: #2a2a2a;
   border-color: rgba(255, 255, 255, 0.1);
@@ -1197,10 +1214,10 @@ body.exporting .doc .code-header {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: #fff3cd;
-  border-bottom: 1px solid #ffc107;
+  background: var(--warning-bg);
+  border-bottom: 1px solid var(--warning-border);
   font-size: 12px;
-  color: #856404;
+  color: var(--warning-text);
   flex: 0 0 auto;
 }
 
@@ -1433,8 +1450,8 @@ body.drag-over::after {
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: #323232;
-  color: #fff;
+  background: var(--banner-bg);
+  color: var(--banner-fg);
   padding: 10px 20px;
   border-radius: 10px;
   font-size: 13px;

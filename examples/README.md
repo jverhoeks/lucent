@@ -1,7 +1,10 @@
 # Examples :books:
 
-A tour of everything this viewer renders. Open any file below — these are
-**relative links**, so clicking them opens the file in a new tab.
+A tour of everything Lucent renders.
+
+**In the app:** open **Help** (toolbar or `F1`) and click any `example:` link — samples open in a new tab.
+
+**In this repo:** open files directly or use the relative links below (works when viewing this README inside Lucent from the `examples/` folder).
 
 1. [Basics](01-basics.md) — headings, emphasis, lists, code, tables, quotes
 2. [Links](02-links.md) — in-page anchors, external, relative, autolinks, email

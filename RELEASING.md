@@ -20,7 +20,11 @@ publishes signed in-app update artifacts, and updates the Homebrew cask.
 
 2. Open a PR, get CI green, merge to `main`.
 
-3. The **Release** workflow notices `v0.4.0` has no release yet and:
+3. Confirm `examples/` is present — desktop bundles include it as app resources
+   (Help guide `example:` links). Web builds copy it to `public/examples/` during
+   `npm run build`.
+
+4. The **Release** workflow notices `v0.4.0` has no release yet and:
    - builds on `macos-latest` (universal `.dmg`), `ubuntu-22.04` and
      `ubuntu-24.04-arm` (`.deb`/`.rpm`/`.AppImage`), and `windows-latest`
      (`.msi`/NSIS `.exe`) into a **draft** release;

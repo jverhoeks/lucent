@@ -12,18 +12,22 @@
       <div class="group">
         <button id="btn-open" class="primary" aria-label="Open" data-tip="Open file(s)"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-folder"></use></svg></button>
         <button id="btn-paste-new" aria-label="Paste into new document" data-tip="Paste into new document (Cmd/Ctrl+Shift+V)"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-clipboard-plus"></use></svg></button>
-        <button id="btn-next" aria-label="Next" data-tip="Next file in folder"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-skip"></use></svg></button>
+        <button id="btn-next" class="toolbar-compact-hide" aria-label="Next" data-tip="Next file in folder"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-skip"></use></svg></button>
       </div>
+
+      <span class="toolbar-sep" aria-hidden="true"></span>
 
       <div class="group">
         <button id="btn-edit" aria-label="Edit" data-tip="Edit"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-pencil"></use></svg></button>
         <button id="btn-save" aria-label="Save" data-tip="Save (Cmd/Ctrl+S)" hidden><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-save"></use></svg></button>
         <button id="btn-save-as" aria-label="Save As" data-tip="Save As (Cmd/Ctrl+Shift+S)"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-save-as"></use></svg></button>
         <button id="btn-toggle" aria-label="Rendered" data-tip="Toggle rendered / raw" aria-pressed="false"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-eye"></use></svg></button>
-        <button id="btn-tail" aria-label="Tail" data-tip="Tail / follow new lines" aria-pressed="false"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-tail"></use></svg></button>
+        <button id="btn-tail" class="toolbar-compact-hide" aria-label="Tail" data-tip="Tail / follow new lines" aria-pressed="false"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-tail"></use></svg></button>
         <button id="btn-search" aria-label="Find" data-tip="Find (Cmd/Ctrl+F)"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-search"></use></svg></button>
-        <button id="btn-diagnostics" aria-label="Diagnostics" data-tip="Diagnostics"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-info"></use></svg></button>
+        <button id="btn-diagnostics" class="toolbar-compact-hide" aria-label="Diagnostics" data-tip="Diagnostics" aria-expanded="false"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-info"></use></svg><span id="diagnostics-badge" class="toolbar-badge" hidden></span></button>
       </div>
+
+      <span class="toolbar-sep" aria-hidden="true"></span>
 
       <div class="group toolbar-export" hidden>
         <select id="sel-viewas" title="View as" aria-label="View as">
@@ -64,6 +68,15 @@
               </select>
             </label>
           </div>
+        </div>
+      </div>
+
+      <div class="popover-host toolbar-overflow-host">
+        <button id="btn-toolbar-overflow" class="toolbar-overflow-btn" aria-label="More actions" aria-haspopup="true" aria-expanded="false" data-tip="More actions"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><use href="#ic-more"></use></svg></button>
+        <div id="toolbar-overflow-panel" class="popover toolbar-overflow-panel" role="menu" aria-label="More actions" hidden>
+          <button type="button" role="menuitem" data-overflow="next">Next file in folder</button>
+          <button type="button" role="menuitem" data-overflow="tail">Tail / follow new lines</button>
+          <button type="button" role="menuitem" data-overflow="diagnostics">Diagnostics</button>
         </div>
       </div>
 

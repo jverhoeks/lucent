@@ -44,6 +44,16 @@ describe("dataRenderer", () => {
     expect(c.querySelector(".tree-notice")).toBeNull();
   });
 
+  it("parses YAML from path even when ctx.dataLang requests JSON", () => {
+    const c = document.createElement("div");
+    dataRenderer.render("# header\nkey: value", c, {
+      theme: "light",
+      dataLang: "json",
+    }, "/examples/data-sample.yaml");
+    expect(c.querySelector(".tree")).toBeTruthy();
+    expect(c.querySelector(".tree-notice")).toBeNull();
+  });
+
   it("shows raw text with a clear message for an unrecognised format", () => {
     const c = document.createElement("div");
     dataRenderer.render("some text", c, { theme: "light" });

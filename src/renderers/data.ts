@@ -1,6 +1,6 @@
 import { parseData } from "../data/parse";
 import { renderTree, TreeView } from "../data/tree";
-import { dataLangOf } from "../format";
+import { effectiveDataLang } from "../format";
 import type { Renderer, RenderCtx } from "../types";
 import { renderStructuredComments } from "../data/comments";
 
@@ -32,7 +32,7 @@ export const dataRenderer: Renderer = {
   render(source: string, container: HTMLElement, ctx: RenderCtx, path?: string) {
     container.replaceChildren();
 
-    const lang = ctx.dataLang ?? (path ? dataLangOf(path) : null);
+    const lang = path ? effectiveDataLang(path, ctx.dataLang) : (ctx.dataLang ?? null);
     if (!lang) {
       // No recognised data extension (e.g. forced via "View as…" onto an
       // unknown path) — show raw rather than guessing a parser and emitting a

@@ -1,7 +1,6 @@
 mod commands;
 mod error;
 mod logindex;
-mod pdf;
 mod stdin;
 mod watcher;
 
@@ -84,7 +83,6 @@ pub fn run() {
             watcher::watch_file,
             watcher::unwatch_file,
             watcher::unwatch_all,
-            pdf::export_pdf_native,
             stdin::stdin_lines,
             get_startup_files,
             logindex::log_open,

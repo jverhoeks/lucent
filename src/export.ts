@@ -1,6 +1,6 @@
 import appCss from "./styles.css?inline";
 import hljsCss from "highlight.js/styles/github.css?inline";
-import { renderMarkdown, renderMath, hasMath, runPostRender, applyCodeTheme } from "./render";
+import { renderMarkdown, renderMath, hasMath, runPostRender } from "./render";
 import type { Theme } from "./types";
 import type { PlatformAdapter } from "./platform/types";
 
@@ -70,64 +70,26 @@ export async function exportHtml(rawText: string, adapter: PlatformAdapter): Pro
   await adapter.saveTextFile(path, buildStandaloneHtml(body, false, theme));
 }
 
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
-
 /**
- * Browser fallback: `window.print()` is a no-op in macOS WKWebView and there is
- * no native PDF API on Windows/Linux webviews yet, so we stage the document as a
- * temp HTML file and open it in the default browser with print auto-triggered.
- */
-async function exportPdfViaBrowser(rawText: string, adapter: PlatformAdapter): Promise<void> {
-  const theme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
-  const body = await renderDocumentHtml(rawText, theme);
-  const path = await adapter.writeTempFile("markdown-export.html", buildStandaloneHtml(body, true, theme));
-  await adapter.openPath(path);
-}
-
-/**
- * macOS: capture the live webview to PDF via WKWebView.createPDF. We add an
- * `.exporting` class to <html> and <body> first: `createPDF` renders *screen*
- * media (the `@media print` rules do NOT apply) and captures the webview's whole
- * content area, so that class is what hides the chrome and hands the scroll back
- * to the document root — otherwise the app shell keeps the content box
- * viewport-sized and the PDF is a one-page screenshot of the window.
+ * PDF export goes through the browser on every platform: stage the document as a
+ * temp HTML file and open it in the default browser with printing triggered.
  *
- * Split-edit mode is height-constrained by its own layout (two scrolling panes),
- * so it can't be linearized this way; there we take the browser path, which
- * re-renders the source into a standalone document. Other platforms always do.
+ * The browser is what paginates — its print engine applies the `@media print`
+ * rules in styles.css (inlined into the exported HTML) and lays the document out
+ * on the user's paper size. macOS used to do this in-app with WebKit, first by
+ * capturing the webview (`createPDF`, which yields one page as tall as the
+ * document rather than pages) and then via `NSPrintOperation`, which paginates
+ * correctly but renders nothing at all from a Tauri webview — every variant
+ * produced blank pages or no file. Rather than keep a broken second path, all
+ * platforms share this one.
+ *
+ * Always exported light: a dark reading theme prints as dark slabs of ink.
  */
 export async function exportPdf(rawText: string, adapter: PlatformAdapter): Promise<void> {
-  const content = document.getElementById("content");
-  if (adapter.platform !== "tauri" || content?.classList.contains("editing")) {
-    await exportPdfViaBrowser(rawText, adapter);
-    return;
-  }
-  const dest = await adapter.saveDialog({ filters: [{ name: "PDF", extensions: ["pdf"] }] });
-  if (!dest) return;
-
-  const currentTheme = (content?.dataset.theme as Theme) || "light";
-  applyCodeTheme("light");
-  document.documentElement.classList.add("exporting");
-  document.body.classList.add("exporting");
-  try {
-    // Two frames: one for the class-driven relayout, one for the reflow of the
-    // now-full-height document before the capture reads it.
-    await nextFrame();
-    await nextFrame();
-    // Native PDF export uses the Tauri command directly
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("export_pdf_native", { dest });
-  } catch (e) {
-    if (String(e).includes("unsupported_platform")) {
-      await exportPdfViaBrowser(rawText, adapter);
-      return;
-    }
-    throw e;
-  } finally {
-    document.documentElement.classList.remove("exporting");
-    document.body.classList.remove("exporting");
-    applyCodeTheme(currentTheme);
-  }
+  const body = await renderDocumentHtml(rawText, "light");
+  const path = await adapter.writeTempFile(
+    "markdown-export.html",
+    buildStandaloneHtml(body, true, "light"),
+  );
+  await adapter.openPath(path);
 }

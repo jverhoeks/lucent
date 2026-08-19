@@ -24,7 +24,7 @@ The toolbar's right-hand group acts on the whole rendered document:
 | **Copy as Markdown** | The document's raw Markdown source, on the clipboard as plain text. |
 | **Copy as rich text** | The rendered HTML, on the clipboard as `text/html` — paste into Google Docs, Confluence, Word, or email and formatting (headings, lists, tables, code) is preserved. |
 | **Export HTML** | A single, fully self-contained `.html` file (styles inlined) — open it anywhere, no assets needed. |
-| **Export PDF** | A native PDF with a fixed A4 page. |
+| **Export PDF** | The document opens in your browser with printing started — save it as a paginated PDF from there. |
 
 > On the **web build**, Export HTML / PDF are replaced by the
 > [Download menu](#download--format-conversion). Desktop keeps those one-click
@@ -94,8 +94,10 @@ near their original lines, including inline comments. Cross-format conversion
 uses a source-ordered comment header because paths and line layout change.
 Downloading in the original format preserves the source exactly.
 
-HTML and PDF reuse the same self-contained export. On the web, PDF opens a
-print-ready page in a new tab; desktop uses the native PDF exporter.
+HTML and PDF reuse the same self-contained export: the PDF route just opens it
+with printing triggered (a new tab on the web, your default browser on desktop)
+and lets the browser's print engine paginate it onto your paper size. The
+document always exports light, since a dark reading theme prints as slabs of ink.
 
 ---
 

@@ -1220,68 +1220,18 @@ body {
   background: rgba(22, 163, 74, 0.1);
 }
 
-/* ---- Native PDF capture (macOS WKWebView.createPDF) ----
-   createPDF renders *screen* media (the `@media print` block below does NOT
-   apply) and captures the webview's whole content area, so the class has to do
-   two things in the live DOM: hide the app chrome, and hand the scroll back to
-   the document root. Without the latter, `html,body{height:100%}` +
-   `#content{overflow:auto}` keeps the content box exactly viewport-sized and the
-   capture is a one-page screenshot of the window, toolbar included.
-   Restored: these rules were dropped in the web/app split (f0f9c31, #154) and
-   #159's restore only covered the `.doc`/code-block half below. */
-html.exporting,
-body.exporting {
-  height: auto !important;
-  overflow: visible !important;
-}
-body.exporting #toolbar,
-body.exporting #tabstrip,
-body.exporting #searchbar,
-body.exporting #outline,
-body.exporting #banner,
-body.exporting .popover {
-  display: none !important;
-}
-/* Lay the document out on a fixed A4-width canvas (210mm @ 96dpi ≈ 794px) so the
-   captured PDF is consistent regardless of window size or zoom. */
-body.exporting {
-  display: block !important;
-  width: 794px;
-}
-body.exporting #workspace {
-  display: block !important;
-  overflow: visible !important;
-  min-height: 0;
-}
-body.exporting #content {
-  width: 794px;
-  flex: none;
-  overflow: visible !important;
-  height: auto !important;
-  padding: 48px 56px;
-  background: #ffffff !important;
-  color: #111111 !important;
-}
-body.exporting .doc {
-  max-width: none; /* fill the page width within the margins */
-  margin: 0;
-}
-/* Drop the code chrome/border but keep code + (toggled) line numbers. */
-body.exporting .doc .code-actions {
-  display: none !important;
-}
-body.exporting .doc .code-block {
-  border: none !important;
-}
-body.exporting .doc .code-header {
-  background: none !important;
-  border-bottom: none !important;
-  padding-left: 0 !important;
-}
-
-/* ---- Browser print / PDF fallback (used by the standalone HTML export and by
-   the non-macOS "open in browser and print" path) ---- */
+/* ---- Print / PDF ----
+   PDF export opens the document in the browser and prints it, and the standalone
+   HTML export inlines this stylesheet, so the browser's print engine is what
+   paginates. These rules are what turn the app shell into a document: hide the
+   chrome, hand the scroll back to the document root, and keep blocks from being
+   cut across a page boundary.
+   Restored + extended: dropped in the web/app split (f0f9c31, #154). */
 @media print {
+  /* Don't inherit whatever margin the browser's print dialog defaults to. */
+  @page {
+    margin: 18mm 16mm;
+  }
   #toolbar,
   #tabstrip,
   #searchbar,
@@ -1319,6 +1269,61 @@ body.exporting .doc .code-header {
     background: none !important;
     border-bottom: none !important;
     padding-left: 0 !important;
+  }
+
+  /* Pagination. A page has a hard right edge and no horizontal scroll, so code
+     lines have to wrap instead of being cut off. `break-inside` keeps atomic
+     blocks whole where they fit — taller-than-a-page blocks still break, which
+     is what we want. */
+  .doc pre,
+  .doc code,
+  .doc .code-block .ctab td.code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* Wrapped code needs no scroll container, and leaving one prints a scrollbar. */
+  .doc pre,
+  .doc .katex-display {
+    overflow: visible;
+  }
+  .doc .code-block,
+  .doc table,
+  .doc blockquote,
+  .doc pre.mermaid,
+  .doc .note,
+  .doc .warning,
+  .doc .tip {
+    break-inside: avoid;
+  }
+  .doc h1,
+  .doc h2,
+  .doc h3,
+  .doc h4,
+  .doc h5,
+  .doc h6 {
+    break-inside: avoid;
+    break-after: avoid; /* never leave a heading stranded at the page foot */
+  }
+  .doc p,
+  .doc li {
+    orphans: 2;
+    widows: 2;
+  }
+  .doc img,
+  .doc pre.mermaid svg {
+    max-width: 100%;
+    height: auto;
+    break-inside: avoid;
+  }
+  /* Backgrounds/borders are dropped by default when printing; these carry
+     meaning, so ask for them explicitly. */
+  .doc .note,
+  .doc .warning,
+  .doc .tip,
+  .doc th,
+  .doc td {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 

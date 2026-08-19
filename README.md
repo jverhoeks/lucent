@@ -64,8 +64,9 @@ split-screen editor for when you want to write too.
   theme (code and diagrams follow the theme), plus **find** (`Cmd/Ctrl+F`) with
   case and regex, and quick switching across open/recent files (`Cmd/Ctrl+P`) —
   all remembered between launches.
-- **Export & copy** — download **PDF** (native, fixed A4 page) and
-  **standalone HTML** (fully self-contained) from the **Download as…** menu,
+- **Export & copy** — export a **paginated PDF** (opens in your browser with
+  printing started) and **standalone HTML** (fully self-contained) from the
+  **Download as…** menu,
   plus copy the document as Markdown or as rich text (paste into Docs /
   Confluence / Word with formatting intact).
 - **Download and convert as another type** — the desktop and web builds both

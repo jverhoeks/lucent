@@ -1220,12 +1220,53 @@ body {
   background: rgba(22, 163, 74, 0.1);
 }
 
+/* ---- Native PDF capture (macOS WKWebView.createPDF) ----
+   createPDF renders *screen* media (the `@media print` block below does NOT
+   apply) and captures the webview's whole content area, so the class has to do
+   two things in the live DOM: hide the app chrome, and hand the scroll back to
+   the document root. Without the latter, `html,body{height:100%}` +
+   `#content{overflow:auto}` keeps the content box exactly viewport-sized and the
+   capture is a one-page screenshot of the window, toolbar included.
+   Restored: these rules were dropped in the web/app split (f0f9c31, #154) and
+   #159's restore only covered the `.doc`/code-block half below. */
+html.exporting,
+body.exporting {
+  height: auto !important;
+  overflow: visible !important;
+}
+body.exporting #toolbar,
+body.exporting #tabstrip,
+body.exporting #searchbar,
+body.exporting #outline,
+body.exporting #banner,
+body.exporting .popover {
+  display: none !important;
+}
+/* Lay the document out on a fixed A4-width canvas (210mm @ 96dpi ≈ 794px) so the
+   captured PDF is consistent regardless of window size or zoom. */
+body.exporting {
+  display: block !important;
+  width: 794px;
+}
+body.exporting #workspace {
+  display: block !important;
+  overflow: visible !important;
+  min-height: 0;
+}
+body.exporting #content {
+  width: 794px;
+  flex: none;
+  overflow: visible !important;
+  height: auto !important;
+  padding: 48px 56px;
+  background: #ffffff !important;
+  color: #111111 !important;
+}
 body.exporting .doc {
   max-width: none; /* fill the page width within the margins */
   margin: 0;
 }
-/* Native PDF capture: drop the code chrome/border but keep code + (toggled)
-   line numbers. */
+/* Drop the code chrome/border but keep code + (toggled) line numbers. */
 body.exporting .doc .code-actions {
   display: none !important;
 }
@@ -1236,6 +1277,49 @@ body.exporting .doc .code-header {
   background: none !important;
   border-bottom: none !important;
   padding-left: 0 !important;
+}
+
+/* ---- Browser print / PDF fallback (used by the standalone HTML export and by
+   the non-macOS "open in browser and print" path) ---- */
+@media print {
+  #toolbar,
+  #tabstrip,
+  #searchbar,
+  #outline,
+  #banner,
+  .popover {
+    display: none !important;
+  }
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+  }
+  #workspace {
+    display: block;
+  }
+  #content {
+    overflow: visible;
+    height: auto;
+    padding: 0;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .doc {
+    max-width: none;
+  }
+  /* Drop the code chrome/border in print; line numbers still print if enabled. */
+  .doc .code-actions {
+    display: none !important;
+  }
+  .doc .code-block {
+    border: none !important;
+  }
+  .doc .code-header {
+    background: none !important;
+    border-bottom: none !important;
+    padding-left: 0 !important;
+  }
 }
 
 /* ---- Search bar ---- */

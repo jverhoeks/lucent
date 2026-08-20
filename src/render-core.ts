@@ -1,4 +1,7 @@
 import MarkdownIt from "markdown-it";
+// markdown-it 15 ships its own types: the default export is the callable class
+// (a value), so instance annotations use the exported `MarkdownIt` *type*.
+import type { MarkdownIt as MarkdownItInstance } from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import footnote from "markdown-it-footnote";
 import { full as emoji } from "markdown-it-emoji";
@@ -75,8 +78,8 @@ type HLJS = {
 
 /** Build a configured markdown-it renderer. `katexPlugin` is applied only
  *  when rendering math (lazy-imported in getMathRenderer). */
-function createRenderer(hljs: HLJS, katexPlugin?: unknown): MarkdownIt {
-  const md: MarkdownIt = new MarkdownIt({
+function createRenderer(hljs: HLJS, katexPlugin?: unknown): MarkdownItInstance {
+  const md: MarkdownItInstance = new MarkdownIt({
     html: false,
     linkify: true,
     typographer: true,
@@ -143,18 +146,18 @@ function createRenderer(hljs: HLJS, katexPlugin?: unknown): MarkdownIt {
   return md;
 }
 
-let baseRenderer: MarkdownIt | null = null;
+let baseRenderer: MarkdownItInstance | null = null;
 
-async function getBaseRenderer(): Promise<MarkdownIt> {
+async function getBaseRenderer(): Promise<MarkdownItInstance> {
   if (!baseRenderer) {
     baseRenderer = createRenderer(await loadHighlight());
   }
   return baseRenderer;
 }
 
-let mathRenderer: MarkdownIt | null = null;
+let mathRenderer: MarkdownItInstance | null = null;
 
-async function getMathRenderer(): Promise<MarkdownIt> {
+async function getMathRenderer(): Promise<MarkdownItInstance> {
   if (!mathRenderer) {
     const [hljs, katexMod] = await Promise.all([
       loadHighlight(),

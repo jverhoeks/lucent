@@ -87,7 +87,7 @@ export async function copyMermaidPng(svg: SVGSVGElement): Promise<void> {
 }
 
 /** Rasterized PNG bytes — for writing a downloaded .png file. */
-export async function mermaidPngBytes(svg: SVGSVGElement): Promise<Uint8Array> {
+export async function mermaidPngBytes(svg: SVGSVGElement): Promise<Uint8Array<ArrayBuffer>> {
   const blob = await toPngBlob(svg, 2);
   return new Uint8Array(await blob.arrayBuffer());
 }

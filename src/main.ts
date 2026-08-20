@@ -982,7 +982,9 @@ export function initApp(adapter: PlatformAdapter): void {
     };
     appearanceBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      setOpen(appearancePanel.hidden);
+      // `hidden` is `boolean | "until-found"` in current DOM typings; both
+      // truthy states mean "closed", so coerce before toggling.
+      setOpen(Boolean(appearancePanel.hidden));
     });
     document.addEventListener("click", (e) => {
       if (appearancePanel.hidden) return;
@@ -1007,7 +1009,7 @@ export function initApp(adapter: PlatformAdapter): void {
     };
     overflowBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      setOverflowOpen(overflowPanel.hidden);
+      setOverflowOpen(Boolean(overflowPanel.hidden));
     });
     overflowPanel.addEventListener("click", (e) => {
       const item = (e.target as HTMLElement).closest<HTMLElement>("[data-overflow]");

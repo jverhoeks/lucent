@@ -28,11 +28,11 @@
     "@vscode/markdown-it-katex": "^1.1.2",
     "codemirror": "^6.0.2",
     "highlight.js": "^11.11.1",
-    "ini": "^6.0.0",
-    "markdown-it": "^14.2.0",
+    "ini": "^7.0.0",
+    "markdown-it": "^15.0.0",
     "markdown-it-anchor": "^9.2.0",
     "markdown-it-container": "^4.0.0",
-    "markdown-it-deflist": "^3.0.1",
+    "markdown-it-deflist": "^4.0.0",
     "markdown-it-emoji": "^3.0.0",
     "markdown-it-footnote": "^4.0.0",
     "markdown-it-task-lists": "^2.1.1",
@@ -43,10 +43,9 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/ini": "^4.1.1",
-    "@types/markdown-it": "^14.1.2",
-    "jsdom": "^29.1.1",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3",
+    "jsdom": "^30.0.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
     "vitest": "^4.1.9"
   }
 }

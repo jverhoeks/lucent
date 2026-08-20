@@ -122,7 +122,7 @@ export const webAdapter: PlatformAdapter = {
     fileStore.set(path, { content: contents, lastModified: Date.now() });
   },
 
-  async saveBinaryFile(path: string, contents: Uint8Array): Promise<void> {
+  async saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<void> {
     // No filesystem on the web: trigger a browser download using the basename.
     const name = path.split("/").pop() || "download.bin";
     const url = URL.createObjectURL(new Blob([contents], { type: "application/octet-stream" }));

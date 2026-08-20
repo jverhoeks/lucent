@@ -82,6 +82,13 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
+      # Serialized on purpose. Every leg updates the same `latest.json` asset
+      # read-modify-write (that's how it ends up listing all platforms), so
+      # running legs concurrently races: two legs delete-and-reupload it at once,
+      # one gets "Not Found" deleting an asset the other already replaced, and a
+      # merge based on a stale read silently drops the other platform's entries.
+      # Releases are rare; a serial matrix costs wall-clock and buys correctness.
+      max-parallel: 1
       matrix:
         include:
           - platform: macos-latest        # universal → one dmg for Intel + Apple Silicon

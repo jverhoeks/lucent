@@ -87,24 +87,33 @@ async function exportPdfViaBrowser(rawText: string, adapter: PlatformAdapter): P
 }
 
 /**
- * macOS: capture the live webview to PDF via WKWebView.createPDF. We add a
- * `.exporting` class first so the chrome (toolbar/tabs) is hidden and the body
- * grows to the full document height — `createPDF` renders *screen* media, so the
- * `@media print` block does NOT apply and this class is what produces a clean
- * capture. Other platforms fall back to the browser approach.
+ * macOS: capture the live webview to PDF via WKWebView.createPDF. We add an
+ * `.exporting` class to <html> and <body> first: `createPDF` renders *screen*
+ * media (the `@media print` rules do NOT apply) and captures the webview's whole
+ * content area, so that class is what hides the chrome and hands the scroll back
+ * to the document root — otherwise the app shell keeps the content box
+ * viewport-sized and the PDF is a one-page screenshot of the window.
+ *
+ * Split-edit mode is height-constrained by its own layout (two scrolling panes),
+ * so it can't be linearized this way; there we take the browser path, which
+ * re-renders the source into a standalone document. Other platforms always do.
  */
 export async function exportPdf(rawText: string, adapter: PlatformAdapter): Promise<void> {
-  if (adapter.platform !== "tauri") {
+  const content = document.getElementById("content");
+  if (adapter.platform !== "tauri" || content?.classList.contains("editing")) {
     await exportPdfViaBrowser(rawText, adapter);
     return;
   }
   const dest = await adapter.saveDialog({ filters: [{ name: "PDF", extensions: ["pdf"] }] });
   if (!dest) return;
 
-  const currentTheme = (document.getElementById("content")?.dataset.theme as Theme) || "light";
+  const currentTheme = (content?.dataset.theme as Theme) || "light";
   applyCodeTheme("light");
+  document.documentElement.classList.add("exporting");
   document.body.classList.add("exporting");
   try {
+    // Two frames: one for the class-driven relayout, one for the reflow of the
+    // now-full-height document before the capture reads it.
     await nextFrame();
     await nextFrame();
     // Native PDF export uses the Tauri command directly
@@ -117,6 +126,7 @@ export async function exportPdf(rawText: string, adapter: PlatformAdapter): Prom
     }
     throw e;
   } finally {
+    document.documentElement.classList.remove("exporting");
     document.body.classList.remove("exporting");
     applyCodeTheme(currentTheme);
   }

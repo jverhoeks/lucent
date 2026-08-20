@@ -26,7 +26,7 @@ export const tauriAdapter: PlatformAdapter = {
     await invoke("save_text_file", { path, contents });
   },
 
-  async saveBinaryFile(path: string, contents: Uint8Array): Promise<void> {
+  async saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<void> {
     await invoke("save_binary_file", { path, contents: Array.from(contents) });
   },
 

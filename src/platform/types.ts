@@ -30,7 +30,7 @@ export type OpenFilesCallback = (paths: string[]) => void;
 export interface PlatformAdapter {
   readFile(path: string): Promise<FilePayload>;
   saveTextFile(path: string, contents: string): Promise<void>;
-  saveBinaryFile(path: string, contents: Uint8Array): Promise<void>;
+  saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<void>;
   fileSize(path: string): Promise<number>;
   logOpen(path: string): Promise<number>;
   logWindow(path: string, start: number, count: number): Promise<string[]>;

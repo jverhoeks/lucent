@@ -108,7 +108,8 @@ jobs:
             libxdo-dev \
             libssl-dev \
             build-essential \
-            file
+            file \
+            xdg-utils
 
       - uses: actions/setup-node@v4
         with:
@@ -140,8 +141,14 @@ jobs:
           tagName: v${{ needs.check.outputs.version }}
           releaseDraft: true
           prerelease: false
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          # Publishes latest.json next to the bundles, which is what
+          # tauri-plugin-updater reads. The universal macOS dmg is registered
+          # under darwin-aarch64 + darwin-x86_64 (the action's default), which is
+          # what the updater looks up — so no `updaterJsonKeepUniversal`. The
+          # .sig files ride along with the bundles automatically; the old
+          # `uploadUpdaterJson`/`uploadUpdaterSignatures` inputs no longer exist
+          # in v0 and were being silently ignored.
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
 
   # ── All platforms done → flip the release public ──────────────────────────

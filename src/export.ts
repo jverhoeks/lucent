@@ -97,12 +97,14 @@ export async function exportPdf(rawText: string, adapter: PlatformAdapter): Prom
     printRoot.dataset.font = "sans";
     printRoot.innerHTML = `<article class="doc">${body}</article>`;
     document.body.appendChild(printRoot);
+    document.documentElement.classList.add("printing-pdf");
     document.body.classList.add("printing-pdf");
 
     const cleanup = () => {
       window.removeEventListener("afterprint", cleanup);
       printRoot.remove();
       if (pendingPrintCleanup === cleanup) {
+        document.documentElement.classList.remove("printing-pdf");
         document.body.classList.remove("printing-pdf");
         pendingPrintCleanup = null;
       }
@@ -114,7 +116,7 @@ export async function exportPdf(rawText: string, adapter: PlatformAdapter): Prom
       // operation. It returns a Promise there and opens the system print sheet
       // inside Lucent, so keep the prepared DOM until `afterprint` fires.
       await Promise.resolve(window.print());
-      window.setTimeout(cleanup, 10 * 60 * 1000);
+      window.setTimeout(cleanup, 30_000);
     } catch (error) {
       cleanup();
       throw error;

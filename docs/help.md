@@ -141,7 +141,7 @@ Use **Tail** (desktop) to follow a growing file. **Find** searches the visible l
 | **Copy as Markdown** | Raw source on the clipboard |
 | **Copy as rich text** | Rendered HTML — paste into Docs, Word, Confluence |
 | **Download as → HTML** | Self-contained `.html` with your reading theme |
-| **Download as → PDF** | Opens the document in your browser with printing started — save as a paginated PDF from there (always light) |
+| **Download as → PDF** | Opens the system print sheet inside Lucent — choose **Save as PDF** for a paginated file (always light) |
 | **Download as → JSON/YAML/TOML/INI** | Convert structured data; comments preserved where supported |
 
 ---
@@ -161,7 +161,7 @@ Open **Diagnostics** (toolbar or **More** menu) for recent errors — failed ope
 | Issue | Try |
 | --- | --- |
 | Example link does nothing | Desktop: reinstall or run from a copy that includes `examples/`. Web: reload after build. |
-| PDF export opens a browser tab | Expected: your browser paginates the document. Save as PDF from its print sheet. |
+| PDF export shows the print sheet | Choose **PDF → Save as PDF** at the bottom of the system print sheet. |
 | Huge log won't load fully | Lucent opens it in **windowed** mode automatically. |
 
 ---

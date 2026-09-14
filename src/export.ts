@@ -12,6 +12,7 @@ import type { PlatformAdapter } from "./platform/types";
 // bundled CSS auto-updates.
 const KATEX_VERSION = "0.16.47";
 const KATEX_CDN = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css`;
+let pendingPrintCleanup: (() => void) | null = null;
 
 /**
  * Render Markdown to fully-resolved HTML for export: run the same pipeline plus
@@ -22,8 +23,8 @@ async function renderDocumentHtml(rawText: string, theme: Theme = "light"): Prom
   const holder = document.createElement("div");
   holder.style.cssText = "position:fixed;left:-10000px;top:0;width:800px;";
   // Export must include rendered math, so use the (lazy) math renderer when the
-  // source contains any — otherwise the cheap synchronous base render.
-  const body = hasMath(rawText) ? await renderMath(rawText) : renderMarkdown(rawText);
+  // source contains any — otherwise the cheaper base renderer.
+  const body = hasMath(rawText) ? await renderMath(rawText) : await renderMarkdown(rawText);
   holder.innerHTML = `<article class="doc">${body}</article>`;
   document.body.appendChild(holder);
   try {
@@ -87,6 +88,40 @@ export async function exportHtml(rawText: string, adapter: PlatformAdapter): Pro
  */
 export async function exportPdf(rawText: string, adapter: PlatformAdapter): Promise<void> {
   const body = await renderDocumentHtml(rawText, "light");
+
+  if (adapter.platform === "tauri") {
+    pendingPrintCleanup?.();
+    const printRoot = document.createElement("main");
+    printRoot.id = "pdf-export";
+    printRoot.dataset.theme = "light";
+    printRoot.dataset.font = "sans";
+    printRoot.innerHTML = `<article class="doc">${body}</article>`;
+    document.body.appendChild(printRoot);
+    document.body.classList.add("printing-pdf");
+
+    const cleanup = () => {
+      window.removeEventListener("afterprint", cleanup);
+      printRoot.remove();
+      if (pendingPrintCleanup === cleanup) {
+        document.body.classList.remove("printing-pdf");
+        pendingPrintCleanup = null;
+      }
+    };
+    pendingPrintCleanup = cleanup;
+    window.addEventListener("afterprint", cleanup, { once: true });
+    try {
+      // Tauri replaces window.print() on macOS with the native WebKit print
+      // operation. It returns a Promise there and opens the system print sheet
+      // inside Lucent, so keep the prepared DOM until `afterprint` fires.
+      await Promise.resolve(window.print());
+      window.setTimeout(cleanup, 10 * 60 * 1000);
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+    return;
+  }
+
   const path = await adapter.writeTempFile(
     "markdown-export.html",
     buildStandaloneHtml(body, true, "light"),

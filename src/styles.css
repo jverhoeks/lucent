@@ -1221,12 +1221,15 @@ body {
 }
 
 /* ---- Print / PDF ----
-   PDF export opens the document in the browser and prints it, and the standalone
-   HTML export inlines this stylesheet, so the browser's print engine is what
-   paginates. These rules are what turn the app shell into a document: hide the
-   chrome, hand the scroll back to the document root, and keep blocks from being
-   cut across a page boundary.
+   The desktop app prints a prepared document through its native WebKit print
+   operation. The web app opens standalone HTML in a browser. These rules drive
+   both paths: hide the app chrome, hand scrolling back to the document root,
+   and keep blocks from being cut across a page boundary.
    Restored + extended: dropped in the web/app split (f0f9c31, #154). */
+#pdf-export {
+  display: none;
+}
+
 @media print {
   /* Don't inherit whatever margin the browser's print dialog defaults to. */
   @page {
@@ -1254,6 +1257,18 @@ body {
     padding: 0;
     background: #fff !important;
     color: #000 !important;
+  }
+  body.printing-pdf #workspace {
+    display: none !important;
+  }
+  body.printing-pdf #pdf-export {
+    display: block !important;
+    color: #000;
+    background: #fff;
+    font-family: var(--sans);
+    --text: #1d1d1f;
+    --text-muted: #6e6e73;
+    --surface: #f5f5f7;
   }
   .doc {
     max-width: none;

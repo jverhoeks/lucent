@@ -28,6 +28,8 @@ export interface SearchContext {
   logSearch: (path: string, q: SearchQuery) => Promise<number[]>;
   /** Called when an async (windowed) search resolves, to re-drive the controller. */
   onUpdate: () => void;
+  /** Surface an asynchronous backend failure without an unhandled rejection. */
+  onError?: (error: unknown) => void;
 }
 
 /**
@@ -49,7 +51,7 @@ export function createSearchProvider(ctx: SearchContext): SearchProvider {
       ctx.windowed && path
         ? (q: SearchQuery) => ctx.logSearch(path, q)
         : (q: SearchQuery) => Promise.resolve(searchLogLines(lines ?? [], q));
-    return new LogSearchProvider(view, runSearch, ctx.onUpdate);
+    return new LogSearchProvider(view, runSearch, ctx.onUpdate, ctx.onError);
   }
   if ((ctx.mode === "rendered" || ctx.mode === "edit") && ctx.format === "data") {
     return ctx.tree ? new TreeSearchProvider(ctx.tree) : new DomSearchProvider(ctx.content);

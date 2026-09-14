@@ -37,8 +37,8 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
-        web: resolve(__dirname, "web.html"),
+        main: resolve(import.meta.dirname, "index.html"),
+        web: resolve(import.meta.dirname, "web.html"),
       },
     },
   },

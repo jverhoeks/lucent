@@ -2,7 +2,11 @@ use crate::commands::{read_file, FilePayload};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
 /// Pure, testable: read the file fresh; None if it can't be read (e.g. removed).
@@ -45,27 +49,35 @@ pub fn watch_file(path: String, state: State<WatchState>, app: AppHandle) -> Res
     let app2 = app.clone();
     let path2 = path.clone();
     let target2 = target.clone();
+    let generation = Arc::new(AtomicU64::new(0));
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
             if !event_targets(&event.paths, &target2) {
                 return;
             }
-            match event.kind {
-                EventKind::Modify(_) | EventKind::Create(_) => {
-                    if let Some(payload) = reload_payload(&path2) {
-                        let _ = app2.emit("file-changed", payload);
-                    }
-                }
-                EventKind::Remove(_) => {
-                    let _ = app2.emit(
-                        "file-removed",
-                        RemovedPayload {
-                            path: path2.clone(),
-                        },
-                    );
-                }
-                _ => {}
+            let removed = matches!(event.kind, EventKind::Remove(_));
+            if !removed && !matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                return;
             }
+            let revision = generation.fetch_add(1, Ordering::Relaxed) + 1;
+            let generation = generation.clone();
+            let app = app2.clone();
+            let watched_path = path2.clone();
+            // notify commonly emits several events for one editor save. Wait
+            // for the burst to settle before doing the expensive full read.
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(150));
+                if generation.load(Ordering::Relaxed) != revision {
+                    return;
+                }
+                if removed {
+                    let _ = app.emit("file-removed", RemovedPayload { path: watched_path });
+                } else if let Some(payload) = reload_payload(&watched_path) {
+                    let _ = app.emit("file-changed", payload);
+                } else {
+                    let _ = app.emit("file-removed", RemovedPayload { path: watched_path });
+                }
+            });
         }
     })
     .map_err(|e| e.to_string())?;

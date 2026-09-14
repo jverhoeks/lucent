@@ -108,7 +108,7 @@ brew tap jverhoeks/tap
 brew install --cask lucent
 ```
 
-Or build from source. Requires [Node.js](https://nodejs.org/) and the
+Or build from source. Requires [Node.js 22](https://nodejs.org/) and the
 [Rust toolchain](https://www.rust-lang.org/tools/install) (for Tauri).
 
 ```bash
@@ -122,6 +122,11 @@ npm run build:web      # static web bundle
 `npm run dev` / `npm run build` sync `examples/` into `public/examples/` so the
 web Help guide can open sample files. Desktop bundles ship `examples/` as app
 resources.
+
+Desktop saves replace files through a temporary file and refuse to overwrite a
+file that changed since it was opened. Unsaved desktop edits are recovered on
+the next launch. In the web build, Save writes back through the browser File
+System Access API when available; other browsers download the updated file.
 
 ### Release downloads
 

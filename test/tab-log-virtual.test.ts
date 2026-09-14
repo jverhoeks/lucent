@@ -43,4 +43,13 @@ describe("TabManager log virtualization threshold", () => {
     expect(tm.getActiveLogLines()).toBeNull();
     expect(content.querySelector(".log")).toBeTruthy();
   });
+
+  it("refreshes the line count of a backend-windowed log", () => {
+    const { tm, content } = mk();
+    tm.openWindowedLog("/growing.log", 10, async () => []);
+
+    tm.updateWindowedLog("/growing.log", 25);
+
+    expect(content.querySelector<HTMLElement>(".vlog-sizer")?.style.height).toBe("500px");
+  });
 });

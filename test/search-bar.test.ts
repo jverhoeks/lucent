@@ -54,10 +54,14 @@ describe("SearchBar", () => {
   it("Escape key closes the search bar", () => {
     const ctrl = new SearchController();
     const bar = new SearchBar(ctrl);
+    const trigger = document.createElement("button");
+    document.body.prepend(trigger);
+    trigger.focus();
     bar.open();
     const input = document.getElementById("search-input")!;
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(bar.isOpen()).toBe(false);
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("Enter key triggers next match", () => {

@@ -54,4 +54,24 @@ describe("LogSearchProvider", () => {
     expect(backendSearch).toHaveBeenCalledTimes(1); // no loop
     expect(c.count()).toBe(3);                       // matches surfaced
   });
+
+  it("reports failures and allows the same query to retry", async () => {
+    const error = new Error("index unavailable");
+    const search = vi.fn()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce([4]);
+    const onUpdate = vi.fn();
+    const onError = vi.fn();
+    const p = new LogSearchProvider(fakeView() as any, search, onUpdate, onError);
+    const query = { text: "retry", caseSensitive: false, regex: false };
+
+    p.find(query);
+    await Promise.resolve(); await Promise.resolve();
+    expect(onError).toHaveBeenCalledWith(error);
+
+    p.find(query);
+    await Promise.resolve(); await Promise.resolve();
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(p.find(query)).toHaveLength(1);
+  });
 });

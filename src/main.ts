@@ -4,18 +4,6 @@ import { isHelpPath, isScratchPath, TabManager } from "./tabs";
 import { applyCodeTheme } from "./render";
 import { loadSettings, saveSettings } from "./settings";
 import { copyAsMarkdown, copyAsRichText } from "./clipboard";
-import {
-  copyMermaidSvg,
-  copyMermaidPng,
-  copyMermaidWhiteboard,
-  copyMermaidDrawio,
-  copyMermaidLucid,
-  copyMermaidExcalidraw,
-  mermaidSvgMarkup,
-  mermaidPngBytes,
-} from "./mermaid-export";
-import { exportPdf } from "./export";
-import { svgToDrawioXml, svgsToDrawioFile } from "./export-drawio";
 import { AppError, StyleSettings, Format, DataLang } from "./types";
 import { SearchController } from "./search/controller";
 import { createSearchProvider } from "./search/factory";
@@ -26,21 +14,12 @@ import { detectFormat, siblingIndex, basename } from "./format";
 import { guessPasteScratch } from "./paste-guess";
 import { injectSprite, setButtonIcon } from "./icons";
 import { readingTimeLabel } from "./reading-time";
-import { loadSession, saveSession } from "./session";
+import { restoreSessionTabs, saveSession } from "./session";
 import { DocumentOutline } from "./outline";
 import { loadRecentFiles, rememberRecentFile, type RecentFile } from "./recent";
 import type { PlatformAdapter } from "./platform/types";
-
-/** Trigger a browser file download from a string of content. */
-function downloadFile(content: string, filename: string, mime: string) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+import { saveTextAsFile } from "./save";
+import { ExportActions, refreshDownloadOptions } from "./export-actions";
 
 const TEXT_EXTENSIONS = new Set([
   "md", "markdown", "mdown", "mkd", "txt", "text", "log", "json", "yaml", "yml",
@@ -53,16 +32,6 @@ type DropProbeAdapter = Pick<
   PlatformAdapter,
   "fileSize" | "listViewableRecursive" | "probeIsText"
 >;
-
-const DOWNLOAD_OPTIONS: Record<string, string> = {
-  md: "Markdown (.md)",
-  html: "HTML (.html)",
-  pdf: "PDF (.pdf)",
-  json: "JSON (.json)",
-  yaml: "YAML (.yaml)",
-  toml: "TOML (.toml)",
-  ini: "INI (.ini)",
-};
 
 /** True when the event target is inside a field that should receive normal paste. */
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -120,6 +89,8 @@ export function initApp(adapter: PlatformAdapter): void {
   let outline: DocumentOutline | null = null;
   let outlinePinned = false;
   const isWeb = adapter.platform === "web";
+  const downloadsFiles = adapter.capabilities?.downloads ?? isWeb;
+  const watchesFiles = adapter.capabilities?.watching ?? !isWeb;
   const diagnostics: Array<{ time: string; message: string }> = [];
 
   const btn = (id: string) => document.getElementById(id) as HTMLButtonElement;
@@ -142,20 +113,23 @@ export function initApp(adapter: PlatformAdapter): void {
       logSearch: (path, q) =>
         adapter.logSearch(path, q.text, q.caseSensitive, q.regex),
       onUpdate: () => search.refresh(),
+      onError: (error) => showBanner(
+        `Log search failed — ${error instanceof Error ? error.message : String(error)}. Retry the search.`,
+      ),
     }));
   }
 
   const manager = new TabManager(tabbar, content, settings, {
     onChange: () => { refreshToolbar(); rebindSearch(); refreshOutline(); scheduleSessionSave(); },
-    onTabClosed: (path) => { if (!isScratchPath(path)) void adapter.unwatchFile(path); },
+    onTabClosed: (path) => { if (watchesFiles && !isScratchPath(path)) void adapter.unwatchFile(path); },
     onCloseAll: () => void adapter.unwatchAll(),
-    onSave: async (path, content) => {
+    onSave: async (path, content, expectedContent) => {
       if (isScratchPath(path)) {
-        return saveTextAs(path, content);
+        return saveTextAsFile(adapter, path, content);
       }
-      await adapter.saveTextFile(path, content);
+      return adapter.saveTextFile(path, content, expectedContent);
     },
-    onSaveAs: (path, content) => saveTextAs(path, content),
+    onSaveAs: (path, content) => saveTextAsFile(adapter, path, content),
     resolveLocalImage: adapter.localImageUrl
       ? (basePath, relativePath) => adapter.localImageUrl!(basePath, relativePath)
       : async () => null,
@@ -164,33 +138,14 @@ export function initApp(adapter: PlatformAdapter): void {
       title: file.title,
     })),
   });
-
-  async function saveTextAs(path: string, content: string): Promise<string | null> {
-    const defaultPath = isScratchPath(path) ? "Pasted.md" : basename(path) || "document.txt";
-    if (isWeb) {
-      const ext = defaultPath.split(".").pop()?.toLowerCase();
-      const mime = ext === "md" || ext === "markdown" ? "text/markdown"
-        : ext === "json" ? "application/json"
-          : ext === "yaml" || ext === "yml" ? "text/yaml"
-            : ext === "html" || ext === "htm" ? "text/html"
-              : "text/plain";
-      downloadFile(content, defaultPath, mime);
-      return defaultPath;
-    }
-    const destination = await adapter.saveDialog({
-      defaultPath,
-      filters: [
-        { name: "Markdown", extensions: ["md", "markdown"] },
-        { name: "Text", extensions: ["txt", "log", "text"] },
-        { name: "Data", extensions: ["json", "yaml", "yml", "toml", "ini"] },
-      ],
-    });
-    if (!destination) return null;
-    await adapter.saveTextFile(destination, content);
-    await adapter.watchFile(destination);
-    rememberRecentFile(destination);
-    return destination;
-  }
+  const exportActions = new ExportActions({
+    adapter,
+    manager,
+    content,
+    downloadsFiles,
+    getTheme: () => settings.theme,
+    showBanner,
+  });
 
   const outlineElement = document.getElementById("outline");
   if (outlineElement) {
@@ -215,7 +170,9 @@ export function initApp(adapter: PlatformAdapter): void {
 
   function persistSession(): void {
     if (adapter.platform === "tauri" && !restoringSession) {
-      saveSession(manager.snapshotSession());
+      if (!saveSession(manager.snapshotSession())) {
+        showBanner("Draft recovery is unavailable: session storage is full or inaccessible");
+      }
     }
   }
 
@@ -274,7 +231,7 @@ export function initApp(adapter: PlatformAdapter): void {
 
     const tail = btn("btn-tail");
     const isLog = manager.getActiveFormat() === "log";
-    tail.hidden = isWeb || !isLog || isEdit;
+    tail.hidden = !watchesFiles || !isLog || isEdit;
     tail.classList.toggle("toggled", manager.isFollowing());
     tail.setAttribute("aria-pressed", String(manager.isFollowing()));
 
@@ -288,7 +245,7 @@ export function initApp(adapter: PlatformAdapter): void {
     saveBtn.hidden = !isEdit;
     saveBtn.disabled = !manager.isEditing();
 
-    refreshDownloadOptions(has, fmt);
+    refreshDownloadOptions(document.querySelector<HTMLSelectElement>(".download-format")!, has, fmt);
     dlSelect.disabled = loading || !has;
     for (const sel of ["toolbar-export", "toolbar-copy"] as const) {
       document.querySelector<HTMLElement>(`.${sel}`)?.toggleAttribute("hidden", !has);
@@ -369,92 +326,6 @@ export function initApp(adapter: PlatformAdapter): void {
 
   function codeSourceOf(block: Element): string {
     return block.getAttribute("data-src") ?? "";
-  }
-
-  /** A filename stem derived from the active document (or "diagram"). */
-  function diagramBaseName(): string {
-    const path = manager.getActivePath();
-    if (!path) return "diagram";
-    return basename(path).replace(/\.[^.]+$/, "") || "diagram";
-  }
-
-  /**
-   * Save a rendered mermaid diagram as a file. On the desktop app a native save
-   * dialog picks the path (text write for SVG, binary write for PNG); on the web
-   * a browser download is triggered. Returns false if the user cancels the
-   * dialog (so the caller skips the "saved ✓" flash).
-   */
-  async function downloadMermaid(svg: SVGSVGElement, kind: "svg" | "png" | "dio" | "luc"): Promise<boolean> {
-    const filename = kind === "dio" || kind === "luc"
-      ? `${diagramBaseName()}.drawio`
-      : `${diagramBaseName()}.${kind}`;
-    if (kind === "svg") {
-      const markup = mermaidSvgMarkup(svg);
-      if (adapter.platform === "tauri") {
-        const path = await adapter.saveDialog({
-          defaultPath: filename,
-          filters: [{ name: "SVG image", extensions: ["svg"] }],
-        });
-        if (!path) return false;
-        await adapter.saveTextFile(path, markup);
-      } else {
-        downloadFile(markup, filename, "image/svg+xml");
-      }
-    } else if (kind === "dio" || kind === "luc") {
-      const xml = svgToDrawioXml(svg);
-      if (adapter.platform === "tauri") {
-        const path = await adapter.saveDialog({
-          defaultPath: filename,
-          filters: [{
-            name: kind === "luc" ? "Lucid/draw.io XML" : "draw.io XML",
-            extensions: ["drawio", "xml"],
-          }],
-        });
-        if (!path) return false;
-        await adapter.saveTextFile(path, xml);
-      } else {
-        downloadFile(xml, filename, "application/xml");
-      }
-    } else {
-      const bytes = await mermaidPngBytes(svg);
-      if (adapter.platform === "tauri") {
-        const path = await adapter.saveDialog({
-          defaultPath: filename,
-          filters: [{ name: "PNG image", extensions: ["png"] }],
-        });
-        if (!path) return false;
-        await adapter.saveBinaryFile(path, bytes);
-      } else {
-        const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-    }
-    return true;
-  }
-
-  async function downloadAllMermaidDrawio(): Promise<boolean> {
-    const svgs = Array.from(content.querySelectorAll<SVGSVGElement>("pre.mermaid svg"));
-    if (svgs.length === 0) {
-      showBanner("No Mermaid diagrams to export");
-      return false;
-    }
-    const xml = svgsToDrawioFile(svgs);
-    const filename = `${diagramBaseName()}-diagrams.drawio`;
-    if (adapter.platform === "tauri") {
-      const path = await adapter.saveDialog({
-        defaultPath: filename,
-        filters: [{ name: "draw.io XML", extensions: ["drawio", "xml"] }],
-      });
-      if (!path) return false;
-      await adapter.saveTextFile(path, xml);
-    } else {
-      downloadFile(xml, filename, "application/xml");
-    }
-    return true;
   }
 
   async function readPath(path: string, quiet = false): Promise<string | null> {
@@ -652,7 +523,7 @@ export function initApp(adapter: PlatformAdapter): void {
   diagnosticsPanel.id = "diagnostics-panel";
   diagnosticsPanel.hidden = true;
   diagnosticsPanel.innerHTML = `
-    <div class="diagnostics-panel-inner" role="dialog" aria-label="Diagnostics">
+    <div class="diagnostics-panel-inner" role="dialog" aria-modal="true" aria-label="Diagnostics">
       <div class="diagnostics-head">
         <strong>Diagnostics</strong>
         <button type="button" id="btn-diagnostics-close" aria-label="Close diagnostics">×</button>
@@ -663,15 +534,19 @@ export function initApp(adapter: PlatformAdapter): void {
   document.body.appendChild(diagnosticsPanel);
   renderDiagnostics();
   const diagnosticsBtn = btn("btn-diagnostics");
+  const setDiagnosticsOpen = (open: boolean) => {
+    diagnosticsPanel.hidden = !open;
+    diagnosticsBtn.setAttribute("aria-expanded", String(open));
+    if (open) document.getElementById("btn-diagnostics-close")?.focus();
+    else diagnosticsBtn.focus();
+  };
   diagnosticsBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    diagnosticsPanel.hidden = !diagnosticsPanel.hidden;
-    diagnosticsBtn.setAttribute("aria-expanded", String(!diagnosticsPanel.hidden));
+    setDiagnosticsOpen(Boolean(diagnosticsPanel.hidden));
     renderDiagnostics();
   });
   document.getElementById("btn-diagnostics-close")?.addEventListener("click", () => {
-    diagnosticsPanel.hidden = true;
-    diagnosticsBtn.setAttribute("aria-expanded", "false");
+    setDiagnosticsOpen(false);
   });
   document.addEventListener("click", (e) => {
     if (diagnosticsPanel.hidden) return;
@@ -681,8 +556,13 @@ export function initApp(adapter: PlatformAdapter): void {
       && !inner.contains(e.target as Node)
       && !diagnosticsBtn.contains(e.target as Node)
     ) {
-      diagnosticsPanel.hidden = true;
-      diagnosticsBtn.setAttribute("aria-expanded", "false");
+      setDiagnosticsOpen(false);
+    }
+  });
+  diagnosticsPanel.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setDiagnosticsOpen(false);
     }
   });
 
@@ -694,9 +574,9 @@ export function initApp(adapter: PlatformAdapter): void {
   quick.id = "quick-switcher";
   quick.hidden = true;
   quick.innerHTML = `
-    <div class="quick-panel" role="dialog" aria-label="Quick switch">
-      <input class="quick-input" type="text" aria-label="Quick switch" placeholder="Open tab or recent file" />
-      <div class="quick-list" role="listbox"></div>
+    <div class="quick-panel" role="dialog" aria-modal="true" aria-label="Quick switch">
+      <input class="quick-input" type="text" role="combobox" aria-label="Quick switch" aria-controls="quick-list" aria-expanded="true" aria-autocomplete="list" placeholder="Open tab or recent file" />
+      <div id="quick-list" class="quick-list" role="listbox" aria-label="Documents"></div>
       <div class="quick-footer">↑↓ navigate · Enter open · Esc close</div>
     </div>
   `;
@@ -705,6 +585,7 @@ export function initApp(adapter: PlatformAdapter): void {
   const quickList = quick.querySelector<HTMLElement>(".quick-list")!;
   let quickItems: QuickItem[] = [];
   let quickSelected = 0;
+  let quickReturnFocus: HTMLElement | null = null;
 
   function quickSourceItems(): QuickItem[] {
     const tabs = manager.getOpenTabs().map((tab): QuickItem => ({
@@ -730,6 +611,7 @@ export function initApp(adapter: PlatformAdapter): void {
   function renderQuickRow(item: QuickItem, index: number): HTMLButtonElement {
     const row = document.createElement("button");
     row.type = "button";
+    row.id = `quick-option-${index}`;
     row.className = "quick-item" + (index === quickSelected ? " selected" : "");
     row.setAttribute("role", "option");
     row.setAttribute("aria-selected", String(index === quickSelected));
@@ -758,12 +640,14 @@ export function initApp(adapter: PlatformAdapter): void {
     quickSelected = Math.min(quickSelected, Math.max(0, quickItems.length - 1));
     quickList.replaceChildren();
     if (quickItems.length === 0) {
+      quickInput.removeAttribute("aria-activedescendant");
       const empty = document.createElement("div");
       empty.className = "quick-empty";
       empty.textContent = "No matches";
       quickList.appendChild(empty);
       return;
     }
+    quickInput.setAttribute("aria-activedescendant", `quick-option-${quickSelected}`);
     let index = 0;
     const addSection = (label: string, items: QuickItem[]) => {
       if (items.length === 0) return;
@@ -781,6 +665,9 @@ export function initApp(adapter: PlatformAdapter): void {
   }
 
   function openQuickSwitch(): void {
+    if (quick.hidden && document.activeElement instanceof HTMLElement) {
+      quickReturnFocus = document.activeElement;
+    }
     quick.hidden = false;
     quickInput.value = "";
     quickSelected = 0;
@@ -790,6 +677,8 @@ export function initApp(adapter: PlatformAdapter): void {
 
   function closeQuickSwitch(): void {
     quick.hidden = true;
+    quickReturnFocus?.focus();
+    quickReturnFocus = null;
   }
 
   async function chooseQuick(index = quickSelected): Promise<void> {
@@ -831,96 +720,15 @@ export function initApp(adapter: PlatformAdapter): void {
   // ---- Platform-specific toolbar ----
   // Web: hide controls that rely on directory watching or live filesystem tails.
   const btnNext = btn("btn-next");
-  if (isWeb) {
+  if (!watchesFiles) {
     btnNext.hidden = true;
     btn("btn-tail").hidden = true;
   }
 
   const dlSelect = document.querySelector<HTMLSelectElement>(".download-format")!;
 
-  function refreshDownloadOptions(has: boolean, fmt: Format | undefined): void {
-    const previous = dlSelect.value;
-    dlSelect.replaceChildren(new Option("Download as…", ""));
-    if (has) {
-      if (fmt === "markdown") dlSelect.add(new Option(DOWNLOAD_OPTIONS.md, "md"));
-      dlSelect.add(new Option(DOWNLOAD_OPTIONS.html, "html"));
-      dlSelect.add(new Option(DOWNLOAD_OPTIONS.pdf, "pdf"));
-      if (fmt === "data") {
-        for (const value of ["json", "yaml", "toml", "ini"]) {
-          dlSelect.add(new Option(DOWNLOAD_OPTIONS[value], value));
-        }
-      }
-    }
-    dlSelect.value = Array.from(dlSelect.options).some((option) => option.value === previous) ? previous : "";
-  }
-
-  async function downloadSelectedFormat(): Promise<void> {
-    const fmt = dlSelect.value;
-    if (!fmt) return;
-    const src = manager.getActiveRawText();
-    if (!src) return;
-    const path = manager.getActivePath() ?? "untitled";
-    const base = basename(path).replace(/\.[^.]+$/, "") || "document";
-    try {
-      if (fmt === "pdf") {
-        if (!isWeb) {
-          await exportPdf(src, adapter);
-        } else {
-          const content = (await import("./export")).buildStandaloneHtml(
-            manager.getActiveDisplayedHtml(),
-            true,
-          );
-          const blob = new Blob([content], { type: "text/html" });
-          const url = URL.createObjectURL(blob);
-          window.open(url, "_blank");
-          setTimeout(() => URL.revokeObjectURL(url), 10000);
-        }
-      } else {
-        let content = src;
-        let mime = "text/plain";
-        const ext = fmt;
-        if (fmt === "html") {
-          const exportTheme = (document.getElementById("content")?.dataset.theme as StyleSettings["theme"])
-            || settings.theme;
-          content = (await import("./export")).buildStandaloneHtml(
-            manager.getActiveDisplayedHtml(),
-            false,
-            exportTheme === "system" ? "light" : exportTheme,
-          );
-          mime = "text/html";
-        } else if (fmt === "md") {
-          if (manager.getActiveFormat() !== "markdown") {
-            throw new Error("Markdown output requires a Markdown source");
-          }
-          mime = "text/markdown";
-        } else {
-          const from = manager.getActiveDataLang();
-          if (!from) throw new Error("Structured output requires a JSON, YAML, TOML, or INI source");
-          const { convertStructuredData } = await import("./data/convert");
-          content = convertStructuredData(src, from, fmt as DataLang);
-          const mimeMap: Record<string, string> = {
-            json: "application/json", yaml: "text/yaml", toml: "text/toml", ini: "text/plain",
-          };
-          mime = mimeMap[fmt] ?? "text/plain";
-        }
-        if (isWeb) {
-          downloadFile(content, `${base}.${ext}`, mime);
-        } else {
-          const destination = await adapter.saveDialog({
-            defaultPath: `${base}.${ext}`,
-            filters: [{ name: fmt.toUpperCase(), extensions: [ext] }],
-          });
-          if (destination) await adapter.saveTextFile(destination, content);
-        }
-      }
-    } catch (err) {
-      showBanner(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    dlSelect.value = "";
-  }
-
   dlSelect.addEventListener("change", () => {
-    void downloadSelectedFormat();
+    void exportActions.downloadSelected(dlSelect);
   });
   btn("btn-next").addEventListener("click", async () => {
     const cur = manager.getActivePath();
@@ -1144,43 +952,6 @@ export function initApp(adapter: PlatformAdapter): void {
     }
   });
 
-  async function runMermaidAction(
-    block: HTMLElement | null,
-    act: "copy" | "download",
-    kind: string,
-  ): Promise<boolean> {
-    const svg = block?.querySelector("svg") as SVGSVGElement | null;
-    if (kind === "src") {
-      await navigator.clipboard.writeText(block?.dataset.mermaidSrc ?? "");
-      return true;
-    }
-    if (kind === "edit") {
-      const source = block?.dataset.mermaidSrc ?? "";
-      if (!source) throw new Error("Mermaid source is unavailable");
-      await manager.openScratch(`\`\`\`mermaid\n${source.replace(/\n$/, "")}\n\`\`\`\n`, {
-        format: "markdown",
-        extension: "md",
-        title: "Mermaid diagram.md",
-      });
-      return true;
-    }
-    if (kind === "all") return downloadAllMermaidDrawio();
-    if (svg && act === "download") {
-      return downloadMermaid(
-        svg,
-        kind === "png" ? "png" : kind === "dio" ? "dio" : kind === "luc" ? "luc" : "svg",
-      );
-    }
-    if (!svg) throw new Error("Mermaid diagram is unavailable");
-    if (kind === "wb") await copyMermaidWhiteboard(svg);
-    else if (kind === "dio") await copyMermaidDrawio(svg);
-    else if (kind === "luc") await copyMermaidLucid(svg);
-    else if (kind === "exc") await copyMermaidExcalidraw(svg);
-    else if (kind === "png") await copyMermaidPng(svg);
-    else await copyMermaidSvg(svg);
-    return true;
-  }
-
   content.addEventListener("change", async (e) => {
     const select = (e.target as HTMLElement).closest<HTMLSelectElement>(".mermaid-select");
     if (!select?.value) return;
@@ -1190,7 +961,7 @@ export function initApp(adapter: PlatformAdapter): void {
     const placeholder = select.options[0];
     const prev = placeholder.textContent;
     try {
-      const done = await runMermaidAction(block, act, kind);
+      const done = await exportActions.runMermaid(block, act, kind);
       if (done) {
         placeholder.textContent = "✓";
         setTimeout(() => (placeholder.textContent = prev), 1200);
@@ -1209,6 +980,15 @@ export function initApp(adapter: PlatformAdapter): void {
     if (existing !== undefined) clearTimeout(existing);
     const id = setTimeout(() => {
       watchDebounceIds.delete(path);
+      if (path === manager.getActivePath() && manager.isActiveWindowed()) {
+        void adapter.logOpen(path).then((lineCount) => {
+          manager.updateWindowedLog(path, lineCount);
+          rebindSearch();
+        }).catch((error) => showBanner(
+          `Log refresh failed — ${error instanceof Error ? error.message : String(error)}`,
+        ));
+        return;
+      }
       manager.updateContent(path, content);
       if (path === manager.getActivePath() && !manager.isActiveWindowed()) rebindSearch();
     }, 200);
@@ -1224,6 +1004,22 @@ export function initApp(adapter: PlatformAdapter): void {
     event.returnValue = true;
   });
 
+  // Native webviews do not consistently honor beforeunload. Intercept the
+  // Tauri close request so the same persistence and dirty-document guard run
+  // for window close and application quit.
+  if (adapter.platform === "tauri" && "__TAURI_INTERNALS__" in window) {
+    void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+      getCurrentWindow().onCloseRequested(async (event) => {
+        persistSession();
+        if (manager.hasDirtyTabs() && !window.confirm("Quit with unsaved changes? Your drafts will be recovered next time.")) {
+          event.preventDefault();
+        }
+      }),
+    ).catch((error) => showBanner(
+      `Close protection unavailable — ${error instanceof Error ? error.message : String(error)}`,
+    ));
+  }
+
   content.addEventListener("scroll", scheduleSessionSave, { passive: true });
 
   adapter.onDrop((event) => {
@@ -1231,6 +1027,8 @@ export function initApp(adapter: PlatformAdapter): void {
       document.body.classList.add("drag-over");
     } else if (event.type === "leave") {
       document.body.classList.remove("drag-over");
+    } else if (event.type === "progress") {
+      showBanner(`Importing ${event.processed ?? 0}/${event.total ?? 0} files… Press Esc to cancel`);
     } else if (event.type === "drop") {
       document.body.classList.remove("drag-over");
       void collectTextDropPaths(event.paths, adapter).then(async (result) => {
@@ -1238,7 +1036,7 @@ export function initApp(adapter: PlatformAdapter): void {
         const skipped = result.skipped + (event.skipped ?? 0);
         showBanner(
           `Opened ${result.paths.length} file${result.paths.length === 1 ? "" : "s"}, ` +
-          `skipped ${skipped} binary/unreadable`,
+          `skipped ${skipped} binary/unreadable${event.cancelled ? " (cancelled)" : ""}`,
         );
       });
     }
@@ -1255,17 +1053,8 @@ export function initApp(adapter: PlatformAdapter): void {
       if (paths.length > 0) void openMany(paths);
     });
     if (adapter.platform === "tauri") {
-      const session = loadSession();
       restoringSession = true;
-      for (const tab of session.tabs) {
-        if (isScratchPath(tab.path)) {
-          manager.restoreSessionTab(tab);
-        } else {
-          await openPath(tab.path, true);
-          manager.restoreSessionTab(tab);
-        }
-      }
-      if (session.activePath) await manager.activatePath(session.activePath);
+      await restoreSessionTabs(manager, (path) => openPath(path, true));
       restoringSession = false;
       persistSession();
     }

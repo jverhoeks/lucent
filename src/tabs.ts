@@ -2,7 +2,7 @@ import { loadHighlight } from "./highlight-loader";
 import { detectFormat, dataLangOf, effectiveDataLang, basename } from "./format";
 import { getRenderer } from "./renderers/registry";
 import { resolveLocalImages } from "./renderers/markdown";
-import { prewarmMarkdown } from "./render";
+import { hasMath, prewarmMarkdown, renderMarkdown, renderMath, runPostRender } from "./render";
 import { LogView, toLines } from "./renderers/log";
 import { VirtualLogView } from "./logs/virtual-log-view";
 import { StyleSettings, Theme, Format, DataLang, Renderer, Mode } from "./types";
@@ -11,6 +11,7 @@ import type { TreeView } from "./data/tree";
 import type { SessionState, SessionTab } from "./session";
 import { iconMarkup } from "./icons";
 import { HELP_TAB_PATH, HELP_TAB_TITLE, isHelpPath } from "./help";
+import { PreviewLifecycle } from "./preview-lifecycle";
 
 export const STDIN_PATH = "<stdin>";
 export const SCRATCH_PATH_PREFIX = "<scratch:";
@@ -33,6 +34,10 @@ export interface Tab {
   editDirty?: boolean;
   /** New disk content held aside while this tab has an unsaved draft. */
   pendingDiskContent?: string;
+  /** Last disk version observed, used for conditional saves and draft recovery. */
+  originalContent?: string;
+  /** The source disappeared before a recovered draft could be reopened. */
+  sourceMissing?: boolean;
   /** Saved editor scroll position (for sync scrolling). */
   editScroll?: number;
   /** True when the file is too large to load into memory; rendered via VirtualLogView. */
@@ -54,7 +59,7 @@ export interface TabHooks {
   onChange: () => void; // tabs/active changed — refresh toolbar enabled state
   onTabClosed: (path: string) => void; // stop watching one closed document
   onCloseAll: () => void; // stop watching everything
-  onSave?: (path: string, content: string) => Promise<string | null | void>; // save editor content to disk
+  onSave?: (path: string, content: string, expectedContent?: string) => Promise<string | null | void>; // save editor content to disk
   onSaveAs?: (path: string, content: string) => Promise<string | null | void>; // save editor content to a chosen path
   resolveLocalImage?: (basePath: string, relativePath: string) => Promise<string | null>;
   /** Recent files shown on the welcome screen (optional). */
@@ -121,7 +126,7 @@ export class TabManager {
   private currentVlogLines: string[] | null = null;
   /** Monotonic repaint generation; an async post-render tail only applies if it
    *  still matches (i.e. no newer repaint has run since). */
-  private repaintSeq = 0;
+  private previewLifecycle = new PreviewLifecycle();
 
   /** Pending idle handle for adjacent-tab pre-warming (requestIdleCallback id,
    *  or a setTimeout id in environments without it). */
@@ -129,7 +134,6 @@ export class TabManager {
   /** The active CodeMirror editor instance (edit mode). */
   private currentEditor: EditorAPI | null = null;
   /** Debounce timer for live preview in edit mode. */
-  private editPreviewTimer: ReturnType<typeof setTimeout> | null = null;
   /** Refreshes the split-pane preview after a conflict reload (set in edit mode). */
   private requestEditPreview: (() => void) | null = null;
   /** The Renderer from the previous repaint (for lifecycle cleanup). */
@@ -143,6 +147,7 @@ export class TabManager {
   ) {
     this.applyStyle(style);
     this.renderTabbar();
+    this.showWelcome();
     this.content.addEventListener("click", (e) => {
       const target = e.target as HTMLElement;
       if (target.closest(".conflict-diff")) {
@@ -193,14 +198,16 @@ export class TabManager {
         .map((tab) => ({
           path: tab.path,
           title: isScratchPath(tab.path) ? tab.title : undefined,
-          content: isScratchPath(tab.path) ? tab.content : undefined,
-          format: isScratchPath(tab.path) ? tab.format : undefined,
+          content: isScratchPath(tab.path) || tab.editDirty ? tab.content : undefined,
+          format: isScratchPath(tab.path) || tab.editDirty ? tab.format : undefined,
           forcedFormat: tab.forcedFormat,
           forcedLang: tab.forcedLang,
-          mode: isScratchPath(tab.path) ? tab.mode : tab.mode === "raw" ? "raw" : "rendered",
+          mode: isScratchPath(tab.path) || tab.editDirty ? tab.mode : tab.mode === "raw" ? "raw" : "rendered",
           scrollTop: tab.scrollTop,
           follow: tab.follow,
-          editDirty: isScratchPath(tab.path) ? tab.editDirty : undefined,
+          editDirty: isScratchPath(tab.path) || tab.editDirty ? tab.editDirty : undefined,
+          originalContent: !isScratchPath(tab.path) && tab.editDirty ? tab.originalContent : undefined,
+          sourceMissing: tab.sourceMissing || undefined,
         })),
     };
   }
@@ -224,7 +231,33 @@ export class TabManager {
       this.activeIndex = this.tabs.length - 1;
       this.renderTabbar();
     }
+    if (!tab && !isScratchPath(saved.path) && saved.editDirty && typeof saved.content === "string") {
+      tab = {
+        path: saved.path,
+        title: basename(saved.path),
+        content: saved.content,
+        originalContent: saved.originalContent,
+        sourceMissing: true,
+        format: saved.format ?? detectFormat(saved.path),
+        forcedFormat: saved.forcedFormat,
+        forcedLang: saved.forcedLang,
+        mode: "edit",
+        scrollTop: saved.scrollTop,
+        follow: saved.follow,
+        editDirty: true,
+      };
+      this.tabs.push(tab);
+      this.activeIndex = this.tabs.length - 1;
+      this.renderTabbar();
+    }
     if (!tab) return;
+    if (!isScratchPath(saved.path) && saved.editDirty && typeof saved.content === "string" && !tab.sourceMissing) {
+      const diskContent = tab.content;
+      tab.content = saved.content;
+      tab.originalContent = saved.originalContent;
+      tab.editDirty = true;
+      if (saved.originalContent !== diskContent) tab.pendingDiskContent = diskContent;
+    }
     tab.forcedFormat = saved.forcedFormat;
     tab.forcedLang = saved.forcedLang;
     tab.mode = saved.mode;
@@ -349,6 +382,7 @@ export class TabManager {
     if (existing >= 0) {
       const tab = this.tabs[existing];
       tab.content = content;
+      tab.originalContent = content;
       tab.loading = false;
       const native = dataLangOf(path);
       if (native && tab.forcedLang && tab.forcedLang !== native) tab.forcedLang = undefined;
@@ -359,6 +393,7 @@ export class TabManager {
       path,
       title: basename(path),
       content,
+      originalContent: content,
       format,
       mode: format === "text" ? "raw" : "rendered",
       scrollTop: 0,
@@ -380,6 +415,7 @@ export class TabManager {
       path: `${SCRATCH_PATH_PREFIX}${Date.now()}-${n}.${extension}>`,
       title,
       content,
+      originalContent: content,
       format,
       forcedLang: opts.forcedLang,
       mode: "edit",
@@ -449,6 +485,14 @@ export class TabManager {
   /** Return the active VirtualLogView (backend-windowed OR large in-memory log), or null. */
   getActiveVirtualLogView(): VirtualLogView | null {
     return this.currentVlog;
+  }
+
+  /** Refresh a backend-windowed log after append, truncation, or rotation. */
+  updateWindowedLog(path: string, lineCount: number): void {
+    const index = this.tabs.findIndex((tab) => tab.path === path && tab.windowed);
+    if (index < 0) return;
+    this.tabs[index].lineCount = lineCount;
+    if (index === this.activeIndex) this.currentVlog?.setLineCount(lineCount);
   }
 
   /** The in-memory lines backing the active large rendered log (for synchronous
@@ -526,7 +570,8 @@ export class TabManager {
   /** Keep the editor buffer and write it over the newer on-disk version. */
   private async acceptConflictMine(): Promise<void> {
     const t = this.active();
-    if (!t || t.pendingDiskContent === undefined) return;
+    if (!t || (t.pendingDiskContent === undefined && !t.sourceMissing)) return;
+    if (t.pendingDiskContent !== undefined) t.originalContent = t.pendingDiskContent;
     const editorValue = this.activeEditorValue();
     if (editorValue !== null) t.content = editorValue;
     if (!t.editDirty && editorValue !== null) t.editDirty = true;
@@ -541,6 +586,7 @@ export class TabManager {
     const disk = t?.pendingDiskContent;
     if (!t || disk === undefined) return;
     t.content = disk;
+    t.originalContent = disk;
     t.editDirty = false;
     t.pendingDiskContent = undefined;
     if (this.currentEditor) this.currentEditor.setValue(disk);
@@ -563,11 +609,19 @@ export class TabManager {
     // Never overwrite an unsaved draft. Inactive tabs retain the disk version
     // until activation rebuilds their conflict bar.
     if (this.tabs[i].editDirty) {
+      const draft = i === this.activeIndex ? this.activeEditorValue() : this.tabs[i].content;
+      // A watcher may observe our atomic replacement before the save promise
+      // settles. Matching content confirms that write; it is not a conflict.
+      if (draft === content) {
+        this.tabs[i].originalContent = content;
+        return;
+      }
       this.tabs[i].pendingDiskContent = content;
       if (i === this.activeIndex) this.externalEditConflict(this.tabs[i], content);
       return;
     }
     this.tabs[i].content = content;
+    this.tabs[i].originalContent = content;
     if (i !== this.activeIndex) return;
     const t = this.tabs[i];
 
@@ -575,15 +629,7 @@ export class TabManager {
     // without destroying the editor (full repaint would destroyEditor).
     if (t.mode === "edit" && this.currentEditor) {
       this.currentEditor.setValue(content);
-      const fmt = effectiveFormat(t);
-      if (fmt === "markdown") {
-        import("./render").then(({ renderMarkdown }) => {
-          renderMarkdown(content).then((html) => {
-            const article = this.content.querySelector(".split-preview .doc") as HTMLElement | null;
-            if (article) article.innerHTML = html;
-          });
-        });
-      }
+      this.requestEditPreview?.();
       return;
     }
 
@@ -697,7 +743,7 @@ export class TabManager {
       const editorValue = this.activeEditorValue();
       if (t.editDirty && editorValue !== null) {
         const nextContent = editorValue;
-        const saved = this.hooks.onSave?.(t.path, nextContent);
+        const saved = this.hooks.onSave?.(t.path, nextContent, t.sourceMissing ? undefined : t.originalContent);
         if (!saved) {
           t.content = nextContent;
           t.editDirty = false;
@@ -730,7 +776,7 @@ export class TabManager {
     const editorValue = this.activeEditorValue();
     if (!t || editorValue === null || !t.editDirty) return false;
     const nextContent = editorValue;
-    const savedPath = await this.hooks.onSave?.(t.path, nextContent);
+    const savedPath = await this.hooks.onSave?.(t.path, nextContent, t.sourceMissing ? undefined : t.originalContent);
     if (savedPath === null) return false;
     const merged = this.applySavedContent(t, nextContent, savedPath);
     this.renderTabbar();
@@ -784,6 +830,8 @@ export class TabManager {
       t.forcedLang = undefined;
     }
     t.content = content;
+    t.originalContent = content;
+    t.sourceMissing = false;
     t.editDirty = false;
     if (t.pendingDiskContent !== undefined) {
       t.pendingDiskContent = undefined;
@@ -813,10 +861,7 @@ export class TabManager {
     this.currentDataTree?.destroy();
     this.currentDataTree = null;
     this.requestEditPreview = null;
-    if (this.editPreviewTimer !== null) {
-      clearTimeout(this.editPreviewTimer);
-      this.editPreviewTimer = null;
-    }
+    this.previewLifecycle.cancel();
   }
 
   isFollowing(): boolean { return !!this.active()?.follow; }
@@ -921,7 +966,7 @@ export class TabManager {
     // callback could re-settle scroll (or show an error) against now-stale
     // content it no longer owns.
     this.captureActiveDraft();
-    const seq = ++this.repaintSeq;
+    const seq = this.previewLifecycle.begin();
     // Clear the owned rendered-log view + its in-memory line source on EVERY
     // repaint path (windowed, empty, rendered) so they can never dangle at
     // detached DOM; the log branch below re-sets whichever it builds.
@@ -961,8 +1006,8 @@ export class TabManager {
 
     if (t.mode === "rendered") return this.renderRenderedMode(t, seq, restoreScroll);
 
-    if (t.mode === "edit") return this.renderEditMode(t, restoreScroll);
-    return this.renderRawMode(t, restoreScroll);
+    if (t.mode === "edit") return this.renderEditMode(t, seq, restoreScroll);
+    return this.renderRawMode(t, seq, restoreScroll);
   }
 
   /** Render a document/log in its formatted view. */
@@ -1003,7 +1048,7 @@ export class TabManager {
         {
           theme: this.theme,
           dataLang: t.forcedLang,
-          isCurrent: () => seq === this.repaintSeq && this.active() === t,
+          isCurrent: () => this.previewLifecycle.isCurrent(seq) && this.active() === t,
           resolveLocalImage: this.hooks.resolveLocalImage,
         },
         t.path,
@@ -1015,14 +1060,14 @@ export class TabManager {
     this.settleScroll(t, restoreScroll);
     if (result instanceof Promise) {
       return result.then(
-        () => { if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll); },
-        (err) => { if (seq === this.repaintSeq) this.showRenderError(t, err); },
+        () => { if (this.previewLifecycle.isCurrent(seq)) this.settleScroll(t, restoreScroll); },
+        (err) => { if (this.previewLifecycle.isCurrent(seq)) this.showRenderError(t, err); },
       );
     }
   }
 
   /** Build the split editor and its live Markdown/data preview. */
-  private renderEditMode(t: Tab, restoreScroll: boolean): void {
+  private renderEditMode(t: Tab, seq: number, restoreScroll: boolean): void {
       const conflictBar = document.createElement("div");
       conflictBar.className = "edit-conflict";
       conflictBar.setAttribute("role", "alert");
@@ -1031,7 +1076,12 @@ export class TabManager {
       conflictMsg.className = "conflict-message";
       const conflictTitle = document.createElement("strong");
       conflictTitle.textContent = t.title;
-      conflictMsg.append(conflictTitle, " changed on disk while you were editing.");
+      conflictMsg.append(
+        conflictTitle,
+        t.sourceMissing
+          ? " is missing on disk. Your recovered draft is safe; save it to recreate the file."
+          : " changed on disk while you were editing.",
+      );
       const diffBtn = document.createElement("button");
       diffBtn.type = "button";
       diffBtn.className = "conflict-diff";
@@ -1044,11 +1094,14 @@ export class TabManager {
       reloadBtn.type = "button";
       reloadBtn.className = "conflict-reload";
       reloadBtn.textContent = "Use file on disk";
+      diffBtn.hidden = !!t.sourceMissing;
+      reloadBtn.hidden = !!t.sourceMissing;
+      if (t.sourceMissing) acceptBtn.textContent = "Save recovered draft";
       const diffView = document.createElement("pre");
       diffView.className = "conflict-diff-view";
       diffView.hidden = true;
       conflictBar.append(conflictMsg, diffBtn, acceptBtn, reloadBtn, diffView);
-      if (t.pendingDiskContent !== undefined) conflictBar.hidden = false;
+      if (t.pendingDiskContent !== undefined || t.sourceMissing) conflictBar.hidden = false;
 
       const split = document.createElement("div");
       split.className = "split-view";
@@ -1123,7 +1176,6 @@ export class TabManager {
       textarea.value = t.content;
       edPane.appendChild(textarea);
 
-      const seq = this.repaintSeq;
       const fmt = effectiveFormat(t);
       let curText = t.content;
       let schedulePreview: () => void = () => {};
@@ -1137,7 +1189,7 @@ export class TabManager {
           prevPane.replaceChildren(article);
           void resolveLocalImages(article, t.path, {
             theme: this.theme,
-            isCurrent: () => seq === this.repaintSeq && this.active() === t,
+            isCurrent: () => this.previewLifecycle.isCurrent(seq) && this.active() === t,
             resolveLocalImage: this.hooks.resolveLocalImage,
           });
         };
@@ -1145,13 +1197,12 @@ export class TabManager {
         // ---- Initial preview: full render with math + mermaid ----
         (async () => {
           try {
-            const { renderMarkdown, renderMath, hasMath, runPostRender } = await import("./render");
-            if (seq !== this.repaintSeq) return;
+            if (!this.previewLifecycle.isCurrent(seq)) return;
             setPreview(await renderMarkdown(t.content));
             if (hasMath(t.content)) {
               try {
                 const html = await renderMath(t.content);
-                if (this.active() === t && seq === this.repaintSeq) setPreview(html);
+                if (this.active() === t && this.previewLifecycle.isCurrent(seq)) setPreview(html);
               } catch { /* keep the base render */ }
             }
             await runPostRender(prevPane, this.theme);
@@ -1160,13 +1211,8 @@ export class TabManager {
 
         // ---- Live preview (debounced, base render only — no math/mermaid) ----
         schedulePreview = () => {
-          if (this.editPreviewTimer !== null) clearTimeout(this.editPreviewTimer);
-          this.editPreviewTimer = setTimeout(async () => {
-            this.editPreviewTimer = null;
+          this.previewLifecycle.schedule(seq, async () => {
             if (this.active() !== t) return;
-            if (seq !== this.repaintSeq) return;
-            const { renderMarkdown } = await import("./render");
-            if (seq !== this.repaintSeq) return;
             try {
               setPreview(await renderMarkdown(curText));
             } catch { /* preview failure is non-fatal */ }
@@ -1181,16 +1227,13 @@ export class TabManager {
 
         schedulePreview = () => {
           if (suppressPreview) return;
-          if (this.editPreviewTimer !== null) clearTimeout(this.editPreviewTimer);
-          this.editPreviewTimer = setTimeout(async () => {
-            this.editPreviewTimer = null;
+          this.previewLifecycle.schedule(seq, async () => {
             if (this.active() !== t) return;
-            if (seq !== this.repaintSeq) return;
             try {
               const { parseData, serializeData } = await import("./data/parse");
               const { renderStructuredComments } = await import("./data/comments");
               const { renderTree } = await import("./data/tree");
-              if (seq !== this.repaintSeq) return;
+              if (!this.previewLifecycle.isCurrent(seq)) return;
 
               if (currentTreeView) {
                 currentTreeView.destroy();
@@ -1301,13 +1344,13 @@ export class TabManager {
       (async () => {
         try {
           const ed = await import("./editor");
-          if (seq !== this.repaintSeq) return;
+          if (!this.previewLifecycle.isCurrent(seq)) return;
           // Build off-DOM so the textarea remains usable until CodeMirror has
           // loaded successfully. This also gives us a disposable instance if a
           // tab switch supersedes the render while createEditor is awaiting.
           const editorHost = document.createElement("div");
           const editor = await ed.createEditor(editorHost, curText, this.theme, fmtToEditorLang(t));
-          if (seq !== this.repaintSeq || this.active() !== t) {
+          if (!this.previewLifecycle.isCurrent(seq) || this.active() !== t) {
             editor.destroy();
             return;
           }
@@ -1342,13 +1385,13 @@ export class TabManager {
           };
           editor.destroy = patchDestroy;
 
-          if (seq === this.repaintSeq) this.settleScroll(t, restoreScroll);
+          if (this.previewLifecycle.isCurrent(seq)) this.settleScroll(t, restoreScroll);
         } catch { /* CodeMirror failed to load — keep the textarea fallback. */ }
       })();
   }
 
   /** Paint raw text immediately, then enhance recognized data with highlighting. */
-  private renderRawMode(t: Tab, restoreScroll: boolean): void {
+  private renderRawMode(t: Tab, seq: number, restoreScroll: boolean): void {
     const pre = document.createElement("pre");
     pre.className = "raw";
     pre.textContent = t.content; // paint plain text instantly — no async dependency
@@ -1359,9 +1402,9 @@ export class TabManager {
     // replacement lands in a future microtask.
     const lang = effectiveFormat(t) === "data" ? effectiveDataLang(t.path, t.forcedLang) : null;
     if (lang) {
-      const mySeq = this.repaintSeq;
+      const mySeq = seq;
       loadHighlight().then((hljs) => {
-        if (mySeq !== this.repaintSeq) return; // superseded by a newer repaint
+        if (!this.previewLifecycle.isCurrent(mySeq)) return; // superseded by a newer repaint
         if (hljs.getLanguage(lang)) {
           pre.classList.add("hljs");
           pre.innerHTML = hljs.highlight(t.content, { language: lang }).value;

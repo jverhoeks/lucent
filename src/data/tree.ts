@@ -213,6 +213,7 @@ export class TreeView {
       toggle.className = "tree-toggle";
       toggle.textContent = open ? "−" : "+";
       toggle.setAttribute("aria-expanded", String(open));
+      toggle.setAttribute("aria-label", `${open ? "Collapse" : "Expand"} ${node.key}`);
       toggle.addEventListener("click", () => this.toggle(path));
 
       const keyEl = document.createElement("span");
@@ -286,6 +287,7 @@ export class TreeView {
     del.className = "tree-del-btn";
     del.textContent = "×";
     del.title = "Delete";
+    del.setAttribute("aria-label", `Delete ${path}`);
     del.addEventListener("click", (e) => {
       e.stopPropagation();
       this.deleteNode(path);
@@ -342,12 +344,21 @@ export class TreeView {
     row.appendChild(valEl);
 
     if (this.editMode) {
-      // Allow inline editing on click
+      // Allow inline editing with a pointer or keyboard.
       row.style.cursor = "pointer";
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", `Edit ${key || "value"}`);
       row.addEventListener("click", (e) => {
         // Only trigger on the value area, not the delete btn
         if ((e.target as HTMLElement).closest(".tree-del-btn")) return;
         this.startInlineEdit(row, path, scalar);
+      });
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          this.startInlineEdit(row, path, scalar);
+        }
       });
     }
 
@@ -493,6 +504,11 @@ export class TreeView {
   private fillRow(row: HTMLElement, v: VisRow): void {
     row.textContent = "";
     row.removeAttribute("style");
+    row.removeAttribute("tabindex");
+    row.removeAttribute("role");
+    row.removeAttribute("aria-label");
+    row.onclick = null;
+    row.onkeydown = null;
     row.dataset.path = v.path;
     row.style.paddingLeft = `${v.depth * INDENT + BASE_PAD}px`;
     if (v.container) {
@@ -506,6 +522,7 @@ export class TreeView {
       toggle.className = "tree-toggle";
       toggle.textContent = v.open ? "−" : "+";
       toggle.setAttribute("aria-expanded", String(v.open));
+      toggle.setAttribute("aria-label", `${v.open ? "Collapse" : "Expand"} ${v.key}`);
       toggle.addEventListener("click", () => this.toggle(v.path));
       const keyEl = document.createElement("span");
       keyEl.className = "tree-key";
@@ -530,10 +547,19 @@ export class TreeView {
 
       if (this.editMode) {
         row.style.cursor = "pointer";
-        row.addEventListener("click", (e) => {
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-label", `Edit ${v.key || "value"}`);
+        row.onclick = (e) => {
           if ((e.target as HTMLElement).closest(".tree-del-btn")) return;
           this.startInlineEdit(row, v.path, scalar);
-        });
+        };
+        row.onkeydown = (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            this.startInlineEdit(row, v.path, scalar);
+          }
+        };
       }
     }
   }

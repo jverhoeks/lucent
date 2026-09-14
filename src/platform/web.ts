@@ -14,8 +14,12 @@ const fileStore = new Map<string, { content: string; lastModified: number }>();
 
 /** Registered file handles for File System Access API-based writes. */
 const fileHandles = new Map<string, FileSystemFileHandle>();
+const assetStore = new Map<string, Blob>();
+const assetUrls = new Map<string, string>();
 
 let nextTempId = 1;
+const MAX_IMPORT_FILES = 1_000;
+const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
 
 function tmpPath(): string {
   return `/tmp/${nextTempId++}`;
@@ -48,44 +52,61 @@ async function readBlobAsText(file: File): Promise<string> {
 }
 
 /** Recursively collect files from a dropped FileList (handles directories). */
-async function collectFiles(items: DataTransferItem[]): Promise<File[]> {
-  const files: File[] = [];
-  const queue = [...items];
+interface CollectedFile { file: File; relativePath: string }
+
+async function collectFiles(items: DataTransferItem[]): Promise<{ files: CollectedFile[]; skipped: number }> {
+  const files: CollectedFile[] = [];
+  let skipped = 0;
+  const queue: Array<{ item: DataTransferItem; path?: string }> = items.map((item) => ({ item }));
   while (queue.length > 0) {
-    const item = queue.shift()!;
+    if (files.length >= MAX_IMPORT_FILES) {
+      skipped += queue.length;
+      break;
+    }
+    const { item, path: queuedPath } = queue.shift()!;
     if (item.webkitGetAsEntry) {
       const entry = item.webkitGetAsEntry();
       if (entry) {
         if (entry.isFile) {
-          const file = await new Promise<File>((resolve) =>
-            (entry as FileSystemFileEntry).file(resolve),
-          );
-          files.push(file);
+          try {
+            const file = await new Promise<File>((resolve, reject) =>
+              (entry as FileSystemFileEntry).file(resolve, reject),
+            );
+            files.push({ file, relativePath: queuedPath ?? entry.fullPath.replace(/^\/+/, "") });
+          } catch { skipped++; }
         } else if (entry.isDirectory) {
           const reader = (entry as FileSystemDirectoryEntry).createReader();
           // Chromium returns directory entries in batches (commonly 100).
           // Keep reading until an empty batch signals completion.
           while (true) {
-            const entries = await new Promise<FileSystemEntry[]>((resolve, reject) =>
-              reader.readEntries(resolve, reject),
-            );
+            let entries: FileSystemEntry[];
+            try {
+              entries = await new Promise<FileSystemEntry[]>((resolve, reject) =>
+                reader.readEntries(resolve, reject),
+              );
+            } catch { skipped++; break; }
             if (entries.length === 0) break;
             for (const e of entries) {
-              queue.push({ webkitGetAsEntry: () => e } as DataTransferItem);
+              queue.push({
+                item: { webkitGetAsEntry: () => e } as DataTransferItem,
+                path: e.fullPath.replace(/^\/+/, ""),
+              });
             }
           }
         }
       }
     } else if (item.kind === "file") {
       const file = item.getAsFile();
-      if (file) files.push(file);
+      if (file) files.push({ file, relativePath: file.webkitRelativePath || file.name });
     }
   }
-  return files;
+  return { files, skipped };
 }
 
 function fileNameToPath(name: string): string {
-  const safeName = name.split("/").join("_");
+  const safeName = name.replace(/\\/g, "/").split("/")
+    .filter((part) => part && part !== "." && part !== "..")
+    .join("/") || "untitled";
   let path = `/opened/${safeName}`;
   let suffix = 2;
   while (fileStore.has(path)) {
@@ -97,14 +118,44 @@ function fileNameToPath(name: string): string {
   return path;
 }
 
+function normalizeVirtualPath(base: string, relative: string): string {
+  const combined = relative.startsWith("/")
+    ? relative
+    : `${base.substring(0, base.lastIndexOf("/") + 1)}${relative}`;
+  const parts: string[] = [];
+  for (const part of combined.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return `/${parts.join("/")}`;
+}
+
 function splitLogLines(content: string): string[] {
   const lines = content.split("\n");
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
   return lines;
 }
 
+function download(contents: BlobPart, path: string, type: string): void {
+  const name = path.split("/").pop() || "download";
+  const url = URL.createObjectURL(new Blob([contents], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  // Keep the URL alive through the click/navigation task.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 export const webAdapter: PlatformAdapter = {
   platform: "web",
+  capabilities: {
+    persistentWrite: "file-handle",
+    downloads: true,
+    watching: false,
+    localAssets: true,
+  },
 
   async readFile(path: string): Promise<FilePayload> {
     const entry = fileStore.get(path);
@@ -112,25 +163,28 @@ export const webAdapter: PlatformAdapter = {
     return { path, content: entry.content };
   },
 
-  async saveTextFile(path: string, contents: string): Promise<void> {
+  async saveTextFile(path: string, contents: string): Promise<"saved" | "downloaded"> {
     const handle = fileHandles.get(path);
     if (handle) {
       const writable = await handle.createWritable();
-      await writable.write(contents);
-      await writable.close();
+      try {
+        await writable.write(contents);
+        await writable.close();
+      } catch (error) {
+        await writable.abort?.().catch(() => {});
+        throw error;
+      }
+      fileStore.set(path, { content: contents, lastModified: Date.now() });
+      return "saved";
     }
+    download(contents, path, "text/plain;charset=utf-8");
     fileStore.set(path, { content: contents, lastModified: Date.now() });
+    return "downloaded";
   },
 
-  async saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<void> {
-    // No filesystem on the web: trigger a browser download using the basename.
-    const name = path.split("/").pop() || "download.bin";
-    const url = URL.createObjectURL(new Blob([contents], { type: "application/octet-stream" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
+  async saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<"downloaded"> {
+    download(contents, path, "application/octet-stream");
+    return "downloaded";
   },
 
   async fileSize(path: string): Promise<number> {
@@ -186,9 +240,8 @@ export const webAdapter: PlatformAdapter = {
   },
 
   async resolveSibling(base: string, rel: string): Promise<string> {
-    const dir = base.substring(0, base.lastIndexOf("/") + 1);
-    const resolved = dir + rel;
-    if (fileStore.has(resolved)) return resolved;
+    const resolved = normalizeVirtualPath(base, rel);
+    if (fileStore.has(resolved) || assetStore.has(resolved)) return resolved;
     throw Object.assign(new Error(`File not found: ${resolved}`), { kind: "not_found" });
   },
 
@@ -208,8 +261,15 @@ export const webAdapter: PlatformAdapter = {
     }
   },
 
-  async localImageUrl(_base: string, _rel: string): Promise<string | null> {
-    return null;
+  async localImageUrl(base: string, rel: string): Promise<string | null> {
+    const path = normalizeVirtualPath(base, rel);
+    const blob = assetStore.get(path);
+    if (!blob) return null;
+    const existing = assetUrls.get(path);
+    if (existing) return existing;
+    const url = URL.createObjectURL(blob);
+    assetUrls.set(path, url);
+    return url;
   },
 
   async writeTempFile(_filename: string, contents: string): Promise<string> {
@@ -219,6 +279,26 @@ export const webAdapter: PlatformAdapter = {
   },
 
   async openDialog(options?: OpenDialogOptions): Promise<string | string[] | null> {
+    const picker = (window as Window & {
+      showOpenFilePicker?: (options: { multiple: boolean }) => Promise<FileSystemFileHandle[]>;
+    }).showOpenFilePicker;
+    if (picker) {
+      try {
+        const handles = await picker({ multiple: options?.multiple ?? false });
+        const paths: string[] = [];
+        for (const handle of handles) {
+          const file = await handle.getFile();
+          const path = fileNameToPath(file.name);
+          fileStore.set(path, { content: await readBlobAsText(file), lastModified: file.lastModified });
+          fileHandles.set(path, handle);
+          paths.push(path);
+        }
+        return options?.multiple ? paths : (paths[0] ?? null);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return null;
+        throw error;
+      }
+    }
     return new Promise((resolve) => {
       const input = document.createElement("input");
       input.type = "file";
@@ -275,7 +355,8 @@ export const webAdapter: PlatformAdapter = {
   },
 
   async unwatchAll(): Promise<void> {
-    // no-op
+    for (const url of assetUrls.values()) URL.revokeObjectURL(url);
+    assetUrls.clear();
   },
 
   async openUrl(url: string): Promise<void> {
@@ -317,17 +398,34 @@ export const webAdapter: PlatformAdapter = {
       e.preventDefault();
       dragCounter = 0;
       const items = Array.from(e.dataTransfer?.items ?? []);
-      const files = await collectFiles(items);
+      const collected = await collectFiles(items);
       const paths: string[] = [];
-      let skipped = 0;
-      for (const file of files) {
+      let skipped = collected.skipped;
+      let importedBytes = 0;
+      let cancelled = false;
+      const cancel = (event: KeyboardEvent) => { if (event.key === "Escape") cancelled = true; };
+      document.addEventListener("keydown", cancel);
+      for (const [index, { file, relativePath }] of collected.files.entries()) {
+        if (cancelled) {
+          skipped += collected.files.length - index;
+          break;
+        }
+        if (importedBytes + file.size > MAX_IMPORT_BYTES) {
+          skipped++;
+          continue;
+        }
+        importedBytes += file.size;
         try {
+          if (file.type.startsWith("image/")) {
+            assetStore.set(fileNameToPath(relativePath), file);
+            continue;
+          }
           if (!await isProbablyTextFile(file)) {
             skipped++;
             continue;
           }
           const text = await readBlobAsText(file);
-          const path = fileNameToPath(file.name);
+          const path = fileNameToPath(relativePath);
           fileStore.set(path, { content: text, lastModified: file.lastModified });
 
           // Try to persist a write handle
@@ -341,8 +439,19 @@ export const webAdapter: PlatformAdapter = {
           skipped++;
           console.warn("Skipping unreadable dropped file:", file.name, err);
         }
+        if ((index + 1) % 25 === 0 || index + 1 === collected.files.length) {
+          cb({
+            type: "progress",
+            paths: [],
+            processed: index + 1,
+            total: collected.files.length,
+            skipped,
+          });
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
       }
-      cb({ type: "drop", paths, skipped });
+      document.removeEventListener("keydown", cancel);
+      cb({ type: "drop", paths, skipped, cancelled });
     });
   },
 

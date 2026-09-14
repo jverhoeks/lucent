@@ -7,6 +7,7 @@ export class SearchBar {
   private caseBtn: HTMLButtonElement;
   private regexBtn: HTMLButtonElement;
   private count: HTMLElement;
+  private returnFocus: HTMLElement | null = null;
   /** Pending trailing-debounce timer for typed input. */
   private debounceId: ReturnType<typeof setTimeout> | undefined;
 
@@ -78,6 +79,9 @@ export class SearchBar {
   }
 
   open() {
+    if (this.el.hidden && document.activeElement instanceof HTMLElement) {
+      this.returnFocus = document.activeElement;
+    }
     this.el.hidden = false;
     this.input.focus();
     this.input.select();
@@ -87,6 +91,8 @@ export class SearchBar {
     this.cancelDebounce();
     this.el.hidden = true;
     this.controller.close();
+    this.returnFocus?.focus();
+    this.returnFocus = null;
   }
   toggle() { this.el.hidden ? this.open() : this.close(); }
   isOpen() { return !this.el.hidden; }

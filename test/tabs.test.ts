@@ -4,7 +4,7 @@ import { basename } from "../src/format";
 import { DEFAULT_SETTINGS } from "../src/types";
 
 function makeManager(
-  onSave?: (path: string, content: string) => Promise<string | null | void>,
+  onSave?: (path: string, content: string, expectedContent?: string) => Promise<string | null | void>,
   onSaveAs?: (path: string, content: string) => Promise<string | null | void>,
 ) {
   const tabbar = document.createElement("nav");
@@ -32,6 +32,12 @@ describe("basename", () => {
 
 describe("TabManager", () => {
   beforeEach(() => document.body.replaceChildren());
+
+  it("shows the welcome screen before any document is opened", () => {
+    const { mgr, content } = makeManager();
+    expect(mgr.count()).toBe(0);
+    expect(content.querySelector(".welcome-title")?.textContent).toBe("Lucent");
+  });
 
   it("opens the built-in Help guide as a rendered tab", async () => {
     const { mgr } = makeManager();
@@ -122,6 +128,29 @@ describe("TabManager", () => {
     expect(mgr.getActiveRawText()).toBe("# changed");
     mgr.updateContent("/d/not-open.md", "x");
     expect(mgr.getActiveRawText()).toBe("# changed");
+  });
+
+  it("refreshes a clean structured-data editor after an external change", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openOrActivate("/d/config.json", '{"version":1}');
+    mgr.toggleEdit();
+    await vi.waitFor(() => expect(content.querySelector(".cm-editor")).toBeTruthy());
+
+    mgr.updateContent("/d/config.json", '{"version":2,"ready":true}');
+
+    await vi.waitFor(() => expect(content.querySelector(".split-preview")?.textContent).toContain("ready"));
+    expect(mgr.getActiveRawText()).toContain('"version":2');
+    expect(mgr.hasDirtyTabs()).toBe(false);
+  });
+
+  it("does not let a delayed markdown render paint a newer active tab", async () => {
+    const { mgr, content } = makeManager();
+    const first = mgr.openOrActivate("/d/a.md", "# First");
+    const second = mgr.openOrActivate("/d/b.md", "# Second");
+    await Promise.all([first, second]);
+
+    expect(mgr.getActivePath()).toBe("/d/b.md");
+    expect(content.querySelector("h1")?.textContent).toBe("Second");
   });
 
   it("closes a tab and notifies, then closes all", async () => {
@@ -279,6 +308,46 @@ describe("TabManager", () => {
     expect(mgr.hasDirtyTabs()).toBe(true);
   });
 
+  it("restores an existing-file draft and flags a changed disk version", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openOrActivate("/d/a.md", "# Changed on disk");
+    await mgr.restoreSessionTab({
+      path: "/d/a.md",
+      content: "# Recovered draft",
+      originalContent: "# Original disk",
+      format: "markdown",
+      mode: "edit",
+      scrollTop: 0,
+      editDirty: true,
+    });
+
+    expect(content.querySelector<HTMLTextAreaElement>(".split-textarea")?.value).toBe("# Recovered draft");
+    expect(content.querySelector<HTMLElement>(".edit-conflict")?.hidden).toBe(false);
+    expect(mgr.hasDirtyTabs()).toBe(true);
+  });
+
+  it("recovers a draft whose source file is missing and can recreate it", async () => {
+    const saved: Array<[string, string, string | undefined]> = [];
+    const { mgr, content } = makeManager(async (path, body, expected) => {
+      saved.push([path, body, expected]);
+      return path;
+    });
+    await mgr.restoreSessionTab({
+      path: "/d/missing.md",
+      content: "# Recovered",
+      originalContent: "# Old disk",
+      format: "markdown",
+      mode: "edit",
+      scrollTop: 0,
+      editDirty: true,
+    });
+
+    expect(content.querySelector(".conflict-message")?.textContent).toContain("missing on disk");
+    content.querySelector<HTMLButtonElement>(".conflict-accept")!.click();
+    await vi.waitFor(() => expect(saved).toEqual([["/d/missing.md", "# Recovered", undefined]]));
+    expect(mgr.hasDirtyTabs()).toBe(false);
+  });
+
   it("preserves structured comments when editing through the preview tree", async () => {
     const saved: string[] = [];
     const { mgr, content } = makeManager(async (_path, text) => { saved.push(text); });
@@ -312,6 +381,19 @@ describe("TabManager", () => {
 
     expect(mgr.getActiveRawText()).toBe("# draft");
     expect(content.querySelector<HTMLElement>(".edit-conflict")?.hidden).toBe(false);
+  });
+
+  it("does not report the app's own matching save as an external conflict", async () => {
+    const { mgr, content } = makeManager();
+    await mgr.openOrActivate("/d/a.md", "# Original");
+    mgr.toggleEdit();
+    const textarea = content.querySelector(".split-textarea") as HTMLTextAreaElement;
+    textarea.value = "# Saved";
+    textarea.dispatchEvent(new Event("input"));
+
+    mgr.updateContent("/d/a.md", "# Saved");
+
+    expect(content.querySelector<HTMLElement>(".edit-conflict")?.hidden).toBe(true);
   });
 
   it("shows a diff for file-changed-on-disk conflicts", async () => {

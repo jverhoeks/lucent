@@ -1,8 +1,8 @@
 use crate::error::{AppError, ErrorKind};
-use memmap2::Mmap;
 use serde::Serialize;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;
 
 #[derive(Debug, Serialize, Clone)]
@@ -20,34 +20,146 @@ pub fn read_file(path: String) -> Result<FilePayload, AppError> {
             format!("File not found: {path}"),
         ));
     }
-    let file =
-        std::fs::File::open(p).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
-    if file
-        .metadata()
-        .map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?
-        .len()
-        == 0
-    {
-        return Ok(FilePayload {
-            path,
-            content: String::new(),
-        });
-    }
-    let mmap = unsafe { Mmap::map(&file) }
-        .map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
-    let content = String::from_utf8(mmap[..].to_vec())
+    // A mapping can fault if another process truncates the file while it is
+    // being copied. Reading owns the bytes and turns that race into a normal
+    // short read or I/O error.
+    let bytes =
+        std::fs::read(p).map_err(|e| AppError::new(ErrorKind::Unreadable, e.to_string()))?;
+    let content = String::from_utf8(bytes)
         .map_err(|_| AppError::new(ErrorKind::NotUtf8, "File is not valid UTF-8"))?;
     Ok(FilePayload { path, content })
 }
 
+static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn atomic_write(path: &Path, contents: &[u8], expected: Option<&[u8]>) -> Result<(), AppError> {
+    let existing = std::fs::symlink_metadata(path).ok();
+    if existing
+        .as_ref()
+        .is_some_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err(AppError::new(
+            ErrorKind::Io,
+            "Refusing to replace a symbolic link",
+        ));
+    }
+    if let Some(expected) = expected {
+        let current = std::fs::read(path).map_err(|e| {
+            AppError::new(ErrorKind::Conflict, format!("File changed on disk: {e}"))
+        })?;
+        if current != expected {
+            return Err(AppError::new(ErrorKind::Conflict, "File changed on disk"));
+        }
+    }
+
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let leaf = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("document");
+    let mut temporary = None;
+    for _ in 0..100 {
+        let sequence = SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let candidate = parent.join(format!(
+            ".{leaf}.lucent-{}-{sequence}.tmp",
+            std::process::id()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(file) => {
+                temporary = Some((candidate, file));
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(AppError::new(ErrorKind::Io, error.to_string())),
+        }
+    }
+    let (temporary_path, mut file) = temporary
+        .ok_or_else(|| AppError::new(ErrorKind::Io, "Could not allocate a temporary save file"))?;
+    let write_result = (|| -> std::io::Result<()> {
+        file.write_all(contents)?;
+        file.sync_all()?;
+        if let Some(metadata) = &existing {
+            std::fs::set_permissions(&temporary_path, metadata.permissions())?;
+        }
+        drop(file);
+        Ok(())
+    })();
+    if let Err(error) = write_result {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(AppError::new(ErrorKind::Io, error.to_string()));
+    }
+    // Recheck immediately before replacement so a change that arrived while
+    // the temporary file was written cannot be silently overwritten.
+    if let Some(expected) = expected {
+        let unchanged = std::fs::read(path).is_ok_and(|current| current == expected);
+        if !unchanged {
+            let _ = std::fs::remove_file(&temporary_path);
+            return Err(AppError::new(ErrorKind::Conflict, "File changed on disk"));
+        }
+    }
+    if let Err(error) = replace_file(&temporary_path, path) {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(AppError::new(ErrorKind::Io, error.to_string()));
+    }
+    // The replacement has succeeded at this point; best-effort sync its
+    // directory entry without reporting a false save failure afterward.
+    let _ = sync_parent(parent);
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_parent(parent: &Path) -> std::io::Result<()> {
+    std::fs::File::open(parent)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_parent(_parent: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::rename(source, destination)
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    if !destination.exists() {
+        return std::fs::rename(source, destination);
+    }
+    let backup = destination.with_extension(format!("lucent-backup-{}", std::process::id()));
+    std::fs::rename(destination, &backup)?;
+    if let Err(error) = std::fs::rename(source, destination) {
+        let _ = std::fs::rename(&backup, destination);
+        return Err(error);
+    }
+    let _ = std::fs::remove_file(backup);
+    Ok(())
+}
+
 #[tauri::command]
-pub fn save_text_file(path: String, contents: String) -> Result<(), AppError> {
-    std::fs::write(&path, contents).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))
+pub fn save_text_file(
+    path: String,
+    contents: String,
+    expected_contents: Option<String>,
+) -> Result<(), AppError> {
+    atomic_write(
+        Path::new(&path),
+        contents.as_bytes(),
+        expected_contents.as_deref().map(str::as_bytes),
+    )
 }
 
 #[tauri::command]
 pub fn save_binary_file(path: String, contents: Vec<u8>) -> Result<(), AppError> {
-    std::fs::write(&path, contents).map_err(|e| AppError::new(ErrorKind::Io, e.to_string()))
+    atomic_write(Path::new(&path), &contents, None)
 }
 
 /// True if a path has a Markdown-ish extension we render.
@@ -428,8 +540,39 @@ mod tests {
         let dir = std::env::temp_dir().join("mdv_test_save");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("out.html");
-        save_text_file(path.to_string_lossy().to_string(), "<h1>Hi</h1>".into()).unwrap();
+        save_text_file(
+            path.to_string_lossy().to_string(),
+            "<h1>Hi</h1>".into(),
+            None,
+        )
+        .unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "<h1>Hi</h1>");
+    }
+
+    #[test]
+    fn conditional_save_preserves_a_concurrently_changed_file() {
+        let dir = std::env::temp_dir().join("lucent_test_conditional_save");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("draft.md");
+        std::fs::write(&path, "changed elsewhere").unwrap();
+        let error = save_text_file(
+            path.to_string_lossy().to_string(),
+            "my draft".into(),
+            Some("original".into()),
+        )
+        .unwrap_err();
+        assert!(matches!(error.kind, ErrorKind::Conflict));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "changed elsewhere");
+    }
+
+    #[test]
+    fn replacement_failure_keeps_the_original_target() {
+        let dir = std::env::temp_dir().join("lucent_test_failed_replace");
+        let target = dir.join("target");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&target).unwrap();
+        assert!(atomic_write(&target, b"replacement", None).is_err());
+        assert!(target.is_dir());
     }
 
     #[test]

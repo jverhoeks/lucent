@@ -101,7 +101,7 @@
       <input id="search-input" type="text" placeholder="Find" aria-label="Find" />
       <button id="search-case" class="toggle" title="Match case" aria-pressed="false">Aa</button>
       <button id="search-regex" class="toggle" title="Regular expression" aria-pressed="false">.*</button>
-      <span id="search-count" class="count">0/0</span>
+      <span id="search-count" class="count" role="status" aria-live="polite" aria-atomic="true">0/0</span>
       <button id="search-prev" title="Previous (Shift+Enter)" aria-label="Previous">▲</button>
       <button id="search-next" title="Next (Enter)" aria-label="Next">▼</button>
       <button id="search-close" title="Close (Esc)" aria-label="Close">✕</button>
@@ -113,6 +113,6 @@
       </aside>
       <main id="content" data-font="sans" role="tabpanel" tabindex="0" aria-label="Document"></main>
     </div>
-    <div id="banner" hidden></div>
+    <div id="banner" role="status" aria-live="polite" aria-atomic="true" hidden></div>
   </body>
 </html>

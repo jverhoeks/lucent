@@ -17,17 +17,25 @@ import type {
 
 export const tauriAdapter: PlatformAdapter = {
   platform: "tauri",
+  capabilities: {
+    persistentWrite: "native",
+    downloads: false,
+    watching: true,
+    localAssets: true,
+  },
 
   async readFile(path: string): Promise<FilePayload> {
     return invoke<FilePayload>("read_file", { path });
   },
 
-  async saveTextFile(path: string, contents: string): Promise<void> {
-    await invoke("save_text_file", { path, contents });
+  async saveTextFile(path: string, contents: string, expectedContents?: string): Promise<"saved"> {
+    await invoke("save_text_file", { path, contents, expectedContents });
+    return "saved";
   },
 
-  async saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<void> {
+  async saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<"saved"> {
     await invoke("save_binary_file", { path, contents: Array.from(contents) });
+    return "saved";
   },
 
   async fileSize(path: string): Promise<number> {

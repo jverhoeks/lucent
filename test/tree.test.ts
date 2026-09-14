@@ -55,6 +55,15 @@ describe("renderTree / TreeView", () => {
     expect(v?.classList.contains("type-string")).toBe(true);
   });
 
+  it("lets keyboard users start editing scalar values", () => {
+    renderTree(sample, root, { defaultDepth: 99, editable: true });
+    const row = root.querySelector<HTMLElement>('[data-path="root.name"]')!;
+    expect(row.tabIndex).toBe(0);
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(row.querySelector(".tree-edit-input")).toBeTruthy();
+    expect(document.activeElement).toBe(row.querySelector(".tree-edit-input"));
+  });
+
   it("expandAll() expands all containers, making deep nodes visible in the DOM", () => {
     const tree = renderTree(sample, root, { defaultDepth: 1 });
     expect(root.querySelector('[data-path="root.nested.deep"]')).toBeNull(); // collapsed by defaultDepth: 1

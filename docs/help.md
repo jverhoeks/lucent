@@ -116,7 +116,9 @@ Use **Tail** (desktop) to follow a growing file. **Find** searches the visible l
 ## Editing & saving
 
 - **Markdown** and **data** files support split-screen edit with sync-scrolling preview.
-- **Save** writes to disk; scratch tabs prompt for a path on first save.
+- **Save** writes to disk in the desktop app. In the web app it writes through
+  an available browser file handle or downloads the updated file. Scratch tabs
+  download on first save in the web app.
 - If a file changes on disk while you edit, a conflict bar offers **Show changes**, **Keep my version**, or **Use file on disk**.
 
 ---

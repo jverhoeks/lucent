@@ -21,10 +21,12 @@ interface ScrollTarget {
 export class LogSearchProvider implements SearchProvider {
   private lineNos: number[] = [];
   private lastKey: string | null = null;
+  private requestRevision = 0;
   constructor(
     private view: ScrollTarget,
     private runSearch: (q: SearchQuery) => Promise<number[]>,
     private onUpdate: () => void,
+    private onError: (error: unknown) => void = (error) => console.error("Log search failed", error),
   ) {}
 
   find(q: SearchQuery): Match[] {
@@ -33,11 +35,21 @@ export class LogSearchProvider implements SearchProvider {
     if (key === this.lastKey) return this.lineNos.map((_, i) => ({ id: i })); // cached
     this.lastKey = key;
     this.lineNos = [];
-    void this.runSearch(q).then((nums) => {
-      if (this.lastKey !== key) return; // a newer query superseded this one
-      this.lineNos = nums;
-      this.onUpdate();
-    });
+    const revision = ++this.requestRevision;
+    void this.runSearch(q).then(
+      (nums) => {
+        if (this.lastKey !== key || revision !== this.requestRevision) return;
+        this.lineNos = nums;
+        this.onUpdate();
+      },
+      (error) => {
+        if (this.lastKey !== key || revision !== this.requestRevision) return;
+        this.lastKey = null;
+        this.lineNos = [];
+        this.onError(error);
+        this.onUpdate();
+      },
+    );
     return []; // pending; populated on the onUpdate-triggered re-find
   }
 

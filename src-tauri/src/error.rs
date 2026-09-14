@@ -6,6 +6,7 @@ pub enum ErrorKind {
     NotFound,
     Unreadable,
     NotUtf8,
+    Conflict,
     Io,
 }
 

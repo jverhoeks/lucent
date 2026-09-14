@@ -16,21 +16,32 @@ export interface SaveDialogOptions {
 }
 
 export interface DropEvent {
-  type: "enter" | "over" | "leave" | "drop";
+  type: "enter" | "over" | "leave" | "progress" | "drop";
   paths: string[];
   /** Files rejected by the platform adapter before paths reached shared code. */
   skipped?: number;
+  processed?: number;
+  total?: number;
+  cancelled?: boolean;
 }
 
 export type FileChangedCallback = (path: string, content: string) => void;
 export type FileRemovedCallback = (path: string) => void;
 export type DropCallback = (event: DropEvent) => void;
 export type OpenFilesCallback = (paths: string[]) => void;
+export type SaveOutcome = "saved" | "downloaded";
+
+export interface PlatformCapabilities {
+  persistentWrite: "native" | "file-handle";
+  downloads: boolean;
+  watching: boolean;
+  localAssets: boolean;
+}
 
 export interface PlatformAdapter {
   readFile(path: string): Promise<FilePayload>;
-  saveTextFile(path: string, contents: string): Promise<void>;
-  saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<void>;
+  saveTextFile(path: string, contents: string, expectedContents?: string): Promise<SaveOutcome | void>;
+  saveBinaryFile(path: string, contents: Uint8Array<ArrayBuffer>): Promise<SaveOutcome | void>;
   fileSize(path: string): Promise<number>;
   logOpen(path: string): Promise<number>;
   logWindow(path: string, start: number, count: number): Promise<string[]>;
@@ -62,4 +73,6 @@ export interface PlatformAdapter {
 
   /** Unique platform name for diagnostics. */
   platform: "tauri" | "web";
+  /** Features that affect workflow and UI behavior. */
+  capabilities?: PlatformCapabilities;
 }

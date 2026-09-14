@@ -311,7 +311,11 @@ describe("main event and toolbar integration", () => {
       expect(document.getElementById("quick-switcher")?.hidden).toBe(false);
       expect(document.querySelector("#quick-switcher")?.textContent).toContain("a.md");
       expect(document.querySelector("#quick-switcher")?.textContent).toContain("b.md");
+      expect(document.querySelector(".quick-input")?.getAttribute("aria-activedescendant")).toBe("quick-option-0");
     });
+
+    document.querySelector(".quick-input")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(document.getElementById("quick-switcher")?.hidden).toBe(true);
   });
 
   it("records actionable errors in diagnostics", async () => {

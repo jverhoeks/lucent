@@ -239,9 +239,11 @@ impl LineIndex {
         if data.len() != 16 + (count as usize) * 8 {
             return false;
         }
-        let offsets: Vec<u64> = data[16..]
-            .chunks_exact(8)
-            .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+        let (offset_bytes, remainder) = data[16..].as_chunks::<8>();
+        debug_assert!(remainder.is_empty());
+        let offsets: Vec<u64> = offset_bytes
+            .iter()
+            .map(|bytes| u64::from_le_bytes(*bytes))
             .collect();
         self.offsets = offsets;
         self.indexed_len = indexed_len;

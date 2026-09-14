@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { exportPdf } from "../src/export";
@@ -73,9 +73,8 @@ function stubAdapter(platform: "tauri" | "web"): StubAdapter {
 }
 
 describe("print stylesheet", () => {
-  // The PDF export and the standalone HTML export both go through the browser's
-  // print engine with this CSS inlined, so these rules are the single mechanism
-  // that turns the app shell into a paginated document.
+  // Native and browser printing share this stylesheet, so these rules are the
+  // single mechanism that turns the app shell into a paginated document.
   it("hides the app chrome", () => {
     expect(
       printRule("#toolbar, #tabstrip, #searchbar, #outline, #banner, .popover"),
@@ -111,40 +110,47 @@ describe("print stylesheet", () => {
 describe("exportPdf", () => {
   beforeEach(buildShell);
 
-  // One path for every platform: the browser is what paginates. WebKit's in-app
-  // routes are gone — `createPDF` produced a single document-tall page and
-  // `NSPrintOperation` rendered blank pages from a Tauri webview.
-  for (const platform of ["tauri", "web"] as const) {
-    it(`stages the document and opens it for printing on ${platform}`, async () => {
-      const adapter = stubAdapter(platform);
+  it("prints a rendered document inside the desktop app", async () => {
+    const adapter = stubAdapter("tauri");
+    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
+
+    await exportPdf("# hi", adapter);
+
+    expect(print).toHaveBeenCalledOnce();
+    expect(adapter.calls).toEqual([]);
+    expect(document.getElementById("pdf-export")?.innerHTML).toContain("hi</h1>");
+    expect(document.getElementById("pdf-export")?.innerHTML).not.toContain("[object Promise]");
+
+    window.dispatchEvent(new Event("afterprint"));
+    expect(document.getElementById("pdf-export")).toBeNull();
+    expect(document.body.classList.contains("printing-pdf")).toBe(false);
+    print.mockRestore();
+  });
+
+  it("stages the document in a browser when running as a web app", async () => {
+      const adapter = stubAdapter("web");
 
       await exportPdf("# hi", adapter);
 
       expect(adapter.calls).toEqual(["writeTempFile", "openPath"]);
       expect(adapter.written).toContain("window.print()");
+      expect(adapter.written).toContain("<h1");
+      expect(adapter.written).toContain("hi</h1>");
+      expect(adapter.written).not.toContain("[object Promise]");
       // No save dialog: the file lands wherever the browser's print sheet says.
       expect(adapter.calls).not.toContain("saveDialog");
-    });
-  }
+  });
 
   it("exports light even when reading in a dark theme", async () => {
     // A dark theme prints as slabs of ink.
     const adapter = stubAdapter("tauri");
     document.getElementById("content")!.dataset.theme = "dark";
+    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
 
     await exportPdf("# hi", adapter);
 
-    expect(adapter.written).toContain('data-theme="light"');
-    expect(adapter.written).not.toContain('data-theme="dark"');
-  });
-
-  it("does not restructure the DOM for the export", async () => {
-    // Pagination comes from print media. The old screen-media capture needed an
-    // `.exporting` class on <html>/<body>; this guards against it creeping back.
-    const adapter = stubAdapter("tauri");
-
-    await exportPdf("# hi", adapter);
-
-    expect(`${document.documentElement.className}|${document.body.className}`).toBe("|");
+    expect(document.getElementById("pdf-export")?.dataset.theme).toBe("light");
+    window.dispatchEvent(new Event("afterprint"));
+    print.mockRestore();
   });
 });

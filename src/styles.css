@@ -1230,6 +1230,33 @@ body {
   display: none;
 }
 
+/* WKWebView's native print operation captures screen media. Prepare the live
+   document before invoking it so the app shell cannot enter the PDF. */
+html.printing-pdf,
+body.printing-pdf {
+  height: auto !important;
+  overflow: visible !important;
+}
+body.printing-pdf {
+  display: block !important;
+  background: #fff !important;
+  color: #000 !important;
+}
+body.printing-pdf > :not(#pdf-export) {
+  display: none !important;
+}
+body.printing-pdf #pdf-export {
+  display: block !important;
+  width: 794px;
+  padding: 48px 56px;
+  color: #000;
+  background: #fff;
+  font-family: var(--sans);
+  --text: #1d1d1f;
+  --text-muted: #6e6e73;
+  --surface: #f5f5f7;
+}
+
 @media print {
   /* Don't inherit whatever margin the browser's print dialog defaults to. */
   @page {

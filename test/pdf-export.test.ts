@@ -73,6 +73,11 @@ function stubAdapter(platform: "tauri" | "web"): StubAdapter {
 }
 
 describe("print stylesheet", () => {
+  it("isolates the prepared document for WebKit screen-media printing", () => {
+    expect(appCss).toContain("body.printing-pdf > :not(#pdf-export) {");
+    expect(appCss).toContain("body.printing-pdf #pdf-export {");
+  });
+
   // Native and browser printing share this stylesheet, so these rules are the
   // single mechanism that turns the app shell into a paginated document.
   it("hides the app chrome", () => {
@@ -120,9 +125,12 @@ describe("exportPdf", () => {
     expect(adapter.calls).toEqual([]);
     expect(document.getElementById("pdf-export")?.innerHTML).toContain("hi</h1>");
     expect(document.getElementById("pdf-export")?.innerHTML).not.toContain("[object Promise]");
+    expect(document.documentElement.classList.contains("printing-pdf")).toBe(true);
+    expect(document.body.classList.contains("printing-pdf")).toBe(true);
 
     window.dispatchEvent(new Event("afterprint"));
     expect(document.getElementById("pdf-export")).toBeNull();
+    expect(document.documentElement.classList.contains("printing-pdf")).toBe(false);
     expect(document.body.classList.contains("printing-pdf")).toBe(false);
     print.mockRestore();
   });
